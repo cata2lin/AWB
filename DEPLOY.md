@@ -79,8 +79,8 @@ PDF_STORAGE_PATH=./storage
 Test the backend starts:
 ```bash
 source venv/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 8001
-# Should show "Uvicorn running on http://127.0.0.1:8001"
+uvicorn app.main:app --host 127.0.0.1 --port 7999
+# Should show "Uvicorn running on http://127.0.0.1:7999"
 # Press Ctrl+C to stop
 ```
 
@@ -118,7 +118,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/awb-print/backend
 Environment="PATH=/opt/awb-print/backend/venv/bin:/usr/bin"
-ExecStart=/opt/awb-print/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 2
+ExecStart=/opt/awb-print/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 7999 --workers 2
 Restart=always
 RestartSec=5
 
@@ -159,7 +159,7 @@ server {
 
     # API — proxy to uvicorn backend
     location /api/ {
-        proxy_pass http://127.0.0.1:8001;
+        proxy_pass http://127.0.0.1:7999;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -266,6 +266,6 @@ pg_dump -U awb_user awbprint > /opt/backups/awbprint_$(date +%Y%m%d).sql
 | Service | Port | Accessible |
 |---------|------|-----------|
 | **Nginx** | 80/443 | Public (awb.arona.ro) |
-| **Backend (uvicorn)** | 8001 | localhost only |
+| **Backend (uvicorn)** | 7999 | localhost only |
 | **PostgreSQL** | 5432 | localhost only |
 | **Frontend** | — | Served as static files by nginx |
