@@ -24,19 +24,18 @@ sudo apt install -y nodejs
 
 ---
 
-## Step 2: Setup PostgreSQL
+## Step 2: PostgreSQL
 
-```bash
-sudo -u postgres psql
+The existing PostgreSQL database is reused (same as local dev):
+
+```
+DATABASE_URL=postgresql://postgres:123@localhost:5432/awbprint
 ```
 
-Inside the PostgreSQL shell:
-```sql
-CREATE USER awb_user WITH PASSWORD 'CHANGE_THIS_PASSWORD';
-CREATE DATABASE awbprint OWNER awb_user;
-GRANT ALL PRIVILEGES ON DATABASE awbprint TO awb_user;
-\q
-```
+> If PostgreSQL is not yet installed, install it with `sudo apt install postgresql postgresql-contrib` and create the database:
+> ```sql
+> sudo -u postgres psql -c "CREATE DATABASE awbprint;"
+> ```
 
 ---
 
@@ -68,11 +67,11 @@ cp /opt/awb-print/.env.example .env
 nano .env
 ```
 
-Edit `.env` with your actual values:
+Edit `.env` — copy your actual tokens from local and keep the same DB config:
 ```env
 FRISBO_API_TOKEN=your_token_here
 FRISBO_ORG_TOKENS=[{"name":"store1","token":"token1"}, ...]
-DATABASE_URL=postgresql://awb_user:CHANGE_THIS_PASSWORD@localhost:5432/awbprint
+DATABASE_URL=postgresql://postgres:123@localhost:5432/awbprint
 PDF_STORAGE_PATH=./storage
 ```
 
