@@ -1,0 +1,63 @@
+# =========================
+# Environment & Secrets
+# =========================
+.env
+*.env.local
+*.env.production
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pdb
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+frontend/dist/
+frontend/build/
+.vite/
+
+# =========================
+# Database files
+# =========================
+*.db
+*.sqlite3
+
+# =========================
+# Test / Debug artifacts
+# =========================
+test_100k.csv
+frisbo_response.json
+frisbo_analysis.json
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE / Editor
+# =========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# =========================
+# Gemini / AI agent artifacts
+# =========================
+.gemini/
+.agent/
