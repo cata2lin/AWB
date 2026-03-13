@@ -9,7 +9,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react'
 import {
     Globe2, TrendingUp, Package, Truck, XCircle, RotateCcw,
-    ChevronDown, RefreshCw, Filter, BarChart3, Store, Printer,
+    ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
     Calendar, ArrowRight, ArrowUpRight, ArrowDownRight, PieChart, MapPin,
     DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2
 } from 'lucide-react'
@@ -80,6 +80,26 @@ export default function Analytics() {
     const [skuRiskAnomalyPage, setSkuRiskAnomalyPage] = useState(0)
     const [expandedOrderUid, setExpandedOrderUid] = useState(null)
     const [showCalcLegend, setShowCalcLegend] = useState(false)
+
+    // Sales Velocity state
+    const [velocityData, setVelocityData] = useState(null)
+    const [velocityLoading, setVelocityLoading] = useState(false)
+    const [velocityDays, setVelocityDays] = useState(30)
+    const [velocityDateFrom, setVelocityDateFrom] = useState('')
+    const [velocityDateTo, setVelocityDateTo] = useState('')
+    const [velocityStore, setVelocityStore] = useState('')
+    const [velocityMinUnits, setVelocityMinUnits] = useState(1)
+    const [velocitySearch, setVelocitySearch] = useState('')
+    const [velocitySort, setVelocitySort] = useState({ col: 'velocity', dir: 'desc' })
+    const [velocityExpanded, setVelocityExpanded] = useState(null)
+    const [velocityView, setVelocityView] = useState('table') // 'table' | 'charts' | 'alerts'
+    const [growthSearch, setGrowthSearch] = useState('')
+    const [declineSearch, setDeclineSearch] = useState('')
+    const [growthSort, setGrowthSort] = useState('velocity_change_pct')
+    const [declineSort, setDeclineSort] = useState('velocity_change_pct')
+    const [expandedStoreUid, setExpandedStoreUid] = useState(null)
+    const [alertSearch, setAlertSearch] = useState('')
+    const [hoveredTrendBar, setHoveredTrendBar] = useState(null)
 
     // Top SKUs table state
 
@@ -442,61 +462,6 @@ export default function Analytics() {
                         Statistici tipărire, distribuție geografică și performanță livrare
                     </p>
                 </div>
-
-                {/* Filters - Improved Layout */}
-                <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-zinc-800 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
-                    {/* Store Filter - Single select dropdown */}
-                    <div className="flex items-center gap-2">
-                        <Store className="w-4 h-4 text-zinc-400" />
-                        <select
-                            value={selectedStores[0] || ''}
-                            onChange={(e) => setSelectedStores(e.target.value ? [e.target.value] : [])}
-                            className="px-3 py-2 bg-zinc-50 dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-lg text-sm text-zinc-900 dark:text-white min-w-[180px]"
-                        >
-                            <option value="">All Stores</option>
-                            {stores.map(store => (
-                                <option key={store.uid} value={store.uid}>
-                                    {store.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-600" />
-
-                    {/* Days Filter */}
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-zinc-400" />
-                        <select
-                            value={days}
-                            onChange={(e) => {
-                                setDays(e.target.value ? Number(e.target.value) : null)
-                                // Clear custom dates when a predefined period is selected
-                                setCustomDateFrom('')
-                                setCustomDateTo('')
-                            }}
-                            className="px-3 py-2 bg-zinc-50 dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-lg text-sm text-zinc-900 dark:text-white"
-                        >
-                            <option value={7}>Last 7 days</option>
-                            <option value={30}>Last 30 days</option>
-                            <option value={90}>Last 90 days</option>
-                            <option value={365}>Last year</option>
-                            <option value="">All time</option>
-                        </select>
-                    </div>
-
-                    {selectedStores.length > 0 && (
-                        <>
-                            <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-600" />
-                            <button
-                                onClick={() => setSelectedStores([])}
-                                className="px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
-                            >
-                                Clear
-                            </button>
-                        </>
-                    )}
-                </div>
             </div>
 
             {/* Tab Navigation */}
@@ -561,6 +526,16 @@ export default function Analytics() {
                 >
                     <AlertTriangle className="w-4 h-4 inline mr-2" />
                     SKU Risk
+                </button>
+                <button
+                    onClick={() => setActiveTab('salesVelocity')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'salesVelocity'
+                        ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <TrendingUp className="w-4 h-4 inline mr-2" />
+                    Viteză Vânzări
                 </button>
             </div>
 
@@ -2689,6 +2664,585 @@ export default function Analytics() {
                                                         </div>
                                                     ))}
                                                 </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )
+                    })()}
+
+                    {/* ── Sales Velocity & Product Analytics Tab ── */}
+                    {activeTab === 'salesVelocity' && (() => {
+                        const fetchVelocity = async () => {
+                            setVelocityLoading(true)
+                            try {
+                                const params = { min_units: velocityMinUnits }
+                                if (velocityDateFrom && velocityDateTo) {
+                                    params.date_from = velocityDateFrom
+                                    params.date_to = velocityDateTo
+                                } else {
+                                    params.days = velocityDays
+                                }
+                                if (velocityStore) params.store_uids = velocityStore
+                                const data = await analyticsApi.getSalesVelocity(params)
+                                setVelocityData(data)
+                            } catch (e) { console.error('Sales Velocity fetch error:', e) }
+                            finally { setVelocityLoading(false) }
+                        }
+
+                        const isCustomDate = velocityDateFrom && velocityDateTo
+
+                        const filteredProducts = velocityData?.products
+                            ? velocityData.products.filter(p => {
+                                if (!velocitySearch) return true
+                                const q = velocitySearch.toLowerCase()
+                                return p.sku.toLowerCase().includes(q) || (p.product_name || '').toLowerCase().includes(q)
+                            })
+                            : []
+
+                        const sortedProducts = [...filteredProducts].sort((a, b) => {
+                            const col = velocitySort.col
+                            const av = a[col] ?? -1, bv = b[col] ?? -1
+                            if (typeof av === 'string') return velocitySort.dir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv)
+                            return velocitySort.dir === 'desc' ? bv - av : av - bv
+                        })
+
+                        const VSort = ({ col, label, tip }) => (
+                            <th
+                                className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none whitespace-nowrap"
+                                onClick={() => setVelocitySort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
+                                title={tip || ''}
+                            >
+                                {label} {velocitySort.col === col ? (velocitySort.dir === 'desc' ? '↓' : '↑') : ''}
+                            </th>
+                        )
+
+                        const trendIcon = (t) => t === 'up' ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" /> : t === 'down' ? <ArrowDownRight className="w-3.5 h-3.5 text-red-500" /> : <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+
+                        // Simple SVG sparkline from daily_series
+                        const Sparkline = ({ data, width = 120, height = 28 }) => {
+                            if (!data || data.length === 0) return null
+                            const vals = data.map(d => d.units)
+                            const max = Math.max(...vals, 1)
+                            const points = vals.map((v, i) => `${(i / (vals.length - 1 || 1)) * width},${height - (v / max) * (height - 4) - 2}`).join(' ')
+                            return (
+                                <svg width={width} height={height} className="inline-block">
+                                    <polyline fill="none" stroke="#10b981" strokeWidth="1.5" points={points} />
+                                </svg>
+                            )
+                        }
+
+                        // Interactive SVG bar chart with hover tooltips
+                        const TrendChart = ({ trends }) => {
+                            if (!trends || trends.length === 0) return null
+                            const maxUnits = Math.max(...trends.map(t => t.units), 1)
+                            const w = Math.max(700, trends.length * 16)
+                            const h = 260
+                            const barW = Math.max(4, Math.min(14, (w - 60) / trends.length - 2))
+                            return (
+                                <div className="relative">
+                                    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: '300px' }}>
+                                        {/* Grid lines */}
+                                        {[0, 0.25, 0.5, 0.75, 1].map(pct => (
+                                            <g key={pct}>
+                                                <line x1={50} y1={h - 30 - pct * (h - 50)} x2={w - 10} y2={h - 30 - pct * (h - 50)} stroke="#3f3f46" strokeWidth="0.5" strokeDasharray="4 4" opacity={0.3} />
+                                                <text x={4} y={h - 30 - pct * (h - 50) + 4} fontSize="9" fill="#a1a1aa" fontWeight="500">{Math.round(maxUnits * pct).toLocaleString()}</text>
+                                            </g>
+                                        ))}
+                                        {trends.map((t, i) => {
+                                            const barH = (t.units / maxUnits) * (h - 50)
+                                            const x = 55 + i * ((w - 70) / trends.length)
+                                            const isHovered = hoveredTrendBar === i
+                                            return (
+                                                <g key={t.date}
+                                                    onMouseEnter={() => setHoveredTrendBar(i)}
+                                                    onMouseLeave={() => setHoveredTrendBar(null)}
+                                                    style={{ cursor: 'pointer' }}>
+                                                    <rect x={x - 2} y={0} width={barW + 4} height={h} fill="transparent" />
+                                                    <rect x={x} y={h - 30 - barH} width={barW} height={barH} rx={2}
+                                                        fill={isHovered ? '#34d399' : '#10b981'} opacity={isHovered ? 1 : 0.8} />
+                                                    {(i % Math.max(1, Math.ceil(trends.length / 15)) === 0) && (
+                                                        <text x={x} y={h - 8} fontSize="8" fill="#a1a1aa" textAnchor="middle">{t.date.slice(5)}</text>
+                                                    )}
+                                                    {isHovered && (
+                                                        <g>
+                                                            <rect x={Math.min(x - 10, w - 140)} y={Math.max(5, h - 30 - barH - 68)} width={130} height={60} rx={6} fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 16} fontSize="10" fill="#e4e4e7" fontWeight="600">{t.date}</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 30} fontSize="9" fill="#10b981">📦 {t.units.toLocaleString()} unități</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 43} fontSize="9" fill="#60a5fa">💰 {t.revenue.toLocaleString()} RON</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 55} fontSize="9" fill="#fbbf24">📋 {t.orders} comenzi</text>
+                                                        </g>
+                                                    )}
+                                                </g>
+                                            )
+                                        })}
+                                    </svg>
+                                </div>
+                            )
+                        }
+
+                        return (
+                            <div className="space-y-6">
+                                {/* Section A: Controls */}
+                                <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+                                    <div className="flex flex-wrap items-end gap-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Perioadă</label>
+                                            <div className="flex gap-1">
+                                                {[7, 30, 90, 180, 365].map(d => (
+                                                    <button key={d} onClick={() => { setVelocityDays(d); setVelocityDateFrom(''); setVelocityDateTo('') }}
+                                                        className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${!isCustomDate && velocityDays === d ? 'bg-emerald-600 text-white border-emerald-600' : 'border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'}`}
+                                                    >{d}z</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">De la</label>
+                                            <input type="date" value={velocityDateFrom} onChange={e => setVelocityDateFrom(e.target.value)}
+                                                className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Până la</label>
+                                            <input type="date" value={velocityDateTo} onChange={e => setVelocityDateTo(e.target.value)}
+                                                className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Magazin</label>
+                                            <select value={velocityStore} onChange={e => setVelocityStore(e.target.value)}
+                                                className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                                                <option value="">Toate</option>
+                                                {stores.map(s => <option key={s.uid} value={s.uid}>{s.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Min. unități</label>
+                                            <input type="number" value={velocityMinUnits} onChange={e => setVelocityMinUnits(Number(e.target.value) || 0)}
+                                                className="w-20 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                                        </div>
+                                        <button onClick={fetchVelocity} disabled={velocityLoading}
+                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5">
+                                            {velocityLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+                                            Analizează
+                                        </button>
+                                    </div>
+                                    {velocityData?.meta && (
+                                        <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+                                            <span>📦 {velocityData.meta.total_orders?.toLocaleString()} comenzi totale</span>
+                                            <span>📅 {velocityData.meta.period_days} zile</span>
+                                            <span>🏷️ {velocityData.kpis?.unique_skus} SKU-uri active</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {velocityLoading && (
+                                    <div className="flex items-center justify-center py-12">
+                                        <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
+                                        <span className="ml-3 text-zinc-500 dark:text-white">Se analizează viteza vânzărilor...</span>
+                                    </div>
+                                )}
+
+                                {velocityData && !velocityLoading && (
+                                    <>
+                                        {/* Section B: KPI Cards */}
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                            {[
+                                                { label: 'Unități Vândute', value: velocityData.kpis.total_units.toLocaleString(), icon: <Package className="w-5 h-5" />, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+                                                { label: 'Revenue Total', value: `${velocityData.kpis.total_revenue.toLocaleString()} RON`, icon: <DollarSign className="w-5 h-5" />, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+                                                { label: 'SKU-uri Active', value: velocityData.kpis.unique_skus, icon: <Tag className="w-5 h-5" />, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
+                                                { label: 'Unități / Zi', value: velocityData.kpis.avg_units_per_day, icon: <TrendingUp className="w-5 h-5" />, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+                                                { label: 'Avg Order Value', value: `${velocityData.kpis.avg_order_value} RON`, icon: <BarChart3 className="w-5 h-5" />, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+                                                { label: 'Comenzi Livrate', value: velocityData.kpis.delivered_orders?.toLocaleString(), icon: <Truck className="w-5 h-5" />, color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/20' },
+                                            ].map(kpi => (
+                                                <div key={kpi.label} className={`${kpi.bg} rounded-xl border border-zinc-200 dark:border-zinc-700 p-4`}>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className={kpi.color}>{kpi.icon}</span>
+                                                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{kpi.label}</span>
+                                                    </div>
+                                                    <div className={`text-xl font-bold ${kpi.color}`}>{kpi.value}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Sub-navigation: Table / Charts / Alerts */}
+                                        <div className="flex gap-2">
+                                            {[
+                                                { key: 'table', label: 'Tabel Produse', icon: <BarChart3 className="w-3.5 h-3.5" /> },
+                                                { key: 'charts', label: 'Grafice & Tendințe', icon: <TrendingUp className="w-3.5 h-3.5" /> },
+                                                { key: 'alerts', label: `Alerte (${velocityData.alerts?.length || 0})`, icon: <AlertTriangle className="w-3.5 h-3.5" /> },
+                                            ].map(v => (
+                                                <button key={v.key} onClick={() => setVelocityView(v.key)}
+                                                    className={`px-3 py-1.5 text-xs rounded-lg border transition-colors flex items-center gap-1.5 ${velocityView === v.key ? 'bg-emerald-600 text-white border-emerald-600' : 'border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'}`}>
+                                                    {v.icon} {v.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {/* Sub-view: PRODUCT TABLE */}
+                                        {velocityView === 'table' && (
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                                                <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+                                                    <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
+                                                        <TrendingUp className="w-4 h-4 text-emerald-500" />
+                                                        Performanță Produse — {sortedProducts.length} SKU-uri
+                                                    </h3>
+                                                    <div className="flex items-center gap-2">
+                                                        <Search className="w-4 h-4 text-zinc-400" />
+                                                        <input
+                                                            type="text" value={velocitySearch} onChange={e => setVelocitySearch(e.target.value)}
+                                                            placeholder="Caută SKU..."
+                                                            className="w-48 px-2 py-1 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full">
+                                                        <thead className="bg-zinc-50 dark:bg-zinc-900/50">
+                                                            <tr>
+                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8">#</th>
+                                                                <VSort col="sku" label="SKU" />
+                                                                <VSort col="units_sold" label="Unități" tip="Total unități livrate" />
+                                                                <VSort col="revenue" label="Revenue" tip="Venit total RON" />
+                                                                <VSort col="margin" label="Marjă" tip="Revenue − COGS" />
+                                                                <VSort col="margin_pct" label="Marjă %" />
+                                                                <VSort col="orders" label="Comenzi" />
+                                                                <VSort col="velocity" label="Viteză (u/zi)" tip="Unități vândute pe zi" />
+                                                                <VSort col="velocity_change_pct" label="Trend" tip="Schimbare față de perioada anterioară" />
+                                                                <VSort col="days_since_last_sale" label="Zile fără" tip="Zile de la ultima vânzare" />
+                                                                <VSort col="revenue_share" label="Share %" tip="% din revenue total" />
+                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Sparkline</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
+                                                            {sortedProducts.length === 0 && (
+                                                                <tr><td colSpan={12} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
+                                                            )}
+                                                            {sortedProducts.slice(0, 200).map((p, i) => (
+                                                                <Fragment key={p.sku}>
+                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === p.sku ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''}`}
+                                                                        onClick={() => setVelocityExpanded(velocityExpanded === p.sku ? null : p.sku)}>
+                                                                        <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
+                                                                        <td className="px-3 py-2">
+                                                                            <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
+                                                                            {p.product_name && <div className="text-xs text-zinc-500 truncate max-w-[200px]">{p.product_name}</div>}
+                                                                            {p.stores_count > 1 && <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{p.stores_count} magazine</span>}
+                                                                        </td>
+                                                                        <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
+                                                                        <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{p.revenue.toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
+                                                                        <td className={`px-3 py-2 text-sm font-medium ${p.margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{p.margin.toLocaleString()}</td>
+                                                                        <td className={`px-3 py-2 text-sm ${p.margin_pct >= 30 ? 'text-emerald-600' : p.margin_pct >= 10 ? 'text-amber-600' : 'text-red-600'}`}>{p.margin_pct}%</td>
+                                                                        <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{p.orders}</td>
+                                                                        <td className="px-3 py-2 text-sm font-bold text-emerald-600 dark:text-emerald-400">{p.velocity}</td>
+                                                                        <td className="px-3 py-2">
+                                                                            <div className="flex items-center gap-1">
+                                                                                {trendIcon(p.velocity_trend)}
+                                                                                <span className={`text-xs font-medium ${p.velocity_change_pct > 0 ? 'text-emerald-600' : p.velocity_change_pct < 0 ? 'text-red-600' : 'text-zinc-400'}`}>
+                                                                                    {p.velocity_change_pct > 0 ? '+' : ''}{p.velocity_change_pct}%
+                                                                                </span>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                                                                            {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
+                                                                        </td>
+                                                                        <td className="px-3 py-2 text-xs text-zinc-500">{p.revenue_share}%</td>
+                                                                        <td className="px-3 py-2"><Sparkline data={p.daily_series} /></td>
+                                                                    </tr>
+                                                                    {/* Expanded detail */}
+                                                                    {velocityExpanded === p.sku && (
+                                                                        <tr className="bg-zinc-50 dark:bg-zinc-900/40">
+                                                                            <td colSpan={12} className="px-4 py-4">
+                                                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                                                    <div>
+                                                                                        <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2 flex items-center gap-1"><Store className="w-3 h-3" /> Per Magazine</h5>
+                                                                                        <div className="space-y-1">
+                                                                                            {p.by_store.map(bs => (
+                                                                                                <div key={bs.store_uid} className="flex justify-between text-xs bg-white dark:bg-zinc-800 rounded-lg px-2 py-1 border border-zinc-200 dark:border-zinc-700">
+                                                                                                    <span className="text-zinc-700 dark:text-zinc-300">{bs.store_name}</span>
+                                                                                                    <span className="text-zinc-600 dark:text-zinc-300">{bs.units} u | {bs.revenue.toLocaleString()} RON | {bs.orders} cmd.</span>
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
+                                                                                        <div className="space-y-1 text-xs">
+                                                                                            {p.by_country.map(bc => (
+                                                                                                <div key={bc.country} className="flex justify-between">
+                                                                                                    <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || '🏳️'} {bc.country}</span>
+                                                                                                    <span className="font-medium text-zinc-900 dark:text-white">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
+                                                                                                </div>
+                                                                                            ))}
+                                                                                            {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
+                                                                                        <div className="space-y-1 text-xs">
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-900 dark:text-white">{p.avg_qty_per_order}</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-900 dark:text-white">{p.cogs.toLocaleString()} RON</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-900 dark:text-white">{p.delivery_rate}%</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-900 dark:text-white">{p.prev_velocity} u/zi</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    )}
+                                                                </Fragment>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                {sortedProducts.length > 200 && (
+                                                    <div className="px-4 py-2 text-xs text-zinc-400 text-center border-t border-zinc-200 dark:border-zinc-700">
+                                                        Se afișează primele 200 din {sortedProducts.length} SKU-uri. Folosește filtrul pentru a restrânge lista.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Sub-view: CHARTS & TRENDS */}
+                                        {velocityView === 'charts' && (
+                                            <div className="space-y-6">
+                                                {/* Daily Sales Trend */}
+                                                <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+                                                    <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-4 flex items-center gap-2">
+                                                        <BarChart3 className="w-4 h-4 text-emerald-500" />
+                                                        Trend Zilnic — Unități Vândute
+                                                    </h3>
+                                                    <TrendChart trends={velocityData.trends} />
+                                                </div>
+
+                                                {/* Top 10 Fastest-selling */}
+                                                <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+                                                    <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-4 flex items-center gap-2">
+                                                        <TrendingUp className="w-4 h-4 text-emerald-500" />
+                                                        Top 10 — Cele mai rapide SKU-uri (u/zi)
+                                                    </h3>
+                                                    <div className="space-y-2">
+                                                        {filteredProducts.slice(0, 10).map((p, i) => {
+                                                            const maxV = filteredProducts[0]?.velocity || 1
+                                                            const pct = (p.velocity / maxV) * 100
+                                                            return (
+                                                                <div key={p.sku} className="flex items-center gap-3">
+                                                                    <span className="text-xs text-zinc-400 w-5 text-right">{i + 1}</span>
+                                                                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 w-40 truncate" title={p.sku}>{p.sku}</span>
+                                                                    <div className="flex-1 h-5 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                                                        <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                                                    </div>
+                                                                    <span className="text-xs font-bold text-emerald-600 w-16 text-right">{p.velocity} u/zi</span>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* Growth vs Decline — Full tables with search/sort */}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {/* Growing */}
+                                                    {(() => {
+                                                        const allGrowing = filteredProducts.filter(p => p.velocity_change_pct > 0 && p.prev_velocity > 0)
+                                                            .filter(p => !growthSearch || p.sku.toLowerCase().includes(growthSearch.toLowerCase()) || (p.product_name || '').toLowerCase().includes(growthSearch.toLowerCase()))
+                                                            .sort((a, b) => growthSort === 'velocity_change_pct' ? b.velocity_change_pct - a.velocity_change_pct : growthSort === 'velocity' ? b.velocity - a.velocity : a.sku.localeCompare(b.sku))
+                                                        return (
+                                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+                                                                <h3 className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-2 flex items-center gap-2">
+                                                                    <ArrowUpRight className="w-4 h-4" /> 🚀 Cele mai în creștere ({allGrowing.length})
+                                                                </h3>
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <input type="text" value={growthSearch} onChange={e => setGrowthSearch(e.target.value)} placeholder="Caută SKU..."
+                                                                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                                                                    <select value={growthSort} onChange={e => setGrowthSort(e.target.value)}
+                                                                        className="px-2 py-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                                                                        <option value="velocity_change_pct">% Schimbare</option>
+                                                                        <option value="velocity">Viteză</option>
+                                                                        <option value="sku">SKU</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                                                                    {allGrowing.map(p => (
+                                                                        <div key={p.sku} className="flex items-center justify-between text-xs border-b border-zinc-100 dark:border-zinc-700/50 pb-1">
+                                                                            <span className="text-zinc-700 dark:text-zinc-300 truncate mr-2" title={p.product_name}>{p.sku}</span>
+                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                <span className="text-zinc-400">{p.prev_velocity} → {p.velocity}</span>
+                                                                                <span className="font-bold text-emerald-600">+{p.velocity_change_pct}%</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                    {allGrowing.length === 0 && <div className="text-xs text-zinc-400 text-center py-2">Niciun produs</div>}
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })()}
+                                                    {/* Declining */}
+                                                    {(() => {
+                                                        const allDeclining = filteredProducts.filter(p => p.velocity_change_pct < 0 && p.prev_velocity > 0)
+                                                            .filter(p => !declineSearch || p.sku.toLowerCase().includes(declineSearch.toLowerCase()) || (p.product_name || '').toLowerCase().includes(declineSearch.toLowerCase()))
+                                                            .sort((a, b) => declineSort === 'velocity_change_pct' ? a.velocity_change_pct - b.velocity_change_pct : declineSort === 'velocity' ? b.velocity - a.velocity : a.sku.localeCompare(b.sku))
+                                                        return (
+                                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+                                                                <h3 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-2">
+                                                                    <ArrowDownRight className="w-4 h-4" /> 📉 Cele mai în scădere ({allDeclining.length})
+                                                                </h3>
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <input type="text" value={declineSearch} onChange={e => setDeclineSearch(e.target.value)} placeholder="Caută SKU..."
+                                                                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                                                                    <select value={declineSort} onChange={e => setDeclineSort(e.target.value)}
+                                                                        className="px-2 py-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                                                                        <option value="velocity_change_pct">% Schimbare</option>
+                                                                        <option value="velocity">Viteză</option>
+                                                                        <option value="sku">SKU</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                                                                    {allDeclining.map(p => (
+                                                                        <div key={p.sku} className="flex items-center justify-between text-xs border-b border-zinc-100 dark:border-zinc-700/50 pb-1">
+                                                                            <span className="text-zinc-700 dark:text-zinc-300 truncate mr-2" title={p.product_name}>{p.sku}</span>
+                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                <span className="text-zinc-400">{p.prev_velocity} → {p.velocity}</span>
+                                                                                <span className="font-bold text-red-600">{p.velocity_change_pct}%</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                    {allDeclining.length === 0 && <div className="text-xs text-zinc-400 text-center py-2">Niciun produs</div>}
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })()}
+                                                </div>
+
+                                                {/* Store Comparison — Expandable */}
+                                                {velocityData.store_comparison?.length > 0 && (
+                                                    <div>
+                                                        <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-3 flex items-center gap-2">
+                                                            <Store className="w-4 h-4" />
+                                                            Comparație per Magazin
+                                                        </h3>
+                                                        <div className="space-y-3">
+                                                            {velocityData.store_comparison.map(sc => {
+                                                                const isExpanded = expandedStoreUid === sc.store_uid
+                                                                const storeProducts = isExpanded ? filteredProducts
+                                                                    .filter(p => p.by_store.some(bs => bs.store_uid === sc.store_uid))
+                                                                    .map(p => {
+                                                                        const bs = p.by_store.find(b => b.store_uid === sc.store_uid)
+                                                                        return { ...p, store_units: bs?.units || 0, store_revenue: bs?.revenue || 0, store_orders: bs?.orders || 0 }
+                                                                    })
+                                                                    .sort((a, b) => b.store_units - a.store_units)
+                                                                    : []
+                                                                return (
+                                                                    <div key={sc.store_uid} className={`bg-white dark:bg-zinc-800 rounded-xl border ${isExpanded ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-700'} overflow-hidden transition-all`}>
+                                                                        <div className="p-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/30" onClick={() => setExpandedStoreUid(isExpanded ? null : sc.store_uid)}>
+                                                                            <div className="flex items-center justify-between mb-3">
+                                                                                <h4 className="text-sm font-semibold text-zinc-800 dark:text-white flex items-center gap-2">
+                                                                                    {sc.store_name}
+                                                                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+                                                                                </h4>
+                                                                                <span className="text-xs text-zinc-400">{sc.active_skus} SKU-uri</span>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-4 gap-2 text-xs">
+                                                                                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2">
+                                                                                    <div className="text-zinc-500 dark:text-zinc-400">Unități</div>
+                                                                                    <div className="text-lg font-bold text-emerald-600">{sc.units.toLocaleString()}</div>
+                                                                                </div>
+                                                                                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2">
+                                                                                    <div className="text-zinc-500 dark:text-zinc-400">Revenue</div>
+                                                                                    <div className="text-lg font-bold text-blue-600">{sc.revenue.toLocaleString()}</div>
+                                                                                </div>
+                                                                                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">
+                                                                                    <div className="text-zinc-500 dark:text-zinc-400">Viteză</div>
+                                                                                    <div className="text-lg font-bold text-amber-600">{sc.velocity} u/zi</div>
+                                                                                </div>
+                                                                                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-2">
+                                                                                    <div className="text-zinc-500 dark:text-zinc-400">Comenzi</div>
+                                                                                    <div className="text-lg font-bold text-indigo-600">{sc.orders.toLocaleString()}</div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        {isExpanded && storeProducts.length > 0 && (
+                                                                            <div className="border-t border-zinc-200 dark:border-zinc-700 px-4 py-3">
+                                                                                <div className="text-xs font-semibold text-zinc-400 uppercase mb-2">Toate produsele din {sc.store_name} ({storeProducts.length})</div>
+                                                                                <div className="max-h-[350px] overflow-y-auto">
+                                                                                    <table className="w-full text-xs">
+                                                                                        <thead>
+                                                                                            <tr className="text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
+                                                                                                <th className="py-1 text-left">SKU</th>
+                                                                                                <th className="py-1 text-right">Unități</th>
+                                                                                                <th className="py-1 text-right">Revenue</th>
+                                                                                                <th className="py-1 text-right">Comenzi</th>
+                                                                                                <th className="py-1 text-right">Viteză</th>
+                                                                                                <th className="py-1 text-right">Trend</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody>
+                                                                                            {storeProducts.map(p => (
+                                                                                                <tr key={p.sku} className="border-b border-zinc-100 dark:border-zinc-700/50 hover:bg-zinc-50 dark:hover:bg-zinc-700/20">
+                                                                                                    <td className="py-1.5 text-zinc-700 dark:text-zinc-300 font-medium">{p.sku}</td>
+                                                                                                    <td className="py-1.5 text-right text-zinc-600 dark:text-zinc-400">{p.store_units.toLocaleString()}</td>
+                                                                                                    <td className="py-1.5 text-right text-zinc-600 dark:text-zinc-400">{p.store_revenue.toLocaleString()} RON</td>
+                                                                                                    <td className="py-1.5 text-right text-zinc-600 dark:text-zinc-400">{p.store_orders}</td>
+                                                                                                    <td className="py-1.5 text-right font-bold text-emerald-600">{p.velocity}</td>
+                                                                                                    <td className={`py-1.5 text-right font-medium ${p.velocity_change_pct > 0 ? 'text-emerald-600' : p.velocity_change_pct < 0 ? 'text-red-600' : 'text-zinc-400'}`}>
+                                                                                                        {p.velocity_change_pct > 0 ? '+' : ''}{p.velocity_change_pct}%
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            ))}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Sub-view: ALERTS */}
+                                        {velocityView === 'alerts' && (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Search className="w-4 h-4 text-zinc-400" />
+                                                    <input type="text" value={alertSearch} onChange={e => setAlertSearch(e.target.value)}
+                                                        placeholder="Caută în alerte (SKU)..."
+                                                        className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                                                </div>
+                                                {(!velocityData.alerts || velocityData.alerts.length === 0) && (
+                                                    <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-8 text-center text-zinc-400">
+                                                        Nu sunt alerte pentru perioada selectată.
+                                                    </div>
+                                                )}
+                                                {['hot', 'new_star', 'declining', 'cold', 'dead_stock'].map(type => {
+                                                    const typeAlerts = (velocityData.alerts || []).filter(a => a.type === type)
+                                                        .filter(a => !alertSearch || a.sku.toLowerCase().includes(alertSearch.toLowerCase()))
+                                                    if (typeAlerts.length === 0) return null
+                                                    const config = {
+                                                        hot: { emoji: '🔥', title: 'Produse Fierbinți', desc: 'Viteză crescută >50% vs. perioada anterioară', bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-200 dark:border-orange-800' },
+                                                        new_star: { emoji: '🌟', title: 'Stele Noi', desc: 'Produse noi cu volum semnificativ de vânzări', bg: 'bg-yellow-50 dark:bg-yellow-900/10', border: 'border-yellow-200 dark:border-yellow-800' },
+                                                        declining: { emoji: '⚠️', title: 'În Declin Rapid', desc: 'Viteză scăzută >40% vs. perioada anterioară', bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-200 dark:border-red-800' },
+                                                        cold: { emoji: '❄️', title: 'Produse Reci', desc: 'Fără vânzări în ultimele 14+ zile', bg: 'bg-blue-50 dark:bg-blue-900/10', border: 'border-blue-200 dark:border-blue-800' },
+                                                        dead_stock: { emoji: '💀', title: 'Stoc Mort', desc: 'Au cost dar zero vânzări în perioadă', bg: 'bg-zinc-50 dark:bg-zinc-900/30', border: 'border-zinc-300 dark:border-zinc-600' },
+                                                    }[type]
+                                                    return (
+                                                        <div key={type} className={`${config.bg} rounded-xl border ${config.border} p-4`}>
+                                                            <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2">
+                                                                {config.emoji} {config.title} ({typeAlerts.length})
+                                                            </h3>
+                                                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">{config.desc}</p>
+                                                            <div className="space-y-1 max-h-[500px] overflow-y-auto">
+                                                                {typeAlerts.map((a, i) => (
+                                                                    <div key={`${a.sku}-${i}`} className="flex items-center justify-between text-xs bg-white/50 dark:bg-zinc-800/50 rounded-lg px-3 py-1.5">
+                                                                        <span className="font-medium text-zinc-700 dark:text-zinc-300">{a.sku}</span>
+                                                                        <span className="text-zinc-500 dark:text-zinc-400">{a.message}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
                                             </div>
                                         )}
                                     </>

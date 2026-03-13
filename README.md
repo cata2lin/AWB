@@ -623,6 +623,14 @@ APScheduler `AsyncIOScheduler` that triggers `sync_orders()` every 30 minutes (c
 
 Computes risk scores from problem orders (returned/refused/cancelled) with proportional allocation for multi-item orders. Detects shipping cost anomalies using z-score analysis.
 
+### `/api/analytics/sales-velocity` — Sales Velocity Analytics
+
+| Method | Endpoint                    | Description                                           |
+| ------ | --------------------------- | ----------------------------------------------------- |
+| GET    | `/analytics/sales-velocity` | Product velocity metrics, trends, store comparison, alerts |
+
+Parameters: `days` (default 30), `date_from`/`date_to` (custom range), `store_uids`, `min_units` (default 1). Returns daily trend data with units/revenue/orders, per-product velocity with change percentages, per-store breakdowns, and categorized alerts (hot/declining/cold/dead_stock/new_star).
+
 ### `/api/courier-csv` — Courier CSV Import
 
 | Method | Endpoint          | Description                              |
@@ -697,15 +705,17 @@ Auto-syncs on application startup. Provides batch `preload_rates()` and `convert
 - **Add Rule Modal**: `AddRuleModal.jsx` component with grouped condition inputs (Order Size, SKU Filters, Logistics, Location, Price Range)
 
 #### 4. Analytics (`Analytics.jsx`)
-- **2,360-line mega-component** — the most complex frontend page
-- **Tabs**: Print Analytics, Geographic, Deliverability, Profitability, P&L Tables, SKU Costs, SKU Risk
+- **2,800+ line mega-component** — the most complex frontend page
+- **Tabs**: Deliverability, Profitabilitate, P&L Comparativ, Costuri SKU, Print Analytics, SKU Risk, Viteză Vânzări
+- **Per-tab filtering**: Each tab has its own independent date, store, and metric filters (no global filter bar)
 - **Print Analytics**: Charts showing order volume, print batch statistics over time
 - **Geographic Distribution**: Interactive Leaflet map with SVG markers showing order density by country and Romanian county
 - **Deliverability Report**: Per-store tables with delivered/returned/cancelled rates, color-coded by performance
 - **Profitability Dashboard**: Revenue, costs, margins with store-level breakdown
 - **P&L Tables**: Full financial statements with cu TVA (with VAT) and fără TVA (without VAT) columns, percentage breakdowns
 - **SKU Cost Manager**: Inline editing, bulk discovery from orders, cost assignment
-- **SKU Risk Analysis**: Risk scoring, shipping anomaly detection with z-score thresholds
+- **SKU Risk Analysis**: Risk scoring, shipping anomaly detection with z-score thresholds, per-store KPIs
+- **Sales Velocity** (Viteză Vânzări): Product-level velocity metrics (units/day), interactive trend charts with hover tooltips, searchable & sortable growth/decline tables, expandable per-store comparison with full product breakdowns, categorized alerts (hot/new_star/declining/cold/dead_stock) with search
 
 #### 5. Settings (`Settings.jsx`)
 - **Profitability Config**: Editable fields for all ProfitabilityConfig parameters (packaging costs, commissions, VAT, etc.)
@@ -1006,4 +1016,19 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 | **colSpan fix** | Expanded order row width | Updated colSpan from 8 to 9 for new column |
 | **RON conversion indicator** | P&L showed no indication of conversion | Added "💱 Toate valorile convertite în RON (curs BNR istoric)" badge to P&L Comparativ |
 | **Unconvertible warning** | No warning when BNR rate is missing | Shows amber warning listing currencies that couldn't be converted |
+
+### 2026-03-13 — Sales Velocity Tab & Analytics UX Improvements
+
+**Files changed:** `frontend/src/pages/Analytics.jsx`, `backend/app/api/sales_velocity/endpoint.py`
+
+| Change | Description | Details |
+| ------ | ----------- | ------- |
+| **Sales Velocity tab** | New "Viteză Vânzări" tab on Analytics page | Full product velocity analysis: KPI cards, sortable product table with sparklines, daily trend chart, growth/decline sections, store comparison, categorized alerts |
+| **Custom date picker** | Users could only select predefined periods (7d/30d/90d) | Added "De la" / "Până la" date inputs; custom range overrides presets and sends `date_from`/`date_to` to API |
+| **Interactive trend chart** | Trend bars had no interactivity | SVG bars now highlight on hover, tooltip shows exact date, units, revenue (RON), and orders count |
+| **Full growth/decline tables** | Growth/decline lists capped at 10 items | Removed `.slice(0,10)`, shows all products with search input, sort dropdown (% change / velocity / SKU), scrollable container |
+| **Expandable store comparison** | Store cards were static with only Top 5 | Click to expand shows full product table per store (SKU, Units, Revenue, Orders, Velocity, Trend %). Only one store expanded at a time |
+| **Uncapped alerts** | Backend capped at 50, frontend at 20 per type | Removed `alerts[:50]` in backend; removed `.slice(0,20)` in frontend; added search bar for filtering alerts by SKU |
+| **Dark mode text fix** | Expanded row "Per Magazine" section had black text on black background | Added `text-zinc-600 dark:text-zinc-300` to store data spans |
+| **Global filter removed** | Redundant "All Stores" + "Last 30 days" dropdowns in page header | Removed global filter panel — each tab now has independent filtering controls |
 

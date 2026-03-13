@@ -26,4 +26,8 @@ export const analyticsApi = {
         const { data } = await api.get('/analytics/sku-risk', { params })
         return data
     },
+    getSalesVelocity: async (params = {}) => {
+        const { data } = await api.get('/analytics/sales-velocity', { params })
+        return data
+    },
 }

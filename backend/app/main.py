@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk
+from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.services.scheduler import scheduler
@@ -74,6 +74,7 @@ app.include_router(exchange_rates.router, prefix="/api", tags=["exchange-rates"]
 app.include_router(courier_csv.router, prefix="/api/courier-csv", tags=["courier-csv"])
 app.include_router(business_costs.router, prefix="/api/business-costs", tags=["business-costs"])
 app.include_router(sku_risk.router, prefix="/api", tags=["sku-risk"])
+app.include_router(sales_velocity.router, prefix="/api", tags=["sales-velocity"])
 
 
 @app.get("/api/health")
