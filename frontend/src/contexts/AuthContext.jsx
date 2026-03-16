@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -8,10 +8,17 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
     const [token, setToken] = useState(() => localStorage.getItem('awb_token'))
     const [loading, setLoading] = useState(true)
+    const skipVerifyRef = useRef(false)
 
-    // Verify token on mount
+    // Verify token ONLY on initial mount (page load/refresh)
     useEffect(() => {
         const verify = async () => {
+            // Skip if login() already set the user
+            if (skipVerifyRef.current) {
+                skipVerifyRef.current = false
+                setLoading(false)
+                return
+            }
             if (!token) {
                 setLoading(false)
                 return
@@ -24,13 +31,12 @@ export function AuthProvider({ children }) {
                     const data = await res.json()
                     setUser(data)
                 } else {
-                    // Token expired or invalid
                     localStorage.removeItem('awb_token')
                     setToken(null)
                     setUser(null)
                 }
             } catch {
-                // Server unreachable — keep token, user will see errors elsewhere
+                // Server unreachable — keep token
             }
             setLoading(false)
         }
@@ -49,8 +55,11 @@ export function AuthProvider({ children }) {
         }
         const data = await res.json()
         localStorage.setItem('awb_token', data.token)
-        setToken(data.token)
+        // Tell the verify effect to skip — we already have user data
+        skipVerifyRef.current = true
         setUser(data.user)
+        setToken(data.token)
+        setLoading(false)
         return data
     }, [])
 
@@ -60,7 +69,6 @@ export function AuthProvider({ children }) {
         setUser(null)
     }, [])
 
-    // Helper: get auth headers for fetch calls
     const getAuthHeaders = useCallback(() => {
         if (!token) return {}
         return { Authorization: `Bearer ${token}` }
@@ -88,3 +96,4 @@ export function useAuth() {
 }
 
 export default AuthContext
+
