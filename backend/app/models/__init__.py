@@ -11,6 +11,8 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.business_cost import BusinessCost
 from app.models.marketing_daily_cost import MarketingDailyCost
 from app.models.sku_marketing_cost import SkuMarketingCost
+from app.models.user import User
+from app.models.user_activity import UserActivity
 
 __all__ = [
     "Store", "Order", "OrderAwb", "Rule", "RulePreset",
@@ -18,5 +20,6 @@ __all__ = [
     "SkuCost", "SyncLog", "CourierCsvImport",
     "ProfitabilityConfig", "ExchangeRate", "BusinessCost",
     "MarketingDailyCost", "SkuMarketingCost",
+    "User", "UserActivity",
 ]
 

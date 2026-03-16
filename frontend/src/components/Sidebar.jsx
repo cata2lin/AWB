@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
 const navItems = [
@@ -9,9 +9,10 @@ const navItems = [
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
     { path: '/history', icon: History, label: 'History' },
     { path: '/settings', icon: Settings, label: 'Settings' },
+    { path: '/logs', icon: Activity, label: 'System Monitor' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ user, onLogout }) {
     const location = useLocation()
     const { darkMode, toggleDarkMode, isSyncing, syncOrders, fullSyncOrders, lastSyncAt } = useAppStore()
 
@@ -76,6 +77,26 @@ export default function Sidebar() {
                     {darkMode ? 'Light Mode' : 'Dark Mode'}
                 </button>
             </div>
+
+            {/* User & Logout */}
+            {user && (
+                <div className="p-3 border-t border-zinc-200/80 dark:border-zinc-800/60 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold">
+                        {(user.display_name || user.username || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{user.display_name || user.username}</p>
+                        <p className="text-xs text-zinc-400 truncate">{user.role}</p>
+                    </div>
+                    <button
+                        onClick={onLogout}
+                        className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors"
+                        title="Logout"
+                    >
+                        <LogOut className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
         </aside>
     )
 }

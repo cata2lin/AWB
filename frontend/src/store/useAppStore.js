@@ -131,15 +131,17 @@ export const useAppStore = create(
             isSyncing: false,
             syncOrders: async () => {
                 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+                const token = localStorage.getItem('awb_token')
+                const headers = token ? { Authorization: `Bearer ${token}` } : {}
                 set({ isSyncing: true })
                 try {
-                    const res = await fetch(`${API}/api/sync/trigger`, { method: 'POST' })
+                    const res = await fetch(`${API}/api/sync/trigger`, { method: 'POST', headers })
                     if (!res.ok) throw new Error('Sync trigger failed')
                     // Poll sync status until completed
                     let status = 'running'
                     while (status === 'running') {
                         await new Promise(r => setTimeout(r, 2000))
-                        const statusRes = await fetch(`${API}/api/sync/status`)
+                        const statusRes = await fetch(`${API}/api/sync/status`, { headers })
                         const data = await statusRes.json()
                         status = data.status
                     }
@@ -151,15 +153,17 @@ export const useAppStore = create(
             },
             fullSyncOrders: async () => {
                 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+                const token = localStorage.getItem('awb_token')
+                const headers = token ? { Authorization: `Bearer ${token}` } : {}
                 set({ isSyncing: true })
                 try {
-                    const res = await fetch(`${API}/api/sync/trigger?full_sync=true`, { method: 'POST' })
+                    const res = await fetch(`${API}/api/sync/trigger?full_sync=true`, { method: 'POST', headers })
                     if (!res.ok) throw new Error('Full sync trigger failed')
                     // Poll sync status until completed
                     let status = 'running'
                     while (status === 'running') {
                         await new Promise(r => setTimeout(r, 3000))
-                        const statusRes = await fetch(`${API}/api/sync/status`)
+                        const statusRes = await fetch(`${API}/api/sync/status`, { headers })
                         const data = await statusRes.json()
                         status = data.status
                     }

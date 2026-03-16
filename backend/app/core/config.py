@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Sync interval (minutes)
     sync_interval_minutes: int = 30
     
+    # JWT Auth
+    jwt_secret_key: str = "changeme"
+    jwt_expiry_hours: int = 24
+    
     # PDF Storage (relative path works for local dev)
     pdf_storage_path: str = "./storage"
     

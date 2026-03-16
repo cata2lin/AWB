@@ -31,4 +31,29 @@ const api = axios.create({
     }
 })
 
+// ═══ Auth interceptor: attach JWT token to every request ═══
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('awb_token')
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+})
+
+// ═══ Response interceptor: auto-logout on 401 ═══
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401) {
+            localStorage.removeItem('awb_token')
+            // Only reload if we're not already on a login-related path
+            if (!window.location.pathname.includes('/login')) {
+                window.location.reload()
+            }
+        }
+        return Promise.reject(error)
+    }
+)
+
 export default api
+
