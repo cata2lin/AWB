@@ -130,7 +130,7 @@ export const useAppStore = create(
             lastSyncAt: null,
             isSyncing: false,
             syncOrders: async () => {
-                const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+                const API = import.meta.env.VITE_API_URL || ''
                 const token = localStorage.getItem('awb_token')
                 const headers = token ? { Authorization: `Bearer ${token}` } : {}
                 set({ isSyncing: true })
@@ -152,7 +152,7 @@ export const useAppStore = create(
                 }
             },
             fullSyncOrders: async () => {
-                const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+                const API = import.meta.env.VITE_API_URL || ''
                 const token = localStorage.getItem('awb_token')
                 const headers = token ? { Authorization: `Bearer ${token}` } : {}
                 set({ isSyncing: true })

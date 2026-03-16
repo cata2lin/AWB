@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { RefreshCw, Terminal, Server, Database, Clock, Search, Filter, AlertTriangle, CheckCircle, XCircle, Loader, Activity, Wifi, WifiOff, Users, UserCheck, UserX, Trash2, Plus } from 'lucide-react'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || ''
 
 const getAuthHeaders = () => {
     const token = localStorage.getItem('awb_token')
