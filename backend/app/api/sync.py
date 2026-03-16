@@ -26,9 +26,12 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
     )
     last_sync = result.scalar_one_or_none()
     
-    # Check for running sync
+    # Check for running sync (use .first() in case of multiple stale entries)
     running_result = await db.execute(
-        select(SyncLog).where(SyncLog.status == "running")
+        select(SyncLog)
+        .where(SyncLog.status == "running")
+        .order_by(SyncLog.started_at.desc())
+        .limit(1)
     )
     running_sync = running_result.scalar_one_or_none()
     
@@ -71,7 +74,10 @@ async def trigger_sync(
     
     # Check if sync is already running
     result = await db.execute(
-        select(SyncLog).where(SyncLog.status == "running")
+        select(SyncLog)
+        .where(SyncLog.status == "running")
+        .order_by(SyncLog.started_at.desc())
+        .limit(1)
     )
     running_sync = result.scalar_one_or_none()
     
