@@ -796,6 +796,8 @@ async def get_overall_profitability(
                 for k, v in s.get('status_breakdown', {}).items()
                 if v['count'] > 0
             },
+            'shipped_count': s['count'] + s.get('status_breakdown', {}).get('in_transit', {}).get('count', 0),
+            'total_orders': s.get('gross_sales_count', s['count'] + s.get('returns_cancelled_count', 0) + s.get('status_breakdown', {}).get('in_transit', {}).get('count', 0) + s.get('status_breakdown', {}).get('other', {}).get('count', 0)),
         })
     
     return {

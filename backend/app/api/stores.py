@@ -54,6 +54,7 @@ async def get_stores(db: AsyncSession = Depends(get_db)):
             uid=store.uid,
             name=store.name,
             color_code=store.color_code,
+            shopify_domain=store.shopify_domain,
             is_active=store.is_active,
             created_at=store.created_at,
             order_count=c["total"],

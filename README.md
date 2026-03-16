@@ -51,7 +51,7 @@ awb-print-manager/
 │   │   ├── core/
 │   │   │   ├── config.py              # Pydantic Settings (env vars)
 │   │   │   └── database.py            # Async SQLAlchemy engine & session
-│   │   ├── models/                    # 13 ORM models — each in its own file
+│   │   ├── models/                    # 14 ORM models — each in its own file
 │   │   │   ├── __init__.py            # Re-exports all models for backward compat
 │   │   │   ├── store.py               # Store model
 │   │   │   ├── order.py               # Order model (the main entity)
@@ -63,7 +63,9 @@ awb-print-manager/
 │   │   │   ├── courier_csv_import.py  # CourierCsvImport model
 │   │   │   ├── business_cost.py       # BusinessCost model
 │   │   │   ├── exchange_rate.py       # ExchangeRate model (BNR rates)
-│   │   │   └── profitability_config.py # ProfitabilityConfig model
+│   │   │   ├── profitability_config.py # ProfitabilityConfig model
+│   │   │   ├── marketing_daily_cost.py # MarketingDailyCost model (daily ad spend per store)
+│   │   │   └── sku_marketing_cost.py   # SkuMarketingCost model (per-product marketing spend)
 │   │   ├── schemas/
 │   │   │   └── schemas.py             # Pydantic request/response schemas
 │   │   ├── services/
@@ -102,6 +104,12 @@ awb-print-manager/
 │   │       │   ├── __init__.py        # Exports router
 │   │       │   ├── computations.py    # Constants, outcome mapping, helpers
 │   │       │   └── endpoint.py        # Main analytics endpoint
+│   │       ├── sku_profitability/      # ← SKU Profitability package
+│   │       │   ├── __init__.py        # Exports router
+│   │       │   └── endpoint.py        # Line-item cost allocation + per-SKU aggregation
+│   │       ├── sales_velocity/        # ← Sales Velocity package
+│   │       │   ├── __init__.py        # Exports router
+│   │       │   └── endpoint.py        # Product velocity analysis
 │   │       ├── orders.py              # Order CRUD, filtering, search
 │   │       ├── rules.py               # Rule CRUD + reorder + toggle
 │   │       ├── presets.py             # Rule preset save/load/delete (snapshot)
@@ -109,6 +117,7 @@ awb-print-manager/
 │   │       ├── sync.py                # Manual/auto sync triggers + history
 │   │       ├── stores.py              # Store CRUD + order counts
 │   │       ├── sku_costs.py           # SKU cost CRUD + discovery + bulk upsert
+│   │       ├── sku_marketing_costs.py # Per-SKU marketing cost CRUD
 │   │       ├── exchange_rates.py      # BNR rate sync + conversion utilities
 │   │       ├── business_costs.py      # Business cost CRUD + month clone
 │   │       └── profitability_config.py # Single-row config GET/PUT
@@ -1032,3 +1041,64 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 | **Dark mode text fix** | Expanded row "Per Magazine" section had black text on black background | Added `text-zinc-600 dark:text-zinc-300` to store data spans |
 | **Global filter removed** | Redundant "All Stores" + "Last 30 days" dropdowns in page header | Removed global filter panel — each tab now has independent filtering controls |
 
+### 2026-03-16 — SKU Profitability Tab (Profitabilitate SKU)
+
+**Files added:** `backend/app/models/sku_marketing_cost.py`, `backend/app/api/sku_profitability/__init__.py`, `backend/app/api/sku_profitability/endpoint.py`, `backend/app/api/sku_marketing_costs.py`  
+**Files modified:** `backend/app/models/__init__.py`, `backend/app/main.py`, `frontend/src/pages/Analytics.jsx`, `frontend/src/services/api/analytics.js`, `frontend/src/services/api/index.js`
+
+| Change | Description | Details |
+| ------ | ----------- | ------- |
+| **SKU Profitability tab** | New "Profitabilitate SKU" tab on Analytics page | Per-product profitability analysis: allocates order-level costs (transport, packaging, payment fees, GT commission, Frisbo) to individual line items by revenue share, then aggregates by SKU across all orders |
+| **SkuMarketingCost model** | New `sku_marketing_costs` table | Per-SKU, per-month marketing cost entries (sku, label, amount, month) with full CRUD |
+| **Line-item cost allocation** | Order costs split to individual products | `revenue_share = line_revenue / order_total_revenue` → each cost component allocated proportionally |
+| **Per-store breakdown** | Expandable rows show per-store performance | Click any product → detail cards (avg price, cost/unit, orders, returns) + per-store table (units, revenue, COGS, transport, fees, contribution, margin %) |
+| **Inline marketing costs** | Add/delete marketing costs directly in the expanded row | Per-SKU entries with label, amount (RON), and month — totals reflected in the product's contribution margin |
+| **KPI summary cards** | Top row showing aggregate metrics | Products Analyzed, Total Revenue, Total Costs, Total Contribution, Average Margin % |
+| **Sortable product table** | 12 columns with click-to-sort | SKU, Name, Units, Revenue, COGS, Transport, Fees, Marketing, Contribution, Margin %, Return % — all sortable asc/desc |
+| **Color-coded margins** | Visual margin health indicators | Red (<10%), Amber (10-25%), Green (>25%) — applied to margin % badges |
+| **Problems section** | Automated issue detection | Flags products with: missing cost entries, negative contribution margin, return rate >20% |
+| **Search & filter** | Independent filtering within the tab | Period presets (7z-365z), custom date range, store dropdown, SKU/name text search |
+| **Multi-currency support** | BNR exchange rate conversion | Revenue from foreign-currency stores (PLN, CZK, BGN, EUR) automatically converted to RON |
+
+### 2026-03-16 — P&L Tooltips & Analytics Dark Mode Audit
+
+**Files changed:** `frontend/src/pages/Analytics.jsx`
+
+| Change | Description | Details |
+| ------ | ----------- | ------- |
+| **P&L row tooltips** | Each row in P&L Comparativ now has a hover tooltip | Explains what the row measures, which order statuses compose the sum, and per-store order counts matching that section |
+| **P&L Comparativ formatting** | Sums displayed as total instead of per-store separated by `/` | Significantly reduces horizontal space used; per-store counts visible in tooltip |
+| **Tooltip overflow fix** | Tooltips cut off at container edge | Added `max-w-lg whitespace-normal break-words` and `z-50` positioning |
+| **Dark mode input audit** | 8 search/select/input elements had low-contrast text in dark mode | Updated `dark:text-zinc-200`/`dark:text-zinc-300` → `dark:text-white` across Profitabilitate, P&L Comparativ, SKU Profitability, and marketing cost forms |
+
+### 2026-03-16 — Orders Tab Enhancements & UX Improvements
+
+**Backend files changed:** `backend/app/api/orders.py`, `backend/app/api/analytics/deliverability.py`  
+**Frontend files changed:** `frontend/src/pages/Orders.jsx`, `frontend/src/pages/Analytics.jsx`, `frontend/src/services/api/orders.js`
+
+| Change | Description | Details |
+| ------ | ----------- | ------- |
+| **Store name sorting** | Sort by store name was silently falling back to date sort | `store_name` was missing from `sort_column_map` — added `Store.name` as join-based sort column with `isouter=True` JOIN |
+| **Fulfillment status colors** | Only 3 states had colors (fulfilled/on_hold/default) | Added `getFulfillmentStatusBadge()` with 9 distinct statuses: Fulfilled (green), Unfulfilled (amber), On Hold (orange), Partial (blue), Cancelled (red), Restocked (purple), Scheduled (cyan), Pending (indigo), Unknown (zinc) |
+| **Aggregated status badges** | Workflow/aggregated status had no visual badge | Added `getAggregatedStatusBadge()` with 12 statuses (New, Processing, Shipped, Delivered, Returned, etc.) — displayed as third badge row with FileText icon |
+| **SKU search** | Search only covered order number, customer, tracking | Added `cast(Order.line_items, String).ilike()` to both `/orders` and `/orders/count` queries — now searches within order line items JSON for SKU/product matches |
+| **Order totals in RON** | No way to see total value of filtered orders | New `/orders/totals` endpoint aggregates `total_price` grouped by currency, converts to RON via latest BNR exchange rate, returns total RON + per-currency breakdown. Frontend displays inline badge with total RON and currency split |
+| **Sticky table headers** | Headers scrolled off-screen on long tables | Added `sticky top-0 z-10` to `<thead>` + `overflow-auto max-h-[75vh]` wrapper on: Orders table, Livrabilitate table, Profitabilitate orders table, P&L Comparativ table |
+| **Column visibility toggle** | All Livrabilitate columns always visible | Added "⚙ Coloane" button with checkbox dropdown — users can hide/show any of the 10 data columns (Total, Livrate, Anulate, Ret./Ref., În Tranzit, Expediate, Rată Livrare, Rată Expediție, Rată Anulare, Livrabilitate) |
+| **Deliverability rate fix** | Rate calculated from `delivered / (total - cancelled)` | Changed to `delivered / shipped` per user request — both per-store and totals calculations updated in `deliverability.py` |
+
+### 2026-03-16 (v2) — Multi-Tab UX Overhaul, Status Colors & Shopify Integration
+
+**Backend files changed:** `backend/app/models/store.py`, `backend/app/schemas/schemas.py`, `backend/app/api/stores.py`  
+**Frontend files changed:** `frontend/src/pages/Orders.jsx`, `frontend/src/pages/Analytics.jsx`
+
+| Change | Description | Details |
+| ------ | ----------- | ------- |
+| **Complete status colors** | Many order statuses (not_created, waiting_for_courier, not_fulfilled, etc.) had grey/zinc fallback | Queried DB for all 34 distinct statuses across `shipment_status`, `fulfillment_status`, `aggregated_status`. Added explicit color mappings for every status: `received_by_sender` (rose), `canceled` (red), `customer_pickup` (teal), `returning_to_sender` (orange), `unsuccessful_delivery` (rose), `refused` (fuchsia), `redirected` (sky), `incorrect_address` (amber), `deferred_delivery` (violet), `back_to_sender` (rose), `waiting_for_courier` (yellow), `lost` (red), and more |
+| **Button-based loading** | Profitabilitate, P&L Comparativ, and SKU Profitability auto-fetched on filter change | Removed `useEffect` auto-fetch. All three tabs now require clicking "Analizează" button to load data — matching SKU Risk pattern. Prevents excessive API calls while adjusting filters |
+| **Store filter (Profitabilitate)** | No way to filter profitability by store | Added `profitStores` state with multi-select dropdown to both Profitabilitate and P&L filter bars. Supports selecting multiple stores with ✓ checkmarks, clear-all × button |
+| **P&L column visibility** | All store columns always visible in P&L Comparativ | Added `pnlHiddenStores` state with ⚙ Coloane checkbox row — users can hide/show individual store columns. TOTAL column always visible |
+| **Solid INDICATOR background** | Sticky INDICATOR column had semi-transparent backgrounds (`/50`, `/60`) causing data bleed-through on horizontal scroll | Changed all sticky `left-0` cells to fully opaque backgrounds: `bg-zinc-900/60` → `bg-zinc-900`, `bg-zinc-800/60` → `bg-zinc-800`, `bg-zinc-800/50` → `bg-zinc-800` |
+| **Shopify order link** | No way to view orders in Shopify admin | Added `shopify_domain` field to Store model (nullable). ExternalLink (🔗) button next to order number opens `https://{domain}/admin/orders?query={order_number}` in new tab. Falls back to deriving domain from store name. `e.stopPropagation()` prevents row expand |
+| **Empty state prompts** | Tabs showed blank content when no data loaded | Added loading spinners and "Selectează filtrele și apasă Analizează" prompts with icons for Profitabilitate, P&L Comparativ, and SKU Profitability empty states |
+| **SKU Risk search** | No search in SKU Risk tab | Added `skuRiskSearch` state with search input in filter bar — filters worst SKUs client-side by SKU code or product name |

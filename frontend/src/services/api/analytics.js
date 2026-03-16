@@ -30,4 +30,27 @@ export const analyticsApi = {
         const { data } = await api.get('/analytics/sales-velocity', { params })
         return data
     },
+    getSkuProfitability: async (params = {}) => {
+        const { data } = await api.get('/analytics/sku-profitability', { params })
+        return data
+    },
+}
+
+export const skuMarketingCostsApi = {
+    list: async (params = {}) => {
+        const { data } = await api.get('/sku-marketing-costs', { params })
+        return data
+    },
+    create: async (entry) => {
+        const { data } = await api.post('/sku-marketing-costs', entry)
+        return data
+    },
+    update: async (id, entry) => {
+        const { data } = await api.put(`/sku-marketing-costs/${id}`, entry)
+        return data
+    },
+    delete: async (id) => {
+        const { data } = await api.delete(`/sku-marketing-costs/${id}`)
+        return data
+    },
 }

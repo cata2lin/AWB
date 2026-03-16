@@ -13,7 +13,7 @@ const navItems = [
 
 export default function Sidebar() {
     const location = useLocation()
-    const { darkMode, toggleDarkMode, isSyncing, syncOrders, lastSyncAt } = useAppStore()
+    const { darkMode, toggleDarkMode, isSyncing, syncOrders, fullSyncOrders, lastSyncAt } = useAppStore()
 
     return (
         <aside className="w-64 h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
@@ -53,7 +53,15 @@ export default function Sidebar() {
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 glow-btn"
                 >
                     <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                    {isSyncing ? 'Syncing...' : 'Sync Orders'}
+                    {isSyncing ? 'Syncing...' : 'Sync Orders (45 zile)'}
+                </button>
+                <button
+                    onClick={fullSyncOrders}
+                    disabled={isSyncing}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-all shadow-lg shadow-amber-500/20"
+                >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {isSyncing ? 'Syncing...' : 'Full Re-Sync (toate)'}
                 </button>
                 {lastSyncAt && (
                     <p className="text-xs text-zinc-400 text-center">

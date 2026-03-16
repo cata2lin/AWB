@@ -88,9 +88,8 @@ async def get_deliverability_stats(
         # Shipped = delivered + in_transit + out_for_delivery (all that left the warehouse)
         shipped = delivered + in_transit + out_for_delivery + returned + refused
         
-        # Deliverability rate: delivered / (total - cancelled) * 100
-        eligible = total - cancelled
-        rate = (delivered / eligible * 100) if eligible > 0 else 0
+        # Deliverability rate: delivered / shipped * 100 (from shipped orders, not total)
+        rate = (delivered / shipped * 100) if shipped > 0 else 0
         
         # New rates
         delivery_rate = (delivered / shipped * 100) if shipped > 0 else 0
@@ -128,11 +127,10 @@ async def get_deliverability_stats(
             totals[key] += store_stat.get(key, 0)
     
     # Calculate total rates
-    eligible_total = totals['total'] - totals['cancelled']
-    totals['deliverability_rate'] = round(
-        (totals['delivered'] / eligible_total * 100) if eligible_total > 0 else 0, 2
-    )
     shipped_total = totals['shipped']
+    totals['deliverability_rate'] = round(
+        (totals['delivered'] / shipped_total * 100) if shipped_total > 0 else 0, 2
+    )
     totals['delivery_rate'] = round(
         (totals['delivered'] / shipped_total * 100) if shipped_total > 0 else 0, 2
     )

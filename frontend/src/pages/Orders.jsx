@@ -64,6 +64,7 @@ export default function Orders() {
     const [orders, setOrders] = useState([])
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [orderTotals, setOrderTotals] = useState(null)
 
     // Fetch filter options on mount
     useEffect(() => {
@@ -160,6 +161,12 @@ export default function Orders() {
                 delete countParams.sort_direction
                 const countData = await ordersApi.getOrderCount(countParams)
                 setTotalCount(countData.count || 0)
+
+                // Fetch totals (RON value) with same filters
+                try {
+                    const totalsData = await ordersApi.getOrderTotals(countParams)
+                    setOrderTotals(totalsData)
+                } catch { setOrderTotals(null) }
             } catch (err) {
                 setError(err)
                 setOrders([])
@@ -260,19 +267,29 @@ export default function Orders() {
     // Status badge helpers
     const getShipmentStatusBadge = (status) => {
         const statusConfig = {
-            'not_created': { label: 'Not Created', color: 'zinc' },
+            'not_created': { label: 'Not Created', color: 'slate' },
             'created_awb': { label: 'AWB Created', color: 'blue' },
             'ready_for_courier': { label: 'Ready', color: 'indigo' },
-            'waiting_for_courier': { label: 'Waiting', color: 'amber' },
+            'waiting_for_courier': { label: 'Waiting Courier', color: 'amber' },
             'picked_up': { label: 'Picked Up', color: 'purple' },
             'in_transit': { label: 'In Transit', color: 'cyan' },
             'out_for_delivery': { label: 'Out for Delivery', color: 'orange' },
             'delivered': { label: 'Delivered', color: 'green' },
             'returned': { label: 'Returned', color: 'red' },
+            'received_by_sender': { label: 'Back to Sender', color: 'rose' },
+            'canceled': { label: 'Canceled', color: 'red' },
+            'customer_pickup': { label: 'Customer Pickup', color: 'teal' },
+            'returning_to_sender': { label: 'Returning', color: 'orange' },
+            'unsuccessful_delivery': { label: 'Failed Delivery', color: 'rose' },
+            'refused': { label: 'Refused', color: 'fuchsia' },
+            'redirected': { label: 'Redirected', color: 'sky' },
+            'incorrect_address': { label: 'Bad Address', color: 'amber' },
+            'deferred_delivery': { label: 'Deferred', color: 'violet' },
         }
-        const config = statusConfig[status] || { label: status || 'Unknown', color: 'zinc' }
+        const config = statusConfig[status] || { label: (status || 'Unknown').replace(/_/g, ' '), color: 'zinc' }
         const colorClasses = {
             zinc: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300',
+            slate: 'bg-slate-200 dark:bg-slate-600/30 text-slate-600 dark:text-slate-300',
             blue: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300',
             indigo: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
             amber: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300',
@@ -281,8 +298,90 @@ export default function Orders() {
             orange: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300',
             green: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300',
             red: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300',
+            rose: 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300',
+            teal: 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300',
+            fuchsia: 'bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300',
+            sky: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300',
+            violet: 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300',
+        }
+        return { label: config.label, className: colorClasses[config.color] || colorClasses.zinc }
+    }
+
+    const getFulfillmentStatusBadge = (status) => {
+        const statusConfig = {
+            'fulfilled': { label: 'Fulfilled', color: 'green' },
+            'unfulfilled': { label: 'Unfulfilled', color: 'amber' },
+            'not_fulfilled': { label: 'Not Fulfilled', color: 'amber' },
+            'on_hold': { label: 'On Hold', color: 'orange' },
+            'partial': { label: 'Partial', color: 'blue' },
+            'cancelled': { label: 'Cancelled', color: 'red' },
+            'restocked': { label: 'Restocked', color: 'purple' },
+            'scheduled': { label: 'Scheduled', color: 'cyan' },
+            'pending': { label: 'Pending', color: 'indigo' },
+            'unknown': { label: 'Unknown', color: 'zinc' },
+        }
+        const config = statusConfig[status] || { label: (status || 'Unknown').replace(/_/g, ' '), color: 'zinc' }
+        const colorClasses = {
+            zinc: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300',
+            green: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300',
+            amber: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300',
+            orange: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300',
+            blue: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300',
+            red: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300',
+            purple: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300',
+            cyan: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
+            indigo: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
         }
         return { label: config.label, className: colorClasses[config.color] }
+    }
+
+    const getAggregatedStatusBadge = (status) => {
+        const statusConfig = {
+            'new': { label: 'New', color: 'blue' },
+            'processing': { label: 'Processing', color: 'cyan' },
+            'ready_to_ship': { label: 'Ready to Ship', color: 'indigo' },
+            'shipped': { label: 'Shipped', color: 'purple' },
+            'in_transit': { label: 'In Transit', color: 'sky' },
+            'out_for_delivery': { label: 'Out for Delivery', color: 'orange' },
+            'delivered': { label: 'Delivered', color: 'green' },
+            'returned': { label: 'Returned', color: 'red' },
+            'back_to_sender': { label: 'Back to Sender', color: 'rose' },
+            'returning_to_sender': { label: 'Returning', color: 'orange' },
+            'cancelled': { label: 'Cancelled', color: 'rose' },
+            'on_hold': { label: 'On Hold', color: 'amber' },
+            'refunded': { label: 'Refunded', color: 'fuchsia' },
+            'partially_shipped': { label: 'Part. Shipped', color: 'teal' },
+            'not_fulfilled': { label: 'Not Fulfilled', color: 'amber' },
+            'fulfilled': { label: 'Fulfilled', color: 'green' },
+            'waiting_for_courier': { label: 'Waiting Courier', color: 'yellow' },
+            'customer_pickup': { label: 'Customer Pickup', color: 'teal' },
+            'unsuccessful_delivery': { label: 'Failed Delivery', color: 'red' },
+            'refused': { label: 'Refused', color: 'fuchsia' },
+            'redirected': { label: 'Redirected', color: 'sky' },
+            'incorrect_address': { label: 'Bad Address', color: 'amber' },
+            'lost': { label: 'Lost', color: 'red' },
+            'deferred_delivery': { label: 'Deferred', color: 'violet' },
+            'error': { label: 'Error', color: 'red' },
+        }
+        const config = statusConfig[status] || { label: (status || '').replace(/_/g, ' '), color: 'zinc' }
+        const colorClasses = {
+            zinc: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300',
+            blue: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300',
+            cyan: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
+            indigo: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+            purple: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300',
+            sky: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300',
+            green: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300',
+            red: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300',
+            rose: 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300',
+            amber: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300',
+            yellow: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
+            fuchsia: 'bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300',
+            teal: 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300',
+            orange: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300',
+            violet: 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300',
+        }
+        return { label: config.label, className: colorClasses[config.color] || colorClasses.zinc }
     }
 
     const SortButton = ({ field, children }) => (
@@ -343,7 +442,7 @@ export default function Orders() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                         type="text"
-                        placeholder="Search order #, tracking, customer..."
+                        placeholder="Search order #, tracking, customer, SKU..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder:text-zinc-400"
@@ -578,6 +677,26 @@ export default function Orders() {
                             <strong className="text-zinc-900 dark:text-white">{endItem.toLocaleString()}</strong> of{' '}
                             <strong className="text-zinc-900 dark:text-white">{totalCount.toLocaleString()}</strong> orders
                         </span>
+                        {orderTotals && (
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20">
+                                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">Total:</span>
+                                    <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
+                                        {orderTotals.total_ron?.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON
+                                    </span>
+                                </div>
+                                {orderTotals.per_currency?.length > 1 && (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        {orderTotals.per_currency.map(c => (
+                                            <span key={c.currency} className="text-xs px-2 py-1 rounded-md bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
+                                                {c.count} × {c.currency}: {c.total?.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {c.currency !== 'RON' && <span className="text-zinc-400"> (×{c.rate_to_ron})</span>}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setPage(p => Math.max(0, p - 1))}
@@ -600,8 +719,9 @@ export default function Orders() {
                     </div>
 
                     <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden shadow-sm">
+                      <div className="overflow-auto max-h-[75vh]">
                         <table className="w-full">
-                            <thead className="bg-zinc-50 dark:bg-zinc-900/60">
+                            <thead className="bg-zinc-50 dark:bg-zinc-900/60 sticky top-0 z-10">
                                 <tr>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                                         <SortButton field="order_number">Order</SortButton>
@@ -649,6 +769,20 @@ export default function Orders() {
                                                     <div className="flex items-center gap-2">
                                                         <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                                         <span className="font-medium text-zinc-900 dark:text-white">{order.order_number}</span>
+                                                        {(() => {
+                                                            const store = stores.find(s => s.uid === order.store_uid)
+                                                            const domain = store?.shopify_domain || (store?.name ? `${store.name.replace(/\s+/g, '').toLowerCase()}.myshopify.com` : null)
+                                                            if (!domain) return null
+                                                            return (
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); window.open(`https://${domain}/admin/orders?query=${encodeURIComponent(order.order_number)}`, '_blank') }}
+                                                                    className="p-0.5 rounded hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                                                                    title="Deschide în Shopify"
+                                                                >
+                                                                    <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
+                                                                </button>
+                                                            )
+                                                        })()}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3">
@@ -681,20 +815,29 @@ export default function Orders() {
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex flex-col gap-1">
-                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${order.fulfillment_status === 'fulfilled'
-                                                            ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300'
-                                                            : order.fulfillment_status === 'on_hold'
-                                                                ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                                                                : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
-                                                            }`}>
-                                                            {order.fulfillment_status?.replace(/_/g, ' ') || 'Unknown'}
-                                                        </span>
+                                                        {(() => {
+                                                            const fulfillBadge = getFulfillmentStatusBadge(order.fulfillment_status)
+                                                            return (
+                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${fulfillBadge.className}`}>
+                                                                    {fulfillBadge.label}
+                                                                </span>
+                                                            )
+                                                        })()}
                                                         {order.shipment_status && (
                                                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${shipmentBadge.className}`}>
                                                                 <Truck className="w-3 h-3" />
                                                                 {shipmentBadge.label}
                                                             </span>
                                                         )}
+                                                        {order.aggregated_status && (() => {
+                                                            const aggBadge = getAggregatedStatusBadge(order.aggregated_status)
+                                                            return (
+                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${aggBadge.className}`}>
+                                                                    <FileText className="w-3 h-3" />
+                                                                    {aggBadge.label}
+                                                                </span>
+                                                            )
+                                                        })()}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3">
@@ -1031,6 +1174,7 @@ export default function Orders() {
                                 })}
                             </tbody>
                         </table>
+                      </div>
 
                         {orders.length === 0 && (
                             <div className="text-center py-12">

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 class StoreBase(BaseModel):
     name: str
     color_code: str = "#6366f1"
+    shopify_domain: Optional[str] = None
     is_active: bool = True
 
 
@@ -21,6 +22,7 @@ class StoreCreate(StoreBase):
 class StoreUpdate(BaseModel):
     name: Optional[str] = None
     color_code: Optional[str] = None
+    shopify_domain: Optional[str] = None
     is_active: Optional[bool] = None
 
 

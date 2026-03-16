@@ -10,6 +10,10 @@ export const ordersApi = {
         const { data } = await api.get('/orders/count', { params })
         return data
     },
+    getOrderTotals: async (params = {}) => {
+        const { data } = await api.get('/orders/totals', { params })
+        return data
+    },
     getStats: async () => {
         const { data } = await api.get('/orders/stats')
         return data

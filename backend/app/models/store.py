@@ -1,6 +1,6 @@
 """Store model."""
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from sqlalchemy import String, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,7 @@ class Store(Base):
     uid: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     color_code: Mapped[str] = mapped_column(String(7), default="#6366f1")  # Hex color
+    shopify_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # e.g. "store-name.myshopify.com"
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     

@@ -4,7 +4,7 @@ Orders API endpoints.
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, cast, String
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -73,7 +73,8 @@ async def get_orders(
         conditions.append(
             (Order.order_number.ilike(search_term)) |
             (Order.customer_name.ilike(search_term)) |
-            (Order.tracking_number.ilike(search_term))
+            (Order.tracking_number.ilike(search_term)) |
+            (cast(Order.line_items, String).ilike(search_term))
         )
     
     # Status filters (support multi-select)
@@ -128,9 +129,14 @@ async def get_orders(
         "total_price": Order.total_price,
         "fulfilled_at": Order.fulfilled_at,
         "synced_at": Order.synced_at,
+        "store_name": Store.name,  # Joined column from Store relationship
     }
     
+    # For store_name sorting, ensure we join the Store table explicitly
     sort_col = sort_column_map.get(sort_field, Order.frisbo_created_at)
+    if sort_field == "store_name":
+        query = query.join(Store, Order.store_uid == Store.uid, isouter=True)
+    
     if sort_direction == "asc":
         query = query.order_by(sort_col.asc().nulls_last())
     else:
@@ -296,7 +302,8 @@ async def get_order_count(
         conditions.append(
             (Order.order_number.ilike(search_term)) |
             (Order.customer_name.ilike(search_term)) |
-            (Order.tracking_number.ilike(search_term))
+            (Order.tracking_number.ilike(search_term)) |
+            (cast(Order.line_items, String).ilike(search_term))
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
@@ -333,6 +340,133 @@ async def get_order_count(
     
     return {"count": count}
 
+
+@router.get("/totals")
+async def get_order_totals(
+    store_uids: Optional[List[str]] = Query(None),
+    is_printed: Optional[bool] = None,
+    has_awb: Optional[bool] = None,
+    has_tracking: Optional[bool] = None,
+    min_items: Optional[int] = None,
+    max_items: Optional[int] = None,
+    search: Optional[str] = None,
+    fulfillment_status: Optional[List[str]] = Query(None),
+    shipment_status: Optional[List[str]] = Query(None),
+    aggregated_status: Optional[List[str]] = Query(None),
+    courier_names: Optional[List[str]] = Query(None),
+    has_shipping_cost: Optional[bool] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get total order value in RON (with currency conversion) for filtered orders."""
+    from datetime import datetime
+    from app.models.exchange_rate import ExchangeRate
+    
+    # Build same conditions as main query
+    conditions = []
+    if store_uids:
+        conditions.append(Order.store_uid.in_(store_uids))
+    if is_printed is not None:
+        conditions.append(Order.is_printed == is_printed)
+    if has_awb is True:
+        conditions.append(Order.awb_pdf_url.isnot(None))
+    elif has_awb is False:
+        conditions.append(Order.awb_pdf_url.is_(None))
+    if has_tracking is True:
+        conditions.append(Order.tracking_number.isnot(None))
+    elif has_tracking is False:
+        conditions.append(Order.tracking_number.is_(None))
+    if min_items is not None:
+        conditions.append(Order.item_count >= min_items)
+    if max_items is not None:
+        conditions.append(Order.item_count <= max_items)
+    if search:
+        search_term = f"%{search}%"
+        conditions.append(
+            (Order.order_number.ilike(search_term)) |
+            (Order.customer_name.ilike(search_term)) |
+            (Order.tracking_number.ilike(search_term)) |
+            (cast(Order.line_items, String).ilike(search_term))
+        )
+    if fulfillment_status:
+        conditions.append(Order.fulfillment_status.in_(fulfillment_status))
+    if shipment_status:
+        conditions.append(Order.shipment_status.in_(shipment_status))
+    if aggregated_status:
+        conditions.append(Order.aggregated_status.in_(aggregated_status))
+    if courier_names:
+        conditions.append(Order.courier_name.in_(courier_names))
+    if has_shipping_cost is True:
+        conditions.append(Order.transport_cost.isnot(None))
+        conditions.append(Order.transport_cost > 0)
+    elif has_shipping_cost is False:
+        conditions.append((Order.transport_cost.is_(None)) | (Order.transport_cost == 0))
+    if date_from:
+        try:
+            from_date = datetime.strptime(date_from, "%Y-%m-%d")
+            conditions.append(Order.frisbo_created_at >= from_date)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            to_date = datetime.strptime(date_to, "%Y-%m-%d")
+            to_date = to_date.replace(hour=23, minute=59, second=59)
+            conditions.append(Order.frisbo_created_at <= to_date)
+        except ValueError:
+            pass
+    
+    # Aggregate total_price grouped by currency
+    query = select(
+        func.coalesce(Order.currency, 'RON').label('currency'),
+        func.sum(Order.total_price).label('total'),
+        func.count(Order.id).label('count')
+    ).where(Order.total_price.isnot(None)).group_by(func.coalesce(Order.currency, 'RON'))
+    
+    if conditions:
+        query = query.where(and_(*conditions))
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    # Get latest exchange rates for non-RON currencies
+    rate_map = {'RON': 1.0}
+    non_ron_currencies = [r.currency for r in rows if r.currency != 'RON']
+    if non_ron_currencies:
+        for curr in non_ron_currencies:
+            rate_result = await db.execute(
+                select(ExchangeRate)
+                .where(ExchangeRate.currency == curr)
+                .order_by(ExchangeRate.rate_date.desc())
+                .limit(1)
+            )
+            rate = rate_result.scalar_one_or_none()
+            if rate:
+                rate_map[curr] = rate.rate / rate.multiplier
+            else:
+                rate_map[curr] = 1.0  # Fallback if no rate found
+    
+    # Calculate total in RON
+    total_ron = 0.0
+    per_currency = []
+    total_count = 0
+    for row in rows:
+        amount_ron = (row.total or 0) * rate_map.get(row.currency, 1.0)
+        total_ron += amount_ron
+        total_count += row.count
+        per_currency.append({
+            'currency': row.currency,
+            'total': round(row.total or 0, 2),
+            'count': row.count,
+            'rate_to_ron': round(rate_map.get(row.currency, 1.0), 4),
+            'total_ron': round(amount_ron, 2),
+        })
+    
+    return {
+        'total_ron': round(total_ron, 2),
+        'total_count': total_count,
+        'per_currency': per_currency,
+    }
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):

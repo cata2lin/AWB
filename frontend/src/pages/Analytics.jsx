@@ -11,9 +11,10 @@ import {
     Globe2, TrendingUp, Package, Truck, XCircle, RotateCcw,
     ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
     Calendar, ArrowRight, ArrowUpRight, ArrowDownRight, PieChart, MapPin,
-    DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2
+    DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2,
+    Eye, EyeOff, Settings2
 } from 'lucide-react'
-import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi } from '../services/api'
+import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -65,6 +66,8 @@ export default function Analytics() {
     const [profitDateTo, setProfitDateTo] = useState('')
     const [profitLoading, setProfitLoading] = useState(false)
     const [expandedPnlSections, setExpandedPnlSections] = useState({})
+    const [profitStores, setProfitStores] = useState([]) // Dedicated store filter for profitability tabs
+    const [pnlHiddenStores, setPnlHiddenStores] = useState([]) // Hide specific store columns in P&L Comparativ
 
     // SKU Risk state
     const [skuRiskData, setSkuRiskData] = useState(null)
@@ -78,9 +81,23 @@ export default function Analytics() {
     const [skuRiskSort, setSkuRiskSort] = useState({ col: 'risk_score', dir: 'desc' })
     const [skuRiskExpanded, setSkuRiskExpanded] = useState(null)
     const [skuRiskAnomalyPage, setSkuRiskAnomalyPage] = useState(0)
+    const [skuRiskSearch, setSkuRiskSearch] = useState('')
     const [expandedOrderUid, setExpandedOrderUid] = useState(null)
     const [showCalcLegend, setShowCalcLegend] = useState(false)
 
+    // Livrabilitate column visibility
+    const [delivCols, setDelivCols] = useState({
+        total: true, delivered: true, cancelled: true, returned: true,
+        in_transit: true, shipped: true, delivery_rate: true,
+        expedition_rate: true, cancelled_rate: true, deliverability: true,
+    })
+    const [showDelivColMenu, setShowDelivColMenu] = useState(false)
+    const delivColLabels = {
+        total: 'Total', delivered: 'Livrate', cancelled: 'Anulate',
+        returned: 'Ret. / Ref.', in_transit: 'În Tranzit', shipped: 'Expediate',
+        delivery_rate: 'Rată Livrare', expedition_rate: 'Rată Expediție',
+        cancelled_rate: 'Rată Anulare', deliverability: 'Livrabilitate',
+    }
     // Sales Velocity state
     const [velocityData, setVelocityData] = useState(null)
     const [velocityLoading, setVelocityLoading] = useState(false)
@@ -100,6 +117,19 @@ export default function Analytics() {
     const [expandedStoreUid, setExpandedStoreUid] = useState(null)
     const [alertSearch, setAlertSearch] = useState('')
     const [hoveredTrendBar, setHoveredTrendBar] = useState(null)
+
+    // SKU Profitability state
+    const [skuProfitData, setSkuProfitData] = useState(null)
+    const [skuProfitLoading, setSkuProfitLoading] = useState(false)
+    const [skuProfitDays, setSkuProfitDays] = useState(30)
+    const [skuProfitDateFrom, setSkuProfitDateFrom] = useState('')
+    const [skuProfitDateTo, setSkuProfitDateTo] = useState('')
+    const [skuProfitStore, setSkuProfitStore] = useState('')
+    const [skuProfitSearch, setSkuProfitSearch] = useState('')
+    const [skuProfitSort, setSkuProfitSort] = useState({ col: 'revenue', dir: 'desc' })
+    const [skuProfitExpanded, setSkuProfitExpanded] = useState(null)
+    const [newMktCost, setNewMktCost] = useState({ sku: '', label: '', amount: '', month: '' })
+    const [addingMktFor, setAddingMktFor] = useState(null)
 
     // Top SKUs table state
 
@@ -224,8 +254,8 @@ export default function Analytics() {
         try {
             const API_URL = import.meta.env.VITE_API_URL || '/api'
             const params = new URLSearchParams()
-            if (selectedStores.length > 0) {
-                params.set('store_uids', selectedStores.join(','))
+            if (profitStores.length > 0) {
+                params.set('store_uids', profitStores.join(','))
             }
 
             const now = new Date()
@@ -272,18 +302,16 @@ export default function Analytics() {
         }
     }
 
-    // Refetch profitability when period changes
-    useEffect(() => {
-        if (activeTab === 'profitability' || activeTab === 'pnlCompare') {
-            if (profitPeriod === 'custom') {
-                if (profitDateFrom && profitDateTo) {
-                    fetchProfitability('custom', profitDateFrom, profitDateTo)
-                }
-            } else {
-                fetchProfitability(profitPeriod)
+    // Helper to trigger profitability fetch with current filter state (called by Analizează button)
+    const fetchProfitNow = () => {
+        if (profitPeriod === 'custom') {
+            if (profitDateFrom && profitDateTo) {
+                fetchProfitability('custom', profitDateFrom, profitDateTo)
             }
+        } else {
+            fetchProfitability(profitPeriod)
         }
-    }, [profitPeriod, profitDateFrom, profitDateTo, activeTab, selectedStores])
+    }
 
     // Fetch SKU costs when tab is activated
     useEffect(() => {
@@ -537,6 +565,16 @@ export default function Analytics() {
                     <TrendingUp className="w-4 h-4 inline mr-2" />
                     Viteză Vânzări
                 </button>
+                <button
+                    onClick={() => setActiveTab('skuProfit')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'skuProfit'
+                        ? 'bg-white dark:bg-zinc-700 text-amber-600 dark:text-amber-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <PieChart className="w-4 h-4 inline mr-2" />
+                    Profitabilitate SKU
+                </button>
             </div>
 
             {/* Loading State */}
@@ -742,27 +780,46 @@ export default function Analytics() {
 
                             {/* Per-Store Table */}
                             <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden shadow-sm">
-                                <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700/50">
+                                <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between">
                                     <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2 tracking-tight">
                                         <Store className="w-5 h-5 text-indigo-500" />
                                         Livrabilitate per Magazin
                                     </h3>
+                                    {/* Column visibility toggle */}
+                                    <div className="relative">
+                                        <button onClick={() => setShowDelivColMenu(!showDelivColMenu)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">
+                                            <Settings2 className="w-3.5 h-3.5" /> Coloane
+                                        </button>
+                                        {showDelivColMenu && (
+                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl z-50 p-2 space-y-0.5">
+                                                {Object.entries(delivColLabels).map(([key, label]) => (
+                                                    <label key={key} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/50 text-zinc-700 dark:text-zinc-300">
+                                                        <input type="checkbox" checked={delivCols[key]}
+                                                            onChange={() => setDelivCols(prev => ({ ...prev, [key]: !prev[key] }))}
+                                                            className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-500 focus:ring-indigo-500" />
+                                                        {label}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="overflow-x-auto">
+                                <div className="overflow-auto max-h-[75vh]">
                                     <table className="w-full">
-                                        <thead className="bg-zinc-50 dark:bg-zinc-900/50">
+                                        <thead className="bg-zinc-50 dark:bg-zinc-900/50 sticky top-0 z-10">
                                             <tr>
                                                 <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Magazin</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Total</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Livrate</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Anulate</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Ret. / Ref.</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">În Tranzit</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Expediate</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Livrare</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Expediție</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Anulare</th>
-                                                <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Livrabilitate</th>
+                                                {delivCols.total && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Total</th>}
+                                                {delivCols.delivered && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Livrate</th>}
+                                                {delivCols.cancelled && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Anulate</th>}
+                                                {delivCols.returned && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Ret. / Ref.</th>}
+                                                {delivCols.in_transit && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">În Tranzit</th>}
+                                                {delivCols.shipped && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Expediate</th>}
+                                                {delivCols.delivery_rate && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Livrare</th>}
+                                                {delivCols.expedition_rate && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Expediție</th>}
+                                                {delivCols.cancelled_rate && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Anulare</th>}
+                                                {delivCols.deliverability && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Livrabilitate</th>}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700">
@@ -771,34 +828,34 @@ export default function Analytics() {
                                                     <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-white">
                                                         {store.store_name}
                                                     </td>
-                                                    <td className="px-3 py-3 text-sm text-right text-zinc-600 dark:text-white">
+                                                    {delivCols.total && <td className="px-3 py-3 text-sm text-right text-zinc-600 dark:text-white">
                                                         {formatNumber(store.total)}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right text-green-600 dark:text-green-400 font-medium">
+                                                    </td>}
+                                                    {delivCols.delivered && <td className="px-3 py-3 text-sm text-right text-green-600 dark:text-green-400 font-medium">
                                                         {formatNumber(store.delivered)}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right text-red-600 dark:text-red-400">
+                                                    </td>}
+                                                    {delivCols.cancelled && <td className="px-3 py-3 text-sm text-right text-red-600 dark:text-red-400">
                                                         {formatNumber(store.cancelled)}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right text-orange-600 dark:text-orange-400">
+                                                    </td>}
+                                                    {delivCols.returned && <td className="px-3 py-3 text-sm text-right text-orange-600 dark:text-orange-400">
                                                         {formatNumber((store.returned || 0) + (store.refused || 0))}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
+                                                    </td>}
+                                                    {delivCols.in_transit && <td className="px-3 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
                                                         {formatNumber((store.in_transit || 0) + (store.out_for_delivery || 0))}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right text-indigo-600 dark:text-indigo-400 font-medium">
+                                                    </td>}
+                                                    {delivCols.shipped && <td className="px-3 py-3 text-sm text-right text-indigo-600 dark:text-indigo-400 font-medium">
                                                         {formatNumber(store.shipped || 0)}
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right">
+                                                    </td>}
+                                                    {delivCols.delivery_rate && <td className="px-3 py-3 text-sm text-right">
                                                         <span className={getRateColor(store.delivery_rate || 0)}>{store.delivery_rate || 0}%</span>
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right">
+                                                    </td>}
+                                                    {delivCols.expedition_rate && <td className="px-3 py-3 text-sm text-right">
                                                         <span className="text-indigo-600 dark:text-indigo-400">{store.expedition_rate || 0}%</span>
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right">
+                                                    </td>}
+                                                    {delivCols.cancelled_rate && <td className="px-3 py-3 text-sm text-right">
                                                         <span className="text-red-600 dark:text-red-400">{store.cancelled_rate || 0}%</span>
-                                                    </td>
-                                                    <td className="px-3 py-3 text-sm text-right">
+                                                    </td>}
+                                                    {delivCols.deliverability && <td className="px-3 py-3 text-sm text-right">
                                                         <div className="flex items-center justify-end gap-2">
                                                             <div className="w-16 h-2 bg-zinc-200 dark:bg-zinc-600 rounded-full overflow-hidden">
                                                                 <div
@@ -810,7 +867,7 @@ export default function Analytics() {
                                                                 {store.deliverability_rate}%
                                                             </span>
                                                         </div>
-                                                    </td>
+                                                    </td>}
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -849,7 +906,7 @@ export default function Analytics() {
                                     <select
                                         value={/^\d{4}-\d{2}$/.test(profitPeriod) ? profitPeriod : ''}
                                         onChange={(e) => { if (e.target.value) { setProfitPeriod(e.target.value); setProfitDateFrom(''); setProfitDateTo('') } }}
-                                        className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 border-0 cursor-pointer"
+                                        className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-white border-0 cursor-pointer"
                                     >
                                         <option value="">Lună specifică...</option>
                                         {(() => {
@@ -895,13 +952,67 @@ export default function Analytics() {
                                         </>
                                     )}
 
-                                    {profitLoading && (
-                                        <div className="ml-2 animate-spin w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full" />
-                                    )}
+                                    <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600 mx-1" />
+
+                                    {/* Store filter */}
+                                    <div className="relative">
+                                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Magazine</label>
+                                        <select
+                                            value=""
+                                            onChange={e => {
+                                                const v = e.target.value
+                                                if (!v) return
+                                                setProfitStores(prev => prev.includes(v) ? prev.filter(s => s !== v) : [...prev, v])
+                                            }}
+                                            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white"
+                                        >
+                                            <option value="">{profitStores.length === 0 ? 'Toate' : `${profitStores.length} selectate`}</option>
+                                            {stores.map(s => (
+                                                <option key={s.uid} value={s.uid}>{profitStores.includes(s.uid) ? '✓ ' : ''}{s.name}</option>
+                                            ))}
+                                        </select>
+                                        {profitStores.length > 0 && (
+                                            <button onClick={() => setProfitStores([])} className="absolute -top-0.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center leading-none">×</button>
+                                        )}
+                                    </div>
+
+                                    <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer self-end">
+                                        <input type="checkbox"
+                                            checked={Object.keys(expandedPnlSections).length > 0 && Object.values(expandedPnlSections).every(v => v)}
+                                            onChange={e => {
+                                                const allSections = ['income', 'cogs', 'operational', 'marketing', 'fixed']
+                                                if (e.target.checked) {
+                                                    setExpandedPnlSections(Object.fromEntries(allSections.map(s => [s, true])))
+                                                } else {
+                                                    setExpandedPnlSections({})
+                                                }
+                                            }}
+                                            className="rounded border-zinc-300 text-indigo-600 w-3.5 h-3.5" />
+                                        Expandate
+                                    </label>
+
+                                    <button onClick={fetchProfitNow} disabled={profitLoading}
+                                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 self-end">
+                                        {profitLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
+                                        Analizează
+                                    </button>
                                 </div>
                             </div>
 
 
+                            {!profitabilityData && !profitLoading && (
+                                <div className="text-center py-16 text-zinc-500 dark:text-zinc-400">
+                                    <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                    <p className="text-lg font-medium">Selectează filtrele și apasă Analizează</p>
+                                    <p className="text-sm mt-1">Profitabilitatea va fi calculată pe baza filtrelor selectate.</p>
+                                </div>
+                            )}
+                            {profitLoading && (
+                                <div className="flex items-center justify-center py-20">
+                                    <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
+                                    <span className="ml-3 text-zinc-500 dark:text-zinc-300">Se calculează profitabilitatea...</span>
+                                </div>
+                            )}
                             {profitabilityData && (
                                 <>
                                     {/* ═══ P&L INCOME STATEMENT ═══ */}
@@ -920,8 +1031,18 @@ export default function Analytics() {
                                             return { cu_tva: v, fara_tva: vatRate > 0 ? v / (1 + vatRate) : v }
                                         }
 
+                                        // Tooltip helper (same as P&L Comparativ tab)
+                                        const PnlTooltip = ({ text }) => text ? (
+                                            <span className="relative group/tip inline-flex ml-1">
+                                                <Info className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 cursor-help opacity-50 group-hover/tip:opacity-100 transition-opacity" />
+                                                <span className="absolute left-6 top-0 z-[100] invisible group-hover/tip:visible opacity-0 group-hover/tip:opacity-100 transition-all duration-200 w-[320px] max-w-[90vw] px-3 py-2.5 text-xs font-normal normal-case tracking-normal leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-600 whitespace-normal break-words">
+                                                    {text}
+                                                </span>
+                                            </span>
+                                        ) : null
+
                                         // P&L Row component — single value column
-                                        const PnlRow = ({ label, value, isHeader, isBold, isTotal, isProfit, isNegative, indent, pct, className: extraClass }) => {
+                                        const PnlRow = ({ label, value, isHeader, isBold, isTotal, isProfit, isNegative, indent, pct, tooltip, className: extraClass }) => {
                                             const rowBg = isHeader ? 'bg-zinc-100 dark:bg-zinc-900/60' : isTotal ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''
                                             const textStyle = isHeader ? 'font-bold text-zinc-900 dark:text-white uppercase text-xs tracking-wide' :
                                                 isBold ? 'font-bold text-zinc-900 dark:text-white' :
@@ -933,17 +1054,20 @@ export default function Analytics() {
 
                                             return (
                                                 <tr className={`${rowBg} ${extraClass || ''}`}>
-                                                    <td className={`${pl} py-2.5 text-sm ${textStyle}`}>
-                                                        {label}
+                                                    <td className={`${pl} py-1 text-sm ${textStyle}`}>
+                                                        <span className="inline-flex items-center">
+                                                            {label}
+                                                            <PnlTooltip text={tooltip} />
+                                                        </span>
                                                         {pct !== undefined && (
                                                             <span className={`ml-2 text-xs font-normal ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</span>
                                                         )}
                                                     </td>
                                                     {isHeader ? (
-                                                        <td className="px-4 py-2.5 text-xs font-bold text-right text-zinc-500 dark:text-white uppercase">RON</td>
+                                                        <td className="px-4 py-1 text-xs font-bold text-right text-zinc-500 dark:text-white uppercase"></td>
                                                     ) : (
-                                                        <td className={`px-4 py-2.5 text-sm text-right font-medium ${valColor || 'text-zinc-800 dark:text-white'}`}>
-                                                            {value !== undefined && value !== null ? `${fm(value)} RON` : ''}
+                                                        <td className={`px-4 py-1 text-sm text-right font-medium ${valColor || 'text-zinc-800 dark:text-white'}`}>
+                                                            {value !== undefined && value !== null ? fm(value) : ''}
                                                         </td>
                                                     )}
                                                 </tr>
@@ -968,13 +1092,13 @@ export default function Analytics() {
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-2 text-xs text-right text-amber-600 dark:text-amber-400 font-medium">
-                                                            {!isOpen && totalTva ? `${fm(-Math.abs(totalTva))} RON` : ''}
+                                                            {!isOpen && totalTva ? fm(-Math.abs(totalTva)) : ''}
                                                         </td>
                                                     </tr>
                                                     {isOpen && validItems.map((item, idx) => (
                                                         <tr key={idx} className="text-amber-600/80 dark:text-amber-500/80">
                                                             <td className="pl-12 py-1.5 text-xs">{item.label}</td>
-                                                            <td className="px-4 py-1.5 text-xs text-right">{fm(-Math.abs(item.tva))} RON</td>
+                                                            <td className="px-4 py-1.5 text-xs text-right">{fm(-Math.abs(item.tva))}</td>
                                                         </tr>
                                                     ))}
                                                 </>
@@ -1070,26 +1194,27 @@ export default function Analytics() {
                                             }
 
                                             // Collapsible section component (single-value)
-                                            const PnlSection = ({ id, icon, label, totalValue, totalPct, children, isNeg }) => {
+                                            const PnlSection = ({ id, icon, label, tooltip, totalValue, totalPct, children, isNeg }) => {
                                                 const sectionKey = `${title}-${id}`
                                                 const isOpen = expandedPnlSections[sectionKey] !== false // default open
                                                 const toggle = () => setExpandedPnlSections(prev => ({ ...prev, [sectionKey]: !isOpen }))
                                                 return (
                                                     <>
                                                         <tr className="bg-zinc-100 dark:bg-zinc-900/60 cursor-pointer select-none hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-colors" onClick={toggle}>
-                                                            <td className="pl-4 py-2.5 text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wide">
+                                                            <td className="pl-4 py-1.5 text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wide">
                                                                 <span className="inline-flex items-center gap-1.5">
                                                                     <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
                                                                     {icon} {label}
+                                                                    <PnlTooltip text={tooltip} />
                                                                 </span>
                                                             </td>
-                                                            <td className="px-4 py-2.5 text-xs font-bold text-right text-zinc-500 dark:text-white uppercase">
+                                                            <td className="px-4 py-1.5 text-xs font-bold text-right text-zinc-500 dark:text-white uppercase">
                                                                 {!isOpen && totalValue !== undefined ? (
                                                                     <span className={isNeg ? 'text-red-500 dark:text-red-400' : ''}>
-                                                                        {fm(totalValue)} RON
+                                                                        {fm(totalValue)}
                                                                         {totalPct !== undefined && <span className={`ml-1 ${pctColor(totalPct)}`}>({totalPct.toFixed(1)}%)</span>}
                                                                     </span>
-                                                                ) : 'RON'}
+                                                                ) : ''}
                                                             </td>
                                                         </tr>
                                                         {isOpen && children}
@@ -1099,26 +1224,41 @@ export default function Analytics() {
 
                                             return (
                                                 <div key={title} className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                                                    <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
-                                                        <h3 className="font-bold text-lg text-zinc-900 dark:text-white flex items-center gap-2">
+                                                    <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+                                                        <h3 className="font-bold text-base text-zinc-900 dark:text-white flex items-center gap-2">
                                                             {isTotal ? '📊' : <Store className="w-5 h-5" />} {title}
                                                         </h3>
-                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                                                            {deliveredCount} livrate | {returnsCount} retur/anulate
+                                                        <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                                                            {(() => {
+                                                                const shipped = sp.shipped_count || (deliveredCount + (statusBreakdown?.in_transit?.count || 0))
+                                                                const livRate = shipped > 0 ? ((deliveredCount / shipped) * 100).toFixed(1) : 0
+                                                                const livColor = livRate >= 85 ? 'text-green-500' : livRate >= 70 ? 'text-yellow-500' : 'text-red-500'
+                                                                return (
+                                                                    <>
+                                                                        <span>📦 {shipped} expediate</span>
+                                                                        <span>✅ {deliveredCount} livrate</span>
+                                                                        <span className={livColor}>📊 {livRate}% livrabilitate</span>
+                                                                        {returnsCount > 0 && <span className="text-red-400">↩ {returnsCount} retur/anulate</span>}
+                                                                    </>
+                                                                )
+                                                            })()}
                                                         </div>
                                                     </div>
-                                                    <div className="overflow-x-auto">
-                                                        <table className="w-full border-collapse">
+                                                    <div>
+                                                        <table className="border-collapse">
                                                             <tbody>
                                                                 {/* ═══ VENITURI ═══ */}
                                                                 <PnlSection id="income" icon="📈" label="VENITURI"
+                                                                    tooltip="Secțiunea de venituri cuprinde toate sumele încasate sau așteptate din comenzi, înainte de deducerea costurilor."
                                                                     totalValue={netRevenue.fara_tva}>
 
-                                                                    <PnlRow label="Vânzări Brute (Gross Sales)" value={grossSales.cu_tva} indent={1} />
+                                                                    <PnlRow label="Vânzări Brute (Gross Sales)" value={grossSales.cu_tva} indent={1}
+                                                                        tooltip='Suma totală a valorii TUTUROR comenzilor din perioada selectată, indiferent de status (livrate + returnate + anulate + în tranzit + altele). Convertit în RON la cursul BNR din data comenzii.' />
 
                                                                     {returnsCancelled.cu_tva > 0 && (
                                                                         <PnlRow label={`(-) Returnate/Anulate (${returnsCount})`}
-                                                                            value={-returnsCancelled.cu_tva} indent={1} isNegative />
+                                                                            value={-returnsCancelled.cu_tva} indent={1} isNegative
+                                                                            tooltip='Returnate = comenzi cu status "returned" sau "back_to_sender". Anulate = "cancelled" sau "voided". COGS = 0 (produsele se întorc în stoc). Transport pierdut pentru returnate.' />
                                                                     )}
 
                                                                     {/* Show unrealized revenue (in_transit + other) to close the gap */}
@@ -1129,74 +1269,84 @@ export default function Analytics() {
                                                                         const unrealizedCount = (statusBreakdown?.in_transit?.count || 0) + (statusBreakdown?.other?.count || 0);
                                                                         if (unrealizedRev > 0) return (
                                                                             <PnlRow label={`(-) Nerealizate/În tranzit (${unrealizedCount})`}
-                                                                                value={-unrealizedRev} indent={1} isNegative />
+                                                                                value={-unrealizedRev} indent={1} isNegative
+                                                                                tooltip='Comenzi cu status: "in_transit", "out_for_delivery", "customer_pickup" sau alt status necunoscut. Nu sunt confirmate ca livrate, deci nu intră în veniturile realizate.' />
                                                                         );
                                                                         return null;
                                                                     })()}
 
                                                                     <PnlRow label={`Vânzări Revenue (${deliveredCount} livrate)`}
-                                                                        value={netRevenue.cu_tva} isTotal />
+                                                                        value={netRevenue.cu_tva} isTotal
+                                                                        tooltip='Venitul realizat = doar comenzile cu status "delivered". Formula: Vânzări Brute − Returnate − Anulate − Nerealizate.' />
 
                                                                     <PnlRow label={`(-) TVA (${vatPctDisplay}%)`}
-                                                                        value={-tvaAmount} indent={1} isNegative />
+                                                                        value={-tvaAmount} indent={1} isNegative
+                                                                        tooltip={`TVA ${vatPctDisplay}% dedus din venitul realizat. Formula: Revenue cu TVA − Revenue fără TVA. TVA-ul se deduce pentru a obține baza netă de calcul.`} />
 
                                                                     <PnlRow label="Revenue net (fără TVA)"
-                                                                        value={netRevenue.fara_tva} isBold />
+                                                                        value={netRevenue.fara_tva} isBold
+                                                                        tooltip='Venitul net fără TVA = baza pe care se calculează toate marjele și procentele de cost. Formula: Revenue cu TVA / (1 + rata TVA).' />
                                                                 </PnlSection>
-
-                                                                <tr><td colSpan={2} className="py-1.5"></td></tr>
 
                                                                 {/* ═══ COGS ═══ */}
                                                                 <PnlSection id="cogs" icon="📦" label="COGS (Cost Produse)"
+                                                                    tooltip='Cost of Goods Sold — costul de achiziție al produselor vândute. Se calculează doar pentru comenzile livrate (COGS = 0 pentru returnate/anulate).'
                                                                     totalValue={cogsFara}
                                                                     totalPct={refRev ? parseFloat(((cogsFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
 
                                                                     <PnlRow label="(-) Cost produse vândute" value={cogsVal} indent={1} isNegative
+                                                                        tooltip='Suma (cost_unitar × cantitate) pentru fiecare produs din comenzile livrate. Costurile sunt definite în tab-ul Costuri SKU.'
                                                                         pct={refRev ? parseFloat(((cogsFara / refRev) * 100).toFixed(1)) : undefined} />
 
                                                                     <TvaSection title={`${title}-cogs`} totalTva={cogsTva}
                                                                         items={[{ label: 'TVA Produse', tva: cogsTva }]} />
 
-                                                                    <PnlRow label="Total COGS (fără TVA)" value={cogsFara} isTotal isNegative />
+                                                                    <PnlRow label="Total COGS (fără TVA)" value={cogsFara} isTotal isNegative
+                                                                        tooltip='Totalul costurilor directe (fără TVA) = Cost produse / (1 + TVA). Scade din Profit Brut.' />
                                                                 </PnlSection>
-
-                                                                <tr><td colSpan={2} className="py-1.5"></td></tr>
 
                                                                 {/* ═══ GROSS PROFIT ═══ */}
                                                                 <tr className="bg-emerald-50 dark:bg-emerald-900/20">
-                                                                    <td className="pl-4 py-2.5 text-sm font-bold text-emerald-800 dark:text-emerald-300">
-                                                                        💰 PROFIT BRUT
+                                                                    <td className="pl-4 py-1.5 text-sm font-bold text-emerald-800 dark:text-emerald-300">
+                                                                        <span className="inline-flex items-center">
+                                                                            💰 PROFIT BRUT
+                                                                            <PnlTooltip text='Profit Brut = Revenue Net (fără TVA) − COGS (fără TVA). Reflectă câștigul după costul produselor, înainte de costurile operaționale, marketing și fixe.' />
+                                                                        </span>
                                                                         <span className={`ml-2 text-xs font-normal ${pctColor(grossMarginPct)}`}>({grossMarginPct.toFixed(1)}%)</span>
                                                                     </td>
-                                                                    <td className={`px-4 py-2.5 text-sm text-right font-bold ${grossProfit.fara_tva >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                        {fm(grossProfit.fara_tva)} RON
+                                                                    <td className={`px-4 py-1.5 text-sm text-right font-bold ${grossProfit.fara_tva >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                        {fm(grossProfit.fara_tva)}
                                                                     </td>
                                                                 </tr>
 
-                                                                <tr><td colSpan={2} className="py-1.5"></td></tr>
-
                                                                 {/* ═══ OPERATIONAL COSTS ═══ */}
                                                                 <PnlSection id="operational" icon="🏢" label="COSTURI OPERAȚIONALE"
+                                                                    tooltip='Costurile de operare — transport, fulfillment, comisioane. Se aplică doar comenzilor livrate (anulate nu au costuri operaționale).'
                                                                     totalValue={opTotalFara}
                                                                     totalPct={refRev ? parseFloat(((opTotalFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
 
                                                                     {transportVal > 0 && (
                                                                         <PnlRow label="(-) Transport" value={transportVal} indent={1} isNegative
+                                                                            tooltip='Costul transportului din comenzile livrate. Prioritate: 1) Cost real din CSV curierat, 2) Comandă anterioară cu aceleași produse, 3) Media magazinului (30 zile), 4) Diferență subtotal vs total.'
                                                                             pct={refRev ? parseFloat(((transportFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                     )}
                                                                     {comisionVal > 0 && (
                                                                         <PnlRow label={`(-) Comision agenție (${profitabilityData.config?.gt_commission_pct || 0}%)`}
                                                                             value={comisionVal} indent={1} isNegative
+                                                                            tooltip={`${profitabilityData.config?.gt_commission_pct || 0}% din venitul comenzilor livrate pe magazinul George Talent. Se aplică DOAR pentru acel magazin.`}
                                                                             pct={refRev ? parseFloat(((comisionFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                     )}
                                                                     {paymentVal > 0 && (
-                                                                        <PnlRow label="(-) Procesare plată" value={paymentVal} indent={1} isNegative />
+                                                                        <PnlRow label="(-) Procesare plată" value={paymentVal} indent={1} isNegative
+                                                                            tooltip={`${profitabilityData.config?.payment_processing_pct || 0}% + ${profitabilityData.config?.payment_processing_fixed || 0} RON fix/comandă pentru plăți cu cardul. Comenzile ramburs nu au această taxă.`} />
                                                                     )}
                                                                     {frisboVal > 0 && (
-                                                                        <PnlRow label="(-) Fulfillment (Frisbo)" value={frisboVal} indent={1} isNegative />
+                                                                        <PnlRow label="(-) Fulfillment (Frisbo)" value={frisboVal} indent={1} isNegative
+                                                                            tooltip={`Cost fix pe comandă (${profitabilityData.config?.frisbo_fee_per_order || 0} RON) × comenzile livrate. Taxă de fulfillment 3PL Frisbo.`} />
                                                                     )}
                                                                     {warehouseVal > 0 && (
-                                                                        <PnlRow label="(-) Salariu depozit" value={warehouseVal} indent={1} isNegative />
+                                                                        <PnlRow label="(-) Salariu depozit" value={warehouseVal} indent={1} isNegative
+                                                                            tooltip={`Cost fix pe pachet (${profitabilityData.config?.warehouse_salary_per_package || 0} RON) × pachete expediate. Forța de muncă depozit. Fără TVA.`} />
                                                                     )}
 
                                                                     <TvaSection title={`${title}-operational`} totalTva={opTotalTva}
@@ -1209,6 +1359,7 @@ export default function Analytics() {
                                                                         ]} />
 
                                                                     <PnlRow label="Total Operațional (fără TVA)" value={opTotalFara} isTotal isNegative
+                                                                        tooltip='Suma: Transport + Fulfillment + Salariu Depozit + Comision + Procesare Plată (toate fără TVA).'
                                                                         pct={refRev ? parseFloat(((opTotalFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                 </PnlSection>
 
@@ -1216,41 +1367,46 @@ export default function Analytics() {
 
                                                                 {/* ═══ OPERATING PROFIT ═══ */}
                                                                 <tr className="bg-blue-50 dark:bg-blue-900/20">
-                                                                    <td className="pl-4 py-2.5 text-sm font-bold text-blue-800 dark:text-blue-300">
-                                                                        📈 PROFIT OPERAȚIONAL
+                                                                    <td className="pl-4 py-1.5 text-sm font-bold text-blue-800 dark:text-blue-300">
+                                                                        <span className="inline-flex items-center">
+                                                                            📈 PROFIT OPERAȚIONAL
+                                                                            <PnlTooltip text='Profit Operațional = Profit Brut − Total Costuri Operaționale (fără TVA). Reflectă profitul după costurile directe și de operare, înainte de marketing și costuri fixe.' />
+                                                                        </span>
                                                                         <span className={`ml-2 text-xs font-normal ${pctColor(operatingMarginPct)}`}>({operatingMarginPct.toFixed(1)}%)</span>
                                                                     </td>
-                                                                    <td className={`px-4 py-2.5 text-sm text-right font-bold ${operatingProfit.fara_tva >= 0 ? 'text-blue-700 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                        {fm(operatingProfit.fara_tva)} RON
+                                                                    <td className={`px-4 py-1.5 text-sm text-right font-bold ${operatingProfit.fara_tva >= 0 ? 'text-blue-700 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                        {fm(operatingProfit.fara_tva)}
                                                                     </td>
                                                                 </tr>
-
-                                                                <tr><td colSpan={2} className="py-1.5"></td></tr>
 
                                                                 {/* ═══ MARKETING ═══ */}
                                                                 {mktTotalCu > 0 && (
                                                                     <>
                                                                         <PnlSection id="marketing" icon="📣" label="COSTURI MARKETING"
+                                                                            tooltip='Cheltuieli publicitare din Google Sheets (tab CPA), agregate pe platformă pentru perioada selectată.'
                                                                             totalValue={mktTotalFara}
                                                                             totalPct={refRev ? parseFloat(((mktTotalFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
 
                                                                             {fbVal > 0 && (
                                                                                 <PnlRow label="(-) Facebook Ads" value={fbVal} indent={1} isNegative
+                                                                                    tooltip='Cheltuieli Facebook/Meta Ads din Google Sheets pentru perioada selectată.'
                                                                                     pct={refRev ? parseFloat(((fbFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                             )}
                                                                             {ttVal > 0 && (
                                                                                 <PnlRow label="(-) TikTok Ads" value={ttVal} indent={1} isNegative
+                                                                                    tooltip='Cheltuieli TikTok Ads din Google Sheets. Fără TVA (platformă internațională).'
                                                                                     pct={refRev ? parseFloat(((ttFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                             )}
                                                                             {gadsVal > 0 && (
                                                                                 <PnlRow label="(-) Google Ads" value={gadsVal} indent={1} isNegative
+                                                                                    tooltip='Cheltuieli Google Ads din Google Sheets. Fără TVA (platformă internațională).'
                                                                                     pct={refRev ? parseFloat(((gadsVal / refRev) * 100).toFixed(1)) : undefined} />
                                                                             )}
 
                                                                             <PnlRow label="Total Marketing" value={mktTotalFara} isTotal isNegative
+                                                                                tooltip='Suma: Facebook + TikTok + Google Ads. Date din Google Sheets CPA tab.'
                                                                                 pct={refRev ? parseFloat(((mktTotalFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                         </PnlSection>
-                                                                        <tr><td colSpan={2} className="py-1.5"></td></tr>
                                                                     </>
                                                                 )}
 
@@ -1262,6 +1418,7 @@ export default function Analytics() {
                                                                     return (
                                                                         <>
                                                                             <PnlSection id="fixed" icon="💼" label={`COSTURI FIXE (${pnl?.fixed_costs_month || ''})`}
+                                                                                tooltip={`Costurile fixe lunare din luna ${pnl?.fixed_costs_month || 'curentă'}, gestionate în Settings → Business Costs.`}
                                                                                 totalValue={fcTotalFara}
                                                                                 totalPct={refRev ? parseFloat(((fcTotalFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
 
@@ -1293,33 +1450,41 @@ export default function Analytics() {
                                                                                 )}
 
                                                                                 <PnlRow label="Total Costuri Fixe (fără TVA)" value={fcTotalFara} isTotal isNegative
+                                                                                    tooltip='Suma tuturor costurilor fixe lunare. Fiecare intrare respectă flag-ul cu/fără TVA definit individual.'
                                                                                     pct={refRev ? parseFloat(((fcTotalFara / refRev) * 100).toFixed(1)) : undefined} />
                                                                             </PnlSection>
-                                                                            <tr><td colSpan={2} className="py-1.5"></td></tr>
                                                                         </>
                                                                     )
                                                                 })()}
 
                                                                 {/* ═══ TOTAL COSTS ═══ */}
                                                                 <PnlRow label="📋 Total costuri (fără TVA)" value={totalCostsFara} isTotal isNegative
+                                                                    tooltip='Suma tuturor categoriilor de cost: COGS + Operațional + Marketing + Costuri Fixe (toate fără TVA).'
                                                                     pct={refRev ? parseFloat(((totalCostsFara / refRev) * 100).toFixed(1)) : undefined} />
 
-                                                                <tr><td colSpan={2} className="py-1.5"></td></tr>
 
                                                                 {/* ═══ NET PROFIT ═══ */}
                                                                 <tr className="bg-zinc-900 dark:bg-zinc-950">
-                                                                    <td className="pl-4 py-3 text-sm font-bold text-white">
-                                                                        💵 PROFIT NET
+                                                                    <td className="pl-4 py-2 text-sm font-bold text-white">
+                                                                        <span className="inline-flex items-center">
+                                                                            💵 PROFIT NET
+                                                                            <PnlTooltip text='Profit Net = Profit Operațional − Marketing − Costuri Fixe (fără TVA). Aceasta este linia de bottom-line — câștigul real după absolut toate costurile.' />
+                                                                        </span>
                                                                         <span className={`ml-2 text-xs font-normal ${pctColor(npPct)}`}>({typeof npPct === 'number' ? npPct.toFixed(1) : npPct}%)</span>
                                                                     </td>
-                                                                    <td className={`px-4 py-3 text-sm text-right font-bold ${np.fara_tva >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                                        {fm(np.fara_tva)} RON
+                                                                    <td className={`px-4 py-2 text-sm text-right font-bold ${np.fara_tva >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                                        {fm(np.fara_tva)}
                                                                     </td>
                                                                 </tr>
 
                                                                 {/* % Profit */}
                                                                 <tr className="bg-zinc-800 dark:bg-zinc-900">
-                                                                    <td className="pl-4 py-2 text-xs text-zinc-400">% Profit (din revenue fără TVA)</td>
+                                                                    <td className="pl-4 py-2 text-xs text-zinc-400">
+                                                                        <span className="inline-flex items-center">
+                                                                            % Profit (din revenue fără TVA)
+                                                                            <PnlTooltip text='Marja Netă = Profit Net / Revenue Net (fără TVA) × 100. Indică ce procent din venitul net rămâne ca profit după toate costurile.' />
+                                                                        </span>
+                                                                    </td>
                                                                     <td className={`px-4 py-2 text-xs text-right font-semibold ${pctColor(npPct)}`}>
                                                                         {typeof npPct === 'number' ? npPct.toFixed(2) : npPct}%
                                                                     </td>
@@ -1351,7 +1516,7 @@ export default function Analytics() {
                                         const storePnls = profitabilityData.pnl_by_store || []
 
                                         return (
-                                            <div className="space-y-6">
+                                            <div className="space-y-3">
                                                 {/* Individual store P&L tables */}
                                                 {storePnls.map(sp => renderStorePnl(sp, `P&L — ${sp.store_name}`, false, null))}
 
@@ -1423,18 +1588,18 @@ export default function Analytics() {
 
                                 {orderProfitData?.orders?.length > 0 ? (
                                     <>
-                                        <div className="overflow-x-auto">
+                                        <div className="overflow-auto max-h-[75vh]">
                                             <table className="w-full">
-                                                <thead className="bg-zinc-50 dark:bg-zinc-900/50">
+                                                <thead className="bg-zinc-50 dark:bg-zinc-900/50 sticky top-0 z-10">
                                                     <tr>
-                                                        <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Order</th>
-                                                        <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Date</th>
-                                                        <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Status</th>
-                                                        <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Revenue</th>
-                                                        <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Total Costs</th>
-                                                        <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Gross Profit</th>
-                                                        <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Net Profit</th>
-                                                        <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Margin</th>
+                                                        <th className="text-left px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Order</th>
+                                                        <th className="text-left px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Date</th>
+                                                        <th className="text-left px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Status</th>
+                                                        <th className="text-right px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Revenue</th>
+                                                        <th className="text-right px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Total Costs</th>
+                                                        <th className="text-right px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Gross Profit</th>
+                                                        <th className="text-right px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Net Profit</th>
+                                                        <th className="text-right px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Margin</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700">
@@ -1445,7 +1610,7 @@ export default function Analytics() {
                                                                 onClick={() => setExpandedOrderUid(expandedOrderUid === order.uid ? null : order.uid)}
                                                                 className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer"
                                                             >
-                                                                <td className="px-4 py-3 text-sm">
+                                                                <td className="px-3 py-1.5 text-sm">
                                                                     <div className="font-medium text-zinc-900 dark:text-white">#{order.order_number}</div>
                                                                     <div className="text-xs text-zinc-500 dark:text-white">{order.customer_name}</div>
                                                                     {order.has_missing_costs && (
@@ -1454,10 +1619,10 @@ export default function Analytics() {
                                                                         </span>
                                                                     )}
                                                                 </td>
-                                                                <td className="px-4 py-3 text-sm text-zinc-600 dark:text-white">
+                                                                <td className="px-3 py-1.5 text-xs text-zinc-600 dark:text-white">
                                                                     {order.created_at ? new Date(order.created_at).toLocaleDateString() : '-'}
                                                                 </td>
-                                                                <td className="px-4 py-3 text-sm">
+                                                                <td className="px-3 py-1.5 text-sm">
                                                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${order.status === 'delivered' ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400' :
                                                                         order.status === 'in_transit' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400' :
                                                                             order.status === 'back_to_sender' || order.status === 'returned' ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400' :
@@ -1467,19 +1632,19 @@ export default function Analytics() {
                                                                         {order.status}
                                                                     </span>
                                                                 </td>
-                                                                <td className="px-4 py-3 text-sm text-right text-zinc-900 dark:text-white font-medium">
-                                                                    {formatMoney(order.total_price || order.revenue)} RON
+                                                                <td className="px-3 py-1.5 text-xs text-right text-zinc-900 dark:text-white font-medium">
+                                                                    {formatMoney(order.total_price || order.revenue)}
                                                                 </td>
-                                                                <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400">
-                                                                    {formatMoney(order.total_costs)} RON
+                                                                <td className="px-3 py-1.5 text-xs text-right text-red-600 dark:text-red-400">
+                                                                    {formatMoney(order.total_costs)}
                                                                 </td>
-                                                                <td className={`px-4 py-3 text-sm text-right font-bold ${(order.profit_gross || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                    {formatMoney(order.profit_gross)} RON
+                                                                <td className={`px-3 py-1.5 text-xs text-right font-bold ${(order.profit_gross || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                    {formatMoney(order.profit_gross)}
                                                                 </td>
-                                                                <td className={`px-4 py-3 text-sm text-right ${(order.profit_net || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                    {formatMoney(order.profit_net)} RON
+                                                                <td className={`px-3 py-1.5 text-xs text-right ${(order.profit_net || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                    {formatMoney(order.profit_net)}
                                                                 </td>
-                                                                <td className="px-4 py-3 text-sm text-right">
+                                                                <td className="px-3 py-1.5 text-xs text-right">
                                                                     <span className={order.margin_pct >= 20 ? 'text-green-600 dark:text-green-400' : order.margin_pct >= 10 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}>
                                                                         {order.margin_pct}%
                                                                     </span>
@@ -1717,7 +1882,7 @@ export default function Analytics() {
                                     <select
                                         value={/^\d{4}-\d{2}$/.test(profitPeriod) ? profitPeriod : ''}
                                         onChange={(e) => { if (e.target.value) { setProfitPeriod(e.target.value); setProfitDateFrom(''); setProfitDateTo('') } }}
-                                        className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 border-0 cursor-pointer"
+                                        className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-white border-0 cursor-pointer"
                                     >
                                         <option value="">Lună specifică...</option>
                                         {(() => {
@@ -1763,12 +1928,66 @@ export default function Analytics() {
                                         </>
                                     )}
 
-                                    {profitLoading && (
-                                        <div className="ml-2 animate-spin w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full" />
-                                    )}
+                                    <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600 mx-1" />
+
+                                    {/* Store filter */}
+                                    <div className="relative">
+                                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Magazine</label>
+                                        <select
+                                            value=""
+                                            onChange={e => {
+                                                const v = e.target.value
+                                                if (!v) return
+                                                setProfitStores(prev => prev.includes(v) ? prev.filter(s => s !== v) : [...prev, v])
+                                            }}
+                                            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white"
+                                        >
+                                            <option value="">{profitStores.length === 0 ? 'Toate' : `${profitStores.length} selectate`}</option>
+                                            {stores.map(s => (
+                                                <option key={s.uid} value={s.uid}>{profitStores.includes(s.uid) ? '✓ ' : ''}{s.name}</option>
+                                            ))}
+                                        </select>
+                                        {profitStores.length > 0 && (
+                                            <button onClick={() => setProfitStores([])} className="absolute -top-0.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center leading-none">×</button>
+                                        )}
+                                    </div>
+
+                                    <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer self-end">
+                                        <input type="checkbox"
+                                            checked={Object.keys(expandedPnlSections).length > 0 && Object.values(expandedPnlSections).every(v => v)}
+                                            onChange={e => {
+                                                const allSections = ['income', 'cogs', 'operational', 'marketing', 'fixed']
+                                                if (e.target.checked) {
+                                                    setExpandedPnlSections(Object.fromEntries(allSections.map(s => [s, true])))
+                                                } else {
+                                                    setExpandedPnlSections({})
+                                                }
+                                            }}
+                                            className="rounded border-zinc-300 text-indigo-600 w-3.5 h-3.5" />
+                                        Expandate
+                                    </label>
+
+                                    <button onClick={fetchProfitNow} disabled={profitLoading}
+                                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 self-end">
+                                        {profitLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
+                                        Analizează
+                                    </button>
                                 </div>
                             </div>
 
+                    {!profitabilityData && !profitLoading && (
+                        <div className="text-center py-16 text-zinc-500 dark:text-zinc-400">
+                            <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                            <p className="text-lg font-medium">Selectează filtrele și apasă Analizează</p>
+                            <p className="text-sm mt-1">P&L Comparativ va fi generat pe baza filtrelor selectate.</p>
+                        </div>
+                    )}
+                    {profitLoading && (
+                        <div className="flex items-center justify-center py-20">
+                            <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
+                            <span className="ml-3 text-zinc-500 dark:text-zinc-300">Se calculează P&L...</span>
+                        </div>
+                    )}
                     {profitabilityData && (() => {
                         const pnl = profitabilityData.pnl
                         const storePnls = profitabilityData.pnl_by_store || []
@@ -1776,11 +1995,12 @@ export default function Analytics() {
                         const config = profitabilityData.config || {}
                         const bizBySection = pnl?.business_costs_by_section || {}
 
-                        // Build columns: each store + total
-                        const columns = [
+                        // Build columns: each store + total (filter by hidden stores)
+                        const allColumns = [
                             ...storePnls.map(sp => ({ key: sp.store_uid, label: sp.store_name, data: sp })),
                             { key: '_total', label: 'TOTAL', data: { ...pnl, income: { ...pnl?.income, sales_delivered: pnl?.income?.total_realized, delivered_count: pnl?.income?.delivered_count } } },
                         ]
+                        const columns = allColumns.filter(c => c.key === '_total' || !pnlHiddenStores.includes(c.key))
 
                         // Row definitions
                         const getValue = (col, path) => {
@@ -1814,45 +2034,45 @@ export default function Analytics() {
                             : []
 
                         const rows = [
-                            { type: 'header', label: '📈 VENITURI' },
-                            { type: 'row', label: 'Vânzări Brute (Gross Sales)', path: 'income.gross_sales' },
-                            { type: 'row', label: '(-) Returnate/Anulate', path: 'income.returns_cancelled', isNeg: true, countPath: 'income.returns_cancelled_count' },
-                            { type: 'row', label: '(-) Nerealizate/În tranzit', path: '__unrealized_revenue', isNeg: true, countPath: '__unrealized_count' },
-                            { type: 'total', label: 'Vânzări Revenue (livrate)', path: 'income.sales_delivered', countPath: 'income.delivered_count' },
+                            { type: 'header', label: '📈 VENITURI', section: 'income', tooltip: 'Secțiunea de venituri cuprinde toate sumele încasate sau așteptate din comenzi, înainte de deducerea costurilor.' },
+                            { type: 'row', label: 'Vânzări Brute', path: 'income.gross_sales', section: 'income', tooltip: 'Suma totală a valorii TUTUROR comenzilor din perioada selectată, indiferent de status (livrate + returnate + anulate + în tranzit + altele). Se ia total_price din fiecare comandă, convertit în RON la cursul BNR din data comenzii.' },
+                            { type: 'row', label: '(-) Returnate/Anulate', path: 'income.returns_cancelled', isNeg: true, section: 'income', countPath: 'income.returns_cancelled_count', tooltip: 'Valoarea comenzilor returnate/anulate. Se scade din Vânzări Brute.' },
+                            { type: 'row', label: '(-) Nerealizate/În tranzit', path: '__unrealized_revenue', isNeg: true, section: 'income', countPath: '__unrealized_count', tooltip: 'Valoarea comenzilor încă în curs de livrare. Se scade deoarece nu sunt confirmate.' },
+                            { type: 'total', label: 'Revenue Livrat', path: 'income.sales_delivered', section: 'income', countPath: 'income.delivered_count', tooltip: 'Venitul net realizat = doar comenzile livrate.' },
                             { type: 'spacer' },
-                            { type: 'header', label: '📦 COSTURI DIRECTE (COGS)', checkPath: 'cogs.total_cogs' },
-                            { type: 'row', label: 'Cost Produse (SKU)', path: 'cogs.sku_costs', isNeg: true },
-                            { type: 'total', label: 'Total COGS', path: 'cogs.total_cogs', isNeg: true },
-                            { type: 'spacer', checkPath: 'cogs.total_cogs' },
-                            { type: 'profit', label: '💰 PROFIT BRUT', path: 'gross_profit', pctKey: 'gross_margin_pct' },
+                            { type: 'header', label: '📦 COGS', section: 'cogs', checkPath: 'cogs.total_cogs', tooltip: 'Cost of Goods Sold — costul de achiziție al produselor vândute.' },
+                            { type: 'row', label: 'Cost Produse (SKU)', path: 'cogs.sku_costs', isNeg: true, section: 'cogs', tooltip: 'Suma (cost_unitar × cantitate) din comenzile livrate.' },
+                            { type: 'total', label: 'Total COGS', path: 'cogs.total_cogs', isNeg: true, section: 'cogs', tooltip: 'Totalul costurilor directe ale produselor vândute.' },
+                            { type: 'profit', label: '💰 PROFIT BRUT', path: 'gross_profit', pctKey: 'gross_margin_pct', tooltip: 'Profit Brut = Revenue Livrat − Total COGS.' },
                             { type: 'spacer' },
-                            { type: 'header', label: '🏢 COSTURI OPERAȚIONALE', checkPath: 'operational.total_operational' },
-                            { type: 'row', label: 'Transport / Curierat', path: 'operational.shipping', isNeg: true },
-                            { type: 'row', label: 'Taxă Frisbo (Fulfillment)', path: 'operational.frisbo_fee', isNeg: true },
-                            { type: 'row', label: 'Salariu Depozit', path: 'operational.warehouse_salary', isNeg: true },
-                            { type: 'row', label: `Comision GT (${config.gt_commission_pct || 0}%)`, path: 'operational.gt_commission', isNeg: true },
-                            { type: 'row', label: `Procesare Plată (${config.payment_processing_pct || 0}%)`, path: 'operational.payment_fee', isNeg: true },
-                            { type: 'total', label: 'Total Operațional', path: 'operational.total_operational', isNeg: true },
-                            { type: 'spacer', checkPath: 'operational.total_operational' },
-                            { type: 'profit', label: '📈 PROFIT OPERAȚIONAL', path: 'operating_profit', pctKey: 'operating_margin_pct' },
+                            { type: 'header', label: '🏢 COSTURI OPERAȚIONALE', section: 'operational', checkPath: 'operational.total_operational', tooltip: 'Transport, fulfillment, comisioane — doar comenzi livrate.' },
+                            { type: 'row', label: 'Transport', path: 'operational.shipping', isNeg: true, section: 'operational', tooltip: 'Cost transport comenzi livrate (CSV curierat / estimare istoric).' },
+                            { type: 'row', label: 'Frisbo Fee', path: 'operational.frisbo_fee', isNeg: true, section: 'operational', tooltip: `${config.frisbo_fee_per_order || 0} RON/comandă × comenzi livrate.` },
+                            { type: 'row', label: 'Salariu Depozit', path: 'operational.warehouse_salary', isNeg: true, section: 'operational', tooltip: `${config.warehouse_salary_per_package || 0} RON/pachet × pachete expediate.` },
+                            { type: 'row', label: `Comision GT (${config.gt_commission_pct || 0}%)`, path: 'operational.gt_commission', isNeg: true, section: 'operational', tooltip: `${config.gt_commission_pct || 0}% din venitul George Talent.` },
+                            { type: 'row', label: `Procesare Plăți (${config.payment_processing_pct || 0}%)`, path: 'operational.payment_fee', isNeg: true, section: 'operational', tooltip: `${config.payment_processing_pct || 0}% din venituri + fix/card.` },
+                            { type: 'total', label: 'Total Operațional', path: 'operational.total_operational', isNeg: true, section: 'operational', tooltip: 'Suma costurilor operaționale.' },
+                            { type: 'profit', label: '📈 PROFIT OPERAȚIONAL', path: 'operating_profit', pctKey: 'operating_margin_pct', tooltip: 'Profit Brut − Total Costuri Operaționale.' },
                             { type: 'spacer' },
-                            // Marketing section
-                            { type: 'header', label: '📣 COSTURI MARKETING', checkPath: 'marketing.total' },
-                            { type: 'row', label: 'Facebook Ads', path: 'marketing.facebook', isNeg: true },
-                            { type: 'row', label: 'TikTok Ads', path: 'marketing.tiktok', isNeg: true },
-                            { type: 'row', label: 'Google Ads', path: 'marketing.google', isNeg: true },
-                            { type: 'total', label: 'Total Marketing', path: 'marketing.total', isNeg: true },
+                            { type: 'header', label: '📣 MARKETING', section: 'marketing', checkPath: 'marketing.total', tooltip: 'Cheltuielile de marketing din Google Sheets.' },
+                            { type: 'row', label: 'Facebook Ads', path: 'marketing.facebook', isNeg: true, section: 'marketing', tooltip: 'Cheltuieli Facebook/Meta Ads.' },
+                            { type: 'row', label: 'TikTok Ads', path: 'marketing.tiktok', isNeg: true, section: 'marketing', tooltip: 'Cheltuieli TikTok Ads.' },
+                            { type: 'row', label: 'Google Ads', path: 'marketing.google', isNeg: true, section: 'marketing', tooltip: 'Cheltuieli Google Ads.' },
+                            { type: 'total', label: 'Total Marketing', path: 'marketing.total', isNeg: true, section: 'marketing', tooltip: 'Suma Facebook + TikTok + Google Ads.' },
                             { type: 'spacer', checkPath: 'marketing.total' },
-                            // Fixed costs section — dynamic entries
-                            { type: 'header', label: `💼 COSTURI FIXE (${pnl?.fixed_costs_month || ''})`, checkPath: 'fixed_costs.total' },
-                            ...fixedCostRows,
-                            { type: 'total', label: 'Total Costuri Fixe', path: 'fixed_costs.total', isNeg: true },
+                            { type: 'header', label: `💼 COSTURI FIXE (${pnl?.fixed_costs_month || ''})`, section: 'fixed', checkPath: 'fixed_costs.total', tooltip: `Costuri fixe lunare (${pnl?.fixed_costs_month || ''}).` },
+                            ...fixedCostRows.map(r => ({ ...r, section: 'fixed' })),
+                            { type: 'total', label: 'Total Costuri Fixe', path: 'fixed_costs.total', isNeg: true, section: 'fixed', tooltip: 'Suma tuturor costurilor fixe lunare.' },
                             { type: 'spacer', checkPath: 'fixed_costs.total' },
-                            { type: 'net', label: '💵 PROFIT NET', path: 'net_profit', pctKey: 'net_margin_pct' },
+                            { type: 'net', label: '💵 PROFIT NET', path: 'net_profit', pctKey: 'net_margin_pct', tooltip: 'Profit Operațional − Marketing − Costuri Fixe.' },
                         ]
 
-                        // Filter: hide row if ALL columns have 0 for that path
+                        // Filter: hide row if ALL columns have 0, or if section is collapsed
                         const shouldShow = (row) => {
+                            // Collapsible: non-header rows in a collapsed section are hidden
+                            if (row.section && row.type !== 'header' && !expandedPnlSections[row.section]) {
+                                return false
+                            }
                             if (row.type === 'spacer') {
                                 if (!row.checkPath) return true
                                 return columns.some(c => {
@@ -1883,6 +2103,21 @@ export default function Analytics() {
 
                         const pctColor = (pct) => pct >= 20 ? 'text-green-600 dark:text-green-400' : pct >= 10 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
 
+                        // Tooltip helper component
+                        const TooltipLabel = ({ label, tooltip, className = '' }) => (
+                            <span className={`inline-flex items-center gap-1 ${className}`}>
+                                {label}
+                                {tooltip && (
+                                    <span className="relative group/tip inline-flex">
+                                        <Info className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 cursor-help opacity-50 group-hover/tip:opacity-100 transition-opacity" />
+                                        <span className="absolute left-6 top-0 z-[100] invisible group-hover/tip:visible opacity-0 group-hover/tip:opacity-100 transition-all duration-200 w-[340px] max-w-[90vw] px-3 py-2.5 text-xs font-normal normal-case tracking-normal leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-600 whitespace-normal break-words">
+                                            {tooltip}
+                                        </span>
+                                    </span>
+                                )}
+                            </span>
+                        )
+
                         return (
                             <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
                                 <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-700">
@@ -1901,9 +2136,23 @@ export default function Analytics() {
                                         </p>
                                     )}
                                 </div>
-                                <div className="overflow-x-auto">
+                                {/* Store column toggle */}
+                                {storePnls.length > 1 && (
+                                    <div className="flex items-center gap-2 flex-wrap mt-2 px-1">
+                                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">⚙ Coloane:</span>
+                                        {storePnls.map(sp => (
+                                            <label key={sp.store_uid} className="inline-flex items-center gap-1 text-xs cursor-pointer">
+                                                <input type="checkbox" checked={!pnlHiddenStores.includes(sp.store_uid)}
+                                                    onChange={() => setPnlHiddenStores(prev => prev.includes(sp.store_uid) ? prev.filter(s => s !== sp.store_uid) : [...prev, sp.store_uid])}
+                                                    className="rounded border-zinc-300 text-indigo-600 w-3.5 h-3.5" />
+                                                <span className="text-zinc-600 dark:text-zinc-300">{sp.store_name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="overflow-auto max-h-[75vh]">
                                     <table className="w-full border-collapse min-w-[600px]">
-                                        <thead>
+                                        <thead className="sticky top-0 z-10">
                                             <tr className="bg-zinc-100 dark:bg-zinc-900">
                                                 <th className="text-left pl-4 pr-2 py-3 text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wide min-w-[200px] sticky left-0 bg-zinc-100 dark:bg-zinc-900 z-10">Indicator</th>
                                                 {columns.map(col => (
@@ -1913,17 +2162,55 @@ export default function Analytics() {
                                             </tr>
                                         </thead>
                                         <tbody>
+                                            {/* Delivery stats summary rows */}
+                                            {(() => {
+                                                const statRows = [
+                                                    { label: '📦 Expediate', getVal: (col) => col.data?.shipped_count || ((col.data?.income?.delivered_count || 0) + (col.data?.status_breakdown?.in_transit?.count || 0)) },
+                                                    { label: '✅ Livrate', getVal: (col) => col.data?.income?.delivered_count || 0 },
+                                                    { label: '↩ Retur/Anulate', getVal: (col) => col.data?.income?.returns_cancelled_count || 0, isNeg: true },
+                                                    { label: '📊 Livrabilitate', getVal: (col) => {
+                                                        const shipped = col.data?.shipped_count || ((col.data?.income?.delivered_count || 0) + (col.data?.status_breakdown?.in_transit?.count || 0))
+                                                        const delivered = col.data?.income?.delivered_count || 0
+                                                        return shipped > 0 ? ((delivered / shipped) * 100).toFixed(1) : 0
+                                                    }, isPct: true },
+                                                ]
+                                                return statRows.map((sr, si) => (
+                                                    <tr key={`stat-${si}`} className={si === 0 ? 'border-b border-zinc-100 dark:border-zinc-700/50' : si === statRows.length - 1 ? 'border-b-2 border-zinc-300 dark:border-zinc-600' : ''}>
+                                                        <td className={`pl-3 pr-2 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300 sticky left-0 bg-white dark:bg-zinc-800 z-10`}>{sr.label}</td>
+                                                        {columns.map(col => {
+                                                            const val = sr.getVal(col)
+                                                            let color = 'text-zinc-700 dark:text-zinc-200'
+                                                            if (sr.isNeg && val > 0) color = 'text-red-500 dark:text-red-400'
+                                                            if (sr.isPct) {
+                                                                const n = parseFloat(val)
+                                                                color = n >= 85 ? 'text-green-600 dark:text-green-400' : n >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
+                                                            }
+                                                            return (
+                                                                <td key={col.key} className={`px-2 py-1 text-right text-xs font-semibold ${color} ${col.key === '_total' ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : ''}`}>
+                                                                    {sr.isPct ? `${val}%` : val}
+                                                                </td>
+                                                            )
+                                                        })}
+                                                    </tr>
+                                                ))
+                                            })()}
                                             {rows.filter(shouldShow).map((row, idx) => {
                                                 if (row.type === 'spacer') {
-                                                    return <tr key={idx}><td colSpan={columns.length + 1} className="py-1"></td></tr>
+                                                    return <tr key={idx}><td colSpan={columns.length + 1} className="py-0.5"></td></tr>
                                                 }
                                                 if (row.type === 'header') {
+                                                    const isOpen = expandedPnlSections[row.section]
                                                     return (
-                                                        <tr key={idx} className="bg-zinc-100 dark:bg-zinc-900/60">
-                                                            <td className="pl-4 py-2.5 text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wide sticky left-0 bg-zinc-100 dark:bg-zinc-900/60 z-10">{row.label}</td>
+                                                        <tr key={idx} className="bg-zinc-100 dark:bg-zinc-900/60 cursor-pointer select-none hover:bg-zinc-200/70 dark:hover:bg-zinc-900/80 transition-colors"
+                                                            onClick={() => setExpandedPnlSections(prev => ({ ...prev, [row.section]: !prev[row.section] }))}>
+                                                            <td className="pl-3 pr-1 py-1.5 text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wide sticky left-0 bg-zinc-100 dark:bg-zinc-900 z-10">
+                                                                <span className="inline-flex items-center gap-1.5">
+                                                                    {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                                    <TooltipLabel label={row.label} tooltip={row.tooltip} />
+                                                                </span>
+                                                            </td>
                                                             {columns.map(col => (
-                                                                <td key={col.key} className={`px-3 py-2.5 text-right text-xs font-bold text-zinc-500 dark:text-white uppercase ${col.key === '_total' ? 'bg-zinc-200/60 dark:bg-zinc-800/60' : ''
-                                                                    }`}>Cu TVA</td>
+                                                                <td key={col.key} className={`px-2 py-1.5 text-right text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase ${col.key === '_total' ? 'bg-zinc-200/60 dark:bg-zinc-800/60' : ''}`}></td>
                                                             ))}
                                                         </tr>
                                                     )
@@ -1931,16 +2218,14 @@ export default function Analytics() {
                                                 if (row.type === 'net') {
                                                     return (
                                                         <tr key={idx} className="bg-zinc-900 dark:bg-zinc-950">
-                                                            <td className="pl-4 py-3 text-sm font-bold text-white sticky left-0 bg-zinc-900 dark:bg-zinc-950 z-10">{row.label}</td>
+                                                            <td className="pl-3 py-2 text-sm font-bold text-white sticky left-0 bg-zinc-900 dark:bg-zinc-950 z-10"><TooltipLabel label={row.label} tooltip={row.tooltip} /></td>
                                                             {columns.map(col => {
                                                                 const v = getValue(col, row.path)
                                                                 const pct = col.data?.[row.pctKey]
                                                                 const val = v?.cu_tva ?? 0
                                                                 return (
-                                                                    <td key={col.key} className={`px-3 py-3 text-right text-sm font-bold ${col.key === '_total' ? 'bg-zinc-800 dark:bg-zinc-900' : ''
-                                                                        } ${val >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                                        {fm(val)} RON
-                                                                        {pct !== undefined && <div className={`text-[10px] font-normal ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</div>}
+                                                                    <td key={col.key} className={`px-2 py-2 text-right text-sm font-bold ${col.key === '_total' ? 'bg-zinc-800 dark:bg-zinc-900' : ''} ${val >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                                        {fm(val)}{pct !== undefined && <span className={`text-[10px] font-normal ml-1 ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</span>}
                                                                     </td>
                                                                 )
                                                             })}
@@ -1950,16 +2235,14 @@ export default function Analytics() {
                                                 if (row.type === 'profit') {
                                                     return (
                                                         <tr key={idx} className="bg-zinc-50 dark:bg-zinc-800/60">
-                                                            <td className="pl-4 py-2.5 text-sm font-bold text-zinc-900 dark:text-white sticky left-0 bg-zinc-50 dark:bg-zinc-800/60 z-10">{row.label}</td>
+                                                            <td className="pl-3 py-1.5 text-sm font-bold text-zinc-900 dark:text-white sticky left-0 bg-zinc-50 dark:bg-zinc-800 z-10"><TooltipLabel label={row.label} tooltip={row.tooltip} /></td>
                                                             {columns.map(col => {
                                                                 const v = getValue(col, row.path)
                                                                 const pct = col.data?.[row.pctKey]
                                                                 const val = v?.cu_tva ?? 0
                                                                 return (
-                                                                    <td key={col.key} className={`px-3 py-2.5 text-right text-sm font-bold ${col.key === '_total' ? 'bg-zinc-100 dark:bg-zinc-800' : ''
-                                                                        } ${val >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                        {fm(val)} RON
-                                                                        {pct !== undefined && <div className={`text-[10px] font-normal ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</div>}
+                                                                    <td key={col.key} className={`px-2 py-1.5 text-right text-sm font-bold ${col.key === '_total' ? 'bg-zinc-100 dark:bg-zinc-800' : ''} ${val >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                        {fm(val)}{pct !== undefined && <span className={`text-[10px] font-normal ml-1 ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</span>}
                                                                     </td>
                                                                 )
                                                             })}
@@ -1967,18 +2250,16 @@ export default function Analytics() {
                                                     )
                                                 }
                                                 if (row.type === 'dynamic') {
-                                                    // Dynamic rows have a fixed amount, not a path
                                                     return (
                                                         <tr key={idx}>
-                                                            <td className="pl-8 py-2 text-sm text-zinc-700 dark:text-white sticky left-0 bg-white dark:bg-zinc-800 z-10">
-                                                                {row.label}
+                                                            <td className="pl-6 py-1 text-xs text-zinc-600 dark:text-zinc-300 sticky left-0 bg-white dark:bg-zinc-800 z-10">
+                                                                <TooltipLabel label={row.label} tooltip={row.tooltip} />
                                                             </td>
                                                             {columns.map(col => {
-                                                                // For total column, show the full amount; for store columns show proportional or same
                                                                 const val = col.key === '_total' ? (row.amount || 0) : 0
                                                                 return (
-                                                                    <td key={col.key} className={`px-3 py-2 text-sm text-right font-medium ${col.key === '_total' ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : ''} text-red-600 dark:text-red-400`}>
-                                                                        {val !== 0 ? `${fm(val)} RON` : '—'}
+                                                                    <td key={col.key} className={`px-2 py-1 text-xs text-right font-medium ${col.key === '_total' ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : ''} text-red-600 dark:text-red-400`}>
+                                                                        {val !== 0 ? fm(val) : '—'}
                                                                     </td>
                                                                 )
                                                             })}
@@ -1989,19 +2270,21 @@ export default function Analytics() {
                                                 const isTotal = row.type === 'total'
                                                 return (
                                                     <tr key={idx} className={isTotal ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''}>
-                                                        <td className={`pl-${isTotal ? '4' : '8'} py-2 text-sm ${isTotal ? 'font-semibold text-zinc-800 dark:text-white border-t border-zinc-300 dark:border-zinc-600' : 'text-zinc-700 dark:text-white'
-                                                            } sticky left-0 ${isTotal ? 'bg-zinc-50 dark:bg-zinc-800/50' : 'bg-white dark:bg-zinc-800'} z-10`}>
-                                                            {row.label}
-                                                            {row.countPath && <span className="text-xs text-zinc-400 ml-1">({columns.map(c => getValue(c, row.countPath) || 0).join('/')})</span>}
+                                                        <td className={`${isTotal ? 'pl-3' : 'pl-6'} py-1 text-xs ${isTotal ? 'font-semibold text-zinc-800 dark:text-white border-t border-zinc-200 dark:border-zinc-700' : 'text-zinc-600 dark:text-zinc-300'} sticky left-0 ${isTotal ? 'bg-zinc-50 dark:bg-zinc-800' : 'bg-white dark:bg-zinc-800'} z-10`}>
+                                                            <TooltipLabel label={row.label} tooltip={row.tooltip} />
+                                                            {row.countPath && (() => {
+                                                                const totalCol = columns.find(c => c.key === '_total')
+                                                                const count = totalCol ? (getValue(totalCol, row.countPath) || 0) : columns.reduce((sum, c) => sum + (getValue(c, row.countPath) || 0), 0)
+                                                                return <span className="text-[10px] text-zinc-400 ml-1">({count})</span>
+                                                            })()}
                                                         </td>
                                                         {columns.map(col => {
                                                             const v = getValue(col, row.path)
                                                             const val = v?.cu_tva ?? (typeof v === 'number' ? v : 0)
                                                             const valColor = row.isNeg ? 'text-red-600 dark:text-red-400' : 'text-zinc-800 dark:text-white'
                                                             return (
-                                                                <td key={col.key} className={`px-3 py-2 text-sm text-right font-medium ${isTotal ? 'font-semibold border-t border-zinc-300 dark:border-zinc-600' : ''
-                                                                    } ${col.key === '_total' ? (isTotal ? 'bg-zinc-100 dark:bg-zinc-800' : 'bg-zinc-50/50 dark:bg-zinc-800/30') : ''} ${valColor}`}>
-                                                                    {val !== 0 ? `${fm(val)} RON` : '—'}
+                                                                <td key={col.key} className={`px-2 py-1 text-xs text-right font-medium ${isTotal ? 'font-semibold border-t border-zinc-200 dark:border-zinc-700' : ''} ${col.key === '_total' ? (isTotal ? 'bg-zinc-100 dark:bg-zinc-800' : 'bg-zinc-50/50 dark:bg-zinc-800/30') : ''} ${valColor}`}>
+                                                                    {val !== 0 ? fm(val) : '—'}
                                                                 </td>
                                                             )
                                                         })}
@@ -2350,11 +2633,17 @@ export default function Analytics() {
                             finally { setSkuRiskLoading(false) }
                         }
 
-                        const sortedSkus = skuRiskData?.worst_skus ? [...skuRiskData.worst_skus].sort((a, b) => {
-                            const col = skuRiskSort.col
-                            const av = a[col] ?? -1, bv = b[col] ?? -1
-                            return skuRiskSort.dir === 'desc' ? bv - av : av - bv
-                        }) : []
+                        const sortedSkus = skuRiskData?.worst_skus ? [...skuRiskData.worst_skus]
+                            .filter(s => {
+                                if (!skuRiskSearch) return true
+                                const q = skuRiskSearch.toLowerCase()
+                                return (s.sku || '').toLowerCase().includes(q) || (s.product_name || '').toLowerCase().includes(q)
+                            })
+                            .sort((a, b) => {
+                                const col = skuRiskSort.col
+                                const av = a[col] ?? -1, bv = b[col] ?? -1
+                                return skuRiskSort.dir === 'desc' ? bv - av : av - bv
+                            }) : []
 
                         const anomalyPage = skuRiskData?.anomaly_orders || []
                         const anomalyPerPage = 20
@@ -2422,6 +2711,15 @@ export default function Analytics() {
                                                 className="rounded border-zinc-300" />
                                             +Delivery Problems
                                         </label>
+                                        <div>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Caută SKU</label>
+                                            <div className="relative">
+                                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                                                <input type="text" value={skuRiskSearch} onChange={e => setSkuRiskSearch(e.target.value)}
+                                                    placeholder="SKU sau produs..."
+                                                    className="pl-8 pr-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white w-44" />
+                                            </div>
+                                        </div>
                                         <button onClick={fetchSkuRisk} disabled={skuRiskLoading}
                                             className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5">
                                             {skuRiskLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
@@ -3247,6 +3545,505 @@ export default function Analytics() {
                                         )}
                                     </>
                                 )}
+                            </div>
+                        )
+                    })()}
+                    {/* === SKU Profitability Tab === */}
+                    {activeTab === 'skuProfit' && (() => {
+                        const fetchSkuProfit = async () => {
+                            setSkuProfitLoading(true)
+                            try {
+                                const params = {}
+                                if (skuProfitDateFrom && skuProfitDateTo) {
+                                    params.date_from = skuProfitDateFrom
+                                    params.date_to = skuProfitDateTo
+                                } else {
+                                    params.days = skuProfitDays
+                                }
+                                if (skuProfitStore) params.store_uids = skuProfitStore
+                                const data = await analyticsApi.getSkuProfitability(params)
+                                setSkuProfitData(data)
+                            } catch (err) {
+                                console.error('SKU profitability error:', err)
+                            } finally {
+                                setSkuProfitLoading(false)
+                            }
+                        }
+
+                        // Show empty state if no data and not loading
+                        if (!skuProfitData && !skuProfitLoading) {
+                            return (
+                                <div className="space-y-6">
+                                    {/* Filter Bar */}
+                                    <div className="bg-white dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-4">
+                                        <div className="flex flex-wrap items-end gap-4">
+                                            <div>
+                                                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Perioadă</label>
+                                                <div className="flex gap-1">
+                                                    {[7, 30, 90, 180, 365].map(d => (
+                                                        <button key={d} onClick={() => { setSkuProfitDays(d); setSkuProfitDateFrom(''); setSkuProfitDateTo('') }}
+                                                            className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${skuProfitDays === d && !skuProfitDateFrom
+                                                                ? 'bg-amber-500 text-white shadow-sm' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600'}`}>
+                                                            {d}z
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Magazin</label>
+                                                <select value={skuProfitStore} onChange={e => setSkuProfitStore(e.target.value)}
+                                                    className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white">
+                                                    <option value="">Toate</option>
+                                                    {stores.map(s => <option key={s.uid} value={s.uid}>{s.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <button onClick={fetchSkuProfit}
+                                                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2 shadow-sm">
+                                                <TrendingUp className="w-4 h-4" /> Analizează
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="text-center py-16 text-zinc-500 dark:text-zinc-400">
+                                        <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                        <p className="text-lg font-medium">Selectează filtrele și apasă Analizează</p>
+                                        <p className="text-sm mt-1">Profitabilitatea per SKU va fi calculată pe baza filtrelor selectate.</p>
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                        const products = skuProfitData?.products || []
+                        const summary = skuProfitData?.summary || {}
+
+                        // Filter
+                        const filtered = products.filter(p => {
+                            if (!skuProfitSearch) return true
+                            const q = skuProfitSearch.toLowerCase()
+                            return (p.sku || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q)
+                        })
+
+                        // Sort
+                        const sorted = [...filtered].sort((a, b) => {
+                            const col = skuProfitSort.col
+                            const dir = skuProfitSort.dir === 'asc' ? 1 : -1
+                            const av = a[col] ?? 0
+                            const bv = b[col] ?? 0
+                            if (typeof av === 'string') return av.localeCompare(bv) * dir
+                            return (av - bv) * dir
+                        })
+
+                        const toggleSort = (col) => {
+                            setSkuProfitSort(prev => ({
+                                col,
+                                dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc'
+                            }))
+                        }
+
+                        const sortIcon = (col) => {
+                            if (skuProfitSort.col !== col) return '↕'
+                            return skuProfitSort.dir === 'asc' ? '↑' : '↓'
+                        }
+
+                        const marginColor = (pct) => {
+                            if (pct < 10) return 'text-red-500 dark:text-red-400'
+                            if (pct < 25) return 'text-amber-500 dark:text-amber-400'
+                            return 'text-emerald-500 dark:text-emerald-400'
+                        }
+
+                        const marginBg = (pct) => {
+                            if (pct < 10) return 'bg-red-500/10'
+                            if (pct < 25) return 'bg-amber-500/10'
+                            return 'bg-emerald-500/10'
+                        }
+
+                        const handleAddMktCost = async (sku) => {
+                            try {
+                                await skuMarketingCostsApi.create({
+                                    sku,
+                                    label: newMktCost.label,
+                                    amount: parseFloat(newMktCost.amount) || 0,
+                                    month: newMktCost.month || new Date().toISOString().slice(0, 7),
+                                })
+                                setNewMktCost({ sku: '', label: '', amount: '', month: '' })
+                                setAddingMktFor(null)
+                                // Refresh data
+                                fetchSkuProfit()
+                            } catch (err) {
+                                console.error('Add marketing cost error:', err)
+                            }
+                        }
+
+                        const handleDeleteMktCost = async (id) => {
+                            try {
+                                await skuMarketingCostsApi.delete(id)
+                                fetchSkuProfit()
+                            } catch (err) {
+                                console.error('Delete marketing cost error:', err)
+                            }
+                        }
+
+                        const problems = sorted.filter(p => !p.has_cost || p.margin_pct < 0 || p.return_rate > 20)
+
+                        return (
+                            <div className="space-y-6">
+
+                                {/* Filter Bar */}
+                                <div className="bg-white dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-4">
+                                    <div className="flex flex-wrap items-end gap-4">
+                                        {/* Period presets */}
+                                        <div>
+                                            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Perioadă</label>
+                                            <div className="flex gap-1">
+                                                {[7, 30, 90, 180, 365].map(d => (
+                                                    <button key={d} onClick={() => { setSkuProfitDays(d); setSkuProfitDateFrom(''); setSkuProfitDateTo('') }}
+                                                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${skuProfitDays === d && !skuProfitDateFrom
+                                                            ? 'bg-amber-500 text-white shadow-sm' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600'}`}>
+                                                        {d}z
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {/* Custom dates */}
+                                        <div>
+                                            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">De la</label>
+                                            <input type="date" value={skuProfitDateFrom} onChange={e => setSkuProfitDateFrom(e.target.value)}
+                                                className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Până la</label>
+                                            <input type="date" value={skuProfitDateTo} onChange={e => setSkuProfitDateTo(e.target.value)}
+                                                className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" />
+                                        </div>
+                                        {/* Store filter */}
+                                        <div>
+                                            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Magazin</label>
+                                            <select value={skuProfitStore} onChange={e => setSkuProfitStore(e.target.value)}
+                                                className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white">
+                                                <option value="">Toate</option>
+                                                {stores.map(s => <option key={s.uid} value={s.uid}>{s.name}</option>)}
+                                            </select>
+                                        </div>
+                                        {/* Min units */}
+                                        <div>
+                                            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Min. unități</label>
+                                            <input type="number" min="0" value={0}
+                                                className="w-16 px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white" readOnly />
+                                        </div>
+                                        {/* Analyze button */}
+                                        <button onClick={fetchSkuProfit}
+                                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2 shadow-sm">
+                                            <TrendingUp className="w-4 h-4" /> Analizează
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {skuProfitLoading ? (
+                                    <div className="flex items-center justify-center py-20">
+                                        <RefreshCw className="w-8 h-8 text-amber-500 animate-spin" />
+                                        <span className="ml-3 text-zinc-500 dark:text-zinc-300">Se calculează profitabilitatea per produs...</span>
+                                    </div>
+                                ) : skuProfitData ? (
+                                    <>
+                                        {/* KPI Summary */}
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                                                <div className="text-xs text-zinc-500 dark:text-zinc-400">Produse Analizate</div>
+                                                <div className="text-2xl font-bold text-zinc-900 dark:text-white mt-1">{formatNumber(summary.total_products || 0)}</div>
+                                                <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">{formatNumber(summary.orders_processed || 0)} comenzi</div>
+                                            </div>
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                                                <div className="text-xs text-zinc-500 dark:text-zinc-400">Venituri Totale</div>
+                                                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(Math.round(summary.total_revenue || 0))} RON</div>
+                                            </div>
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                                                <div className="text-xs text-zinc-500 dark:text-zinc-400">Costuri Totale</div>
+                                                <div className="text-2xl font-bold text-red-500 dark:text-red-400 mt-1">{formatNumber(Math.round(summary.total_costs || 0))} RON</div>
+                                            </div>
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                                                <div className="text-xs text-zinc-500 dark:text-zinc-400">Contribuție Totală</div>
+                                                <div className={`text-2xl font-bold mt-1 ${(summary.total_contribution || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                    {formatNumber(Math.round(summary.total_contribution || 0))} RON
+                                                </div>
+                                            </div>
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
+                                                <div className="text-xs text-zinc-500 dark:text-zinc-400">Marjă Medie</div>
+                                                <div className={`text-2xl font-bold mt-1 ${marginColor(summary.avg_margin || 0)}`}>{summary.avg_margin || 0}%</div>
+                                                {summary.products_without_cost > 0 && (
+                                                    <div className="text-xs text-amber-500 mt-1">⚠ {summary.products_without_cost} fără cost</div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Search */}
+                                        <div className="flex items-center gap-3">
+                                            <div className="relative flex-1 max-w-md">
+                                                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Caută SKU sau nume produs..."
+                                                    value={skuProfitSearch}
+                                                    onChange={e => setSkuProfitSearch(e.target.value)}
+                                                    className="w-full pl-10 pr-4 py-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-800 dark:text-white placeholder-zinc-400"
+                                                />
+                                            </div>
+                                            <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                                                {sorted.length} produse afișate
+                                            </div>
+                                        </div>
+
+                                        {/* Main Product Table */}
+                                        <div className="bg-white dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden">
+                                            <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead className="sticky top-0 z-10">
+                                                        <tr className="bg-zinc-50 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-700">
+                                                            <th className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs w-8"></th>
+                                                            <th onClick={() => toggleSort('sku')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                SKU {sortIcon('sku')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('name')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Nume {sortIcon('name')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('units_sold')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Unități {sortIcon('units_sold')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('revenue')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Venituri {sortIcon('revenue')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('cogs')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                COGS {sortIcon('cogs')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('transport')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Transport {sortIcon('transport')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('fees')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Taxe {sortIcon('fees')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('marketing')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Marketing {sortIcon('marketing')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('contribution')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Contribuție {sortIcon('contribution')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('margin_pct')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Marjă % {sortIcon('margin_pct')}
+                                                            </th>
+                                                            <th onClick={() => toggleSort('return_rate')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                                Retur % {sortIcon('return_rate')}
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {sorted.map((p, idx) => (
+                                                            <Fragment key={p.sku}>
+                                                                <tr className={`border-b border-zinc-100 dark:border-zinc-700/30 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition-colors cursor-pointer ${!p.has_cost ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
+                                                                    onClick={() => setSkuProfitExpanded(skuProfitExpanded === p.sku ? null : p.sku)}>
+                                                                    <td className="px-3 py-2">
+                                                                        <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${skuProfitExpanded === p.sku ? 'rotate-180' : ''}`} />
+                                                                    </td>
+                                                                    <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300 font-medium">{p.sku}</td>
+                                                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
+                                                                    <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">{formatNumber(p.units_sold)}</td>
+                                                                    <td className="px-3 py-2 text-right font-medium text-zinc-800 dark:text-zinc-200">{formatNumber(Math.round(p.revenue))}</td>
+                                                                    <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(p.cogs))}</td>
+                                                                    <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">{formatNumber(Math.round(p.transport))}</td>
+                                                                    <td className="px-3 py-2 text-right text-purple-600 dark:text-purple-400">{formatNumber(Math.round(p.fees))}</td>
+                                                                    <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">{formatNumber(Math.round(p.marketing))}</td>
+                                                                    <td className={`px-3 py-2 text-right font-semibold ${p.contribution >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                                        {formatNumber(Math.round(p.contribution))}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-right">
+                                                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${marginBg(p.margin_pct)} ${marginColor(p.margin_pct)}`}>
+                                                                            {p.margin_pct}%
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-right">
+                                                                        <span className={`text-xs ${p.return_rate > 20 ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                                                                            {p.return_rate}%
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                                {/* Expanded Row */}
+                                                                {skuProfitExpanded === p.sku && (
+                                                                    <tr>
+                                                                        <td colSpan={12} className="bg-zinc-50 dark:bg-zinc-900/40 px-6 py-4">
+                                                                            <div className="space-y-4">
+                                                                                {/* Detail cards */}
+                                                                                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                                                                                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
+                                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Preț Mediu</div>
+                                                                                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{p.avg_selling_price} RON</div>
+                                                                                    </div>
+                                                                                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
+                                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Cost/Unitate</div>
+                                                                                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{p.cost_per_unit} RON</div>
+                                                                                    </div>
+                                                                                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
+                                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Nr. Comenzi</div>
+                                                                                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{formatNumber(p.orders_count)}</div>
+                                                                                    </div>
+                                                                                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
+                                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Unități Returnate</div>
+                                                                                        <div className="text-sm font-bold text-red-500 dark:text-red-400">{formatNumber(p.units_returned)}</div>
+                                                                                    </div>
+                                                                                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
+                                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Total Costuri</div>
+                                                                                        <div className="text-sm font-bold text-red-500 dark:text-red-400">{formatNumber(Math.round(p.total_costs))} RON</div>
+                                                                                    </div>
+                                                                                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
+                                                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">Cost Produs</div>
+                                                                                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{p.has_cost ? '✅ Setat' : '❌ Lipsă'}</div>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Per-store breakdown */}
+                                                                                {p.per_store && p.per_store.length > 0 && (
+                                                                                    <div>
+                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">📊 Per Magazin</h4>
+                                                                                        <div className="overflow-x-auto">
+                                                                                            <table className="w-full text-xs">
+                                                                                                <thead>
+                                                                                                    <tr className="bg-zinc-100 dark:bg-zinc-800">
+                                                                                                        <th className="text-left px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Magazin</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Unități</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Venituri</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">COGS</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Transport</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Taxe</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Contribuție</th>
+                                                                                                        <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Marjă %</th>
+                                                                                                    </tr>
+                                                                                                </thead>
+                                                                                                <tbody>
+                                                                                                    {p.per_store.map(s => (
+                                                                                                        <tr key={s.store_uid} className="border-b border-zinc-100 dark:border-zinc-700/30">
+                                                                                                            <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 font-medium">{s.store_name}</td>
+                                                                                                            <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-300">{formatNumber(s.units_sold)}</td>
+                                                                                                            <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-200">{formatNumber(Math.round(s.revenue))}</td>
+                                                                                                            <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(s.cogs))}</td>
+                                                                                                            <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">{formatNumber(Math.round(s.transport))}</td>
+                                                                                                            <td className="px-3 py-2 text-right text-purple-600 dark:text-purple-400">{formatNumber(Math.round(s.fees))}</td>
+                                                                                                            <td className={`px-3 py-2 text-right font-semibold ${s.contribution >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                                                                                {formatNumber(Math.round(s.contribution))}
+                                                                                                            </td>
+                                                                                                            <td className="px-3 py-2 text-right">
+                                                                                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${marginBg(s.margin_pct)} ${marginColor(s.margin_pct)}`}>
+                                                                                                                    {s.margin_pct}%
+                                                                                                                </span>
+                                                                                                            </td>
+                                                                                                        </tr>
+                                                                                                    ))}
+                                                                                                </tbody>
+                                                                                            </table>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Marketing costs for this SKU */}
+                                                                                <div>
+                                                                                    <div className="flex items-center justify-between mb-2">
+                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">💰 Costuri Marketing</h4>
+                                                                                        <button onClick={(e) => { e.stopPropagation(); setAddingMktFor(addingMktFor === p.sku ? null : p.sku) }}
+                                                                                            className="text-xs px-2 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors">
+                                                                                            <Plus className="w-3 h-3 inline mr-1" />Adaugă
+                                                                                        </button>
+                                                                                    </div>
+
+                                                                                    {/* Existing entries */}
+                                                                                    {p.marketing_entries && p.marketing_entries.length > 0 ? (
+                                                                                        <div className="space-y-1">
+                                                                                            {p.marketing_entries.map(m => (
+                                                                                                <div key={m.id} className="flex items-center justify-between bg-white dark:bg-zinc-800 rounded-lg px-3 py-2 border border-zinc-200 dark:border-zinc-700">
+                                                                                                    <div className="flex items-center gap-3">
+                                                                                                        <span className="text-xs text-zinc-500 dark:text-zinc-400">{m.month}</span>
+                                                                                                        <span className="text-xs text-zinc-700 dark:text-zinc-300">{m.label}</span>
+                                                                                                    </div>
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">{m.amount} RON</span>
+                                                                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteMktCost(m.id) }}
+                                                                                                            className="text-red-400 hover:text-red-600 transition-colors">
+                                                                                                            <Trash2 className="w-3 h-3" />
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <p className="text-xs text-zinc-400 dark:text-zinc-500 italic">Niciun cost de marketing definit</p>
+                                                                                    )}
+
+                                                                                    {/* Add form */}
+                                                                                    {addingMktFor === p.sku && (
+                                                                                        <div className="mt-2 flex items-end gap-2 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg p-3 border border-blue-200 dark:border-blue-800/30" onClick={e => e.stopPropagation()}>
+                                                                                            <div className="flex-1">
+                                                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-1">Descriere</label>
+                                                                                                <input type="text" placeholder="Ex: Facebook Ads Martie" value={newMktCost.label}
+                                                                                                    onChange={e => setNewMktCost(prev => ({ ...prev, label: e.target.value }))}
+                                                                                                    className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white" />
+                                                                                            </div>
+                                                                                            <div className="w-24">
+                                                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-1">Sumă (RON)</label>
+                                                                                                <input type="number" placeholder="0" value={newMktCost.amount}
+                                                                                                    onChange={e => setNewMktCost(prev => ({ ...prev, amount: e.target.value }))}
+                                                                                                    className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white" />
+                                                                                            </div>
+                                                                                            <div className="w-28">
+                                                                                                <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-1">Lună</label>
+                                                                                                <input type="month" value={newMktCost.month || new Date().toISOString().slice(0, 7)}
+                                                                                                    onChange={e => setNewMktCost(prev => ({ ...prev, month: e.target.value }))}
+                                                                                                    className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white" />
+                                                                                            </div>
+                                                                                            <button onClick={() => handleAddMktCost(p.sku)}
+                                                                                                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors font-medium">
+                                                                                                Salvează
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
+                                                            </Fragment>
+                                                        ))}
+                                                        {sorted.length === 0 && (
+                                                            <tr>
+                                                                <td colSpan={12} className="text-center py-12 text-zinc-400 dark:text-zinc-500">
+                                                                    Niciun produs găsit
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+
+                                        {/* Problems Section */}
+                                        {problems.length > 0 && (
+                                            <div className="bg-red-50/50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-800/30 p-4">
+                                                <h3 className="text-sm font-semibold text-red-700 dark:text-red-400 mb-3 flex items-center gap-2">
+                                                    <AlertTriangle className="w-4 h-4" />
+                                                    Probleme Detectate ({problems.length} produse)
+                                                </h3>
+                                                <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                                                    {problems.map(p => (
+                                                        <div key={p.sku} className="flex items-center justify-between bg-white/50 dark:bg-zinc-800/50 rounded-lg px-3 py-2 text-xs">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{p.sku}</span>
+                                                                <span className="text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.name || '—'}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {!p.has_cost && <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">Cost Lipsă</span>}
+                                                                {p.margin_pct < 0 && <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs">Marjă Negativă ({p.margin_pct}%)</span>}
+                                                                {p.return_rate > 20 && <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs">Retur Ridicat ({p.return_rate}%)</span>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : null}
                             </div>
                         )
                     })()}

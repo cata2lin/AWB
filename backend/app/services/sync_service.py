@@ -140,7 +140,7 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                         existing = existing_result.scalar_one_or_none()
                         
                         if existing:
-                            # Update existing order
+                            # Update existing order — statuses, tracking, pricing, AND line items
                             existing.tracking_number = parsed.get("tracking_number") or existing.tracking_number
                             existing.awb_pdf_url = parsed.get("awb_pdf_url") or existing.awb_pdf_url
                             existing.courier_name = parsed.get("courier_name") or existing.courier_name
@@ -155,6 +155,11 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                             existing.total_discounts = parsed.get("total_discounts") or existing.total_discounts
                             existing.currency = parsed.get("currency") or existing.currency
                             existing.payment_gateway = parsed.get("payment_gateway") or existing.payment_gateway
+                            # Update line items (captures added/removed items in Frisbo)
+                            if parsed.get("line_items"):
+                                existing.line_items = parsed["line_items"]
+                                existing.item_count = parsed["item_count"]
+                                existing.unique_sku_count = parsed["unique_sku_count"]
                             existing.synced_at = datetime.utcnow()
                             updated_count += 1
                             order_obj = existing
