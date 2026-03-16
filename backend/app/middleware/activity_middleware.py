@@ -28,6 +28,11 @@ class ActivityMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
+        # Always let CORS preflight (OPTIONS) through — browser sends these
+        # before any request with Authorization header
+        if method == "OPTIONS":
+            return await call_next(request)
+
         # Skip static/health
         if path in SKIP_PATHS or any(path.startswith(p) for p in SKIP_PREFIXES):
             return await call_next(request)
