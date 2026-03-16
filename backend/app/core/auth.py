@@ -23,14 +23,26 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ALGORITHM = "HS256"
 security = HTTPBearer(auto_error=False)
 
+# Generate a stable secret key ONCE at module load
+_cached_secret_key = None
 
 def get_secret_key() -> str:
-    """Get JWT secret key from settings or generate one."""
+    """Get JWT secret key — stable for the lifetime of the process."""
+    global _cached_secret_key
+    if _cached_secret_key:
+        return _cached_secret_key
+    
     key = settings.jwt_secret_key
     if not key or key == "changeme":
-        # Auto-generate (warning: changes on restart)
-        key = os.environ.get("JWT_SECRET_KEY", secrets.token_hex(32))
-    return key
+        key = os.environ.get("JWT_SECRET_KEY", "")
+    if not key:
+        # Auto-generate once (persists until restart)
+        key = secrets.token_hex(32)
+        import logging
+        logging.getLogger(__name__).warning("JWT_SECRET_KEY not set — using auto-generated key (will change on restart)")
+    
+    _cached_secret_key = key
+    return _cached_secret_key
 
 
 def hash_password(password: str) -> str:
