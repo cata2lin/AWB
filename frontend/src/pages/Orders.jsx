@@ -70,7 +70,10 @@ export default function Orders() {
     useEffect(() => {
         const fetchFilterOptions = async () => {
             try {
-                const response = await fetch('/api/orders/filter-options')
+                const token = localStorage.getItem('awb_token')
+                const response = await fetch('/api/orders/filter-options', {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                })
                 const data = await response.json()
                 setFilterOptions({
                     shipment_statuses: data.shipment_statuses || [],

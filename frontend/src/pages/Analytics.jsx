@@ -6,6 +6,18 @@
  * - Geographic distribution charts showing order distribution by country/city
  * - Deliverability report per store with period comparison
  */
+
+// Auth helper for raw fetch calls
+const authFetch = (url, opts = {}) => {
+    const token = localStorage.getItem('awb_token')
+    return fetch(url, {
+        ...opts,
+        headers: {
+            ...opts.headers,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+    })
+}
 import { useState, useEffect, useMemo, Fragment } from 'react'
 import {
     Globe2, TrendingUp, Package, Truck, XCircle, RotateCcw,
@@ -209,8 +221,8 @@ export default function Analytics() {
 
                 // Fetch fast endpoints first (geo, deliverability, print) — these render other tabs
                 const [geoRes, delRes, printRes] = await Promise.all([
-                    fetch(`${API_URL}/analytics/geographic?${params}`).then(r => r.json()),
-                    fetch(`${API_URL}/analytics/deliverability?${delParams}`).then(r => r.json()),
+                    authFetch(`${API_URL}/analytics/geographic?${params}`).then(r => r.json()),
+                    authFetch(`${API_URL}/analytics/deliverability?${delParams}`).then(r => r.json()),
                     analyticsApi.getAnalytics(days || 30),
                 ])
 
@@ -222,7 +234,7 @@ export default function Analytics() {
                 // Fetch profitability in background (can take 30-60s for 100k+ orders)
                 setProfitLoading(true)
                 try {
-                    const profitRes = await fetch(`${API_URL}/analytics/profitability?${params}`).then(r => r.json())
+                    const profitRes = await authFetch(`${API_URL}/analytics/profitability?${params}`).then(r => r.json())
                     setProfitabilityData(profitRes)
                 } catch (profitErr) {
                     console.error('Failed to fetch profitability:', profitErr)
@@ -292,7 +304,7 @@ export default function Analytics() {
             if (dateFrom) params.set('date_from', dateFrom)
             if (dateTo) params.set('date_to', dateTo)
 
-            const res = await fetch(`${API_URL}/analytics/profitability?${params}`)
+            const res = await authFetch(`${API_URL}/analytics/profitability?${params}`)
             const data = await res.json()
             setProfitabilityData(data)
         } catch (err) {
@@ -1568,7 +1580,7 @@ export default function Analytics() {
                                                     if (orderProfitStatus) params.set('status', orderProfitStatus)
                                                     params.set('skip', (orderProfitPage * 25).toString())
                                                     params.set('limit', '25')
-                                                    const res = await fetch(`${API_URL}/analytics/profitability/orders?${params}`)
+                                                    const res = await authFetch(`${API_URL}/analytics/profitability/orders?${params}`)
                                                     const data = await res.json()
                                                     setOrderProfitData(data)
                                                 } catch (err) {
