@@ -417,14 +417,17 @@ async def get_order_totals(
             pass
     
     # Aggregate total_price grouped by currency
+    currency_col = func.coalesce(Order.currency, 'RON').label('currency')
     query = select(
-        func.coalesce(Order.currency, 'RON').label('currency'),
+        currency_col,
         func.sum(Order.total_price).label('total'),
         func.count(Order.id).label('count')
-    ).where(Order.total_price.isnot(None)).group_by(func.coalesce(Order.currency, 'RON'))
+    ).where(Order.total_price.isnot(None))
     
     if conditions:
         query = query.where(and_(*conditions))
+    
+    query = query.group_by(currency_col)
     
     result = await db.execute(query)
     rows = result.all()
