@@ -231,16 +231,7 @@ export default function Analytics() {
                 setPrintAnalytics(printRes)
                 setIsLoading(false)
 
-                // Fetch profitability in background (can take 30-60s for 100k+ orders)
-                setProfitLoading(true)
-                try {
-                    const profitRes = await authFetch(`${API_URL}/analytics/profitability?${params}`).then(r => r.json())
-                    setProfitabilityData(profitRes)
-                } catch (profitErr) {
-                    console.error('Failed to fetch profitability:', profitErr)
-                } finally {
-                    setProfitLoading(false)
-                }
+                // Profitability is NOT auto-fetched — user must click "Analizează"
             } catch (err) {
                 console.error('Failed to fetch analytics:', err)
                 setIsLoading(false)
