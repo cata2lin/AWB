@@ -591,6 +591,7 @@ APScheduler `AsyncIOScheduler` that triggers `sync_orders()` every 30 minutes (c
 | ------ | ------------- | ---------------------------------------------- |
 | GET    | `/status`     | Current sync state (idle/running) + next sync  |
 | POST   | `/trigger`    | Manual sync (param: `full_sync` boolean)       |
+| POST   | `/cancel`     | Cancel all running syncs (marks as cancelled)  |
 | GET    | `/history`    | Sync run history with metrics                  |
 
 ### `/api/stores` — Store Management
@@ -719,7 +720,7 @@ Auto-syncs on application startup. Provides batch `preload_rates()` and `convert
 - **Per-tab filtering**: Each tab has its own independent date, store, and metric filters (no global filter bar)
 - **Print Analytics**: Charts showing order volume, print batch statistics over time
 - **Geographic Distribution**: Interactive Leaflet map with SVG markers showing order density by country and Romanian county
-- **Deliverability Report**: Per-store tables with delivered/returned/cancelled rates, color-coded by performance
+- **Deliverability Report**: Per-store tables with delivered/returned/cancelled rates, color-coded by performance. **Sortable columns** (all 11 columns with ArrowUpDown icons), **month dropdown** (18 months matching Profitabilitate), quick period buttons, custom date range, and column visibility toggles. Defaults to last complete month. Independent data fetch decoupled from global date filters.
 - **Profitability Dashboard**: Revenue, costs, margins with store-level breakdown
 - **P&L Tables**: Full financial statements with cu TVA (with VAT) and fără TVA (without VAT) columns, percentage breakdowns
 - **SKU Cost Manager**: Inline editing, bulk discovery from orders, cost assignment
@@ -1102,3 +1103,121 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 | **Shopify order link** | No way to view orders in Shopify admin | Added `shopify_domain` field to Store model (nullable). ExternalLink (🔗) button next to order number opens `https://{domain}/admin/orders?query={order_number}` in new tab. Falls back to deriving domain from store name. `e.stopPropagation()` prevents row expand |
 | **Empty state prompts** | Tabs showed blank content when no data loaded | Added loading spinners and "Selectează filtrele și apasă Analizează" prompts with icons for Profitabilitate, P&L Comparativ, and SKU Profitability empty states |
 | **SKU Risk search** | No search in SKU Risk tab | Added `skuRiskSearch` state with search input in filter bar — filters worst SKUs client-side by SKU code or product name |
+
+### 2026-03-20 — Products Tab (Produse): Grouped Inventory, Exclusion, Filtering & Excel Export
+
+**Backend files added:** `backend/app/api/products.py`, `backend/app/services/product_sync_service.py`, `backend/app/services/frisbo/product_parser.py`, `backend/migrate_product_exclude.py`, `backend/migrate_primary_listing.py`  
+**Backend files modified:** `backend/app/models/product.py`, `backend/app/models/__init__.py`, `backend/app/main.py`  
+**Frontend files added/modified:** `frontend/src/components/ProductsTab.jsx`, `frontend/src/services/api/products.js`
+
+#### Product Model Changes
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `exclude_from_stock` | Boolean | Flags products excluded from KPI totals (mystery boxes, bundles) |
+| `primary_listing_uid` | String(100) | Persists user's choice of which listing in a group provides stock/image |
+
+> [!NOTE]
+> The `state` field (active/draft/archived) reflects **Frisbo's inventory item status**, not the live Shopify product status. A product marked as "Draft" on Shopify may still appear as "active" in this app because Frisbo doesn't sync Shopify's product status back. **Future improvement:** integrate Shopify API directly to fetch live product statuses per store.
+
+#### Grouping Logic (Barcode + SKU)
+
+Products are grouped into a single row using a 2-phase algorithm:
+1. **Phase 1 — Barcode groups**: Products sharing a barcode are grouped. All SKUs from these products are tracked.
+2. **Phase 2 — SKU merge**: Products without a barcode but with a SKU matching a barcode group are merged into that group. Remaining products are grouped by SKU alone. Products with neither barcode nor SKU stay ungrouped.
+
+For each group:
+- **Stock**: From the primary listing (DB-stored `primary_listing_uid`, or most recently synced if no preference set)
+- **Stores**: Merged from all listings in the group
+- **Image**: From the primary listing, falling back to the first listing with images
+- **Cost**: Looked up from the `sku_costs` table
+
+#### API Endpoints
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/products/grouped/` | Grouped products with `listings` array, `primary_uid`, `has_missing_barcode`, and `cost` fields |
+| GET | `/products/stats/` | KPIs excluding flagged products + `excluded_count` |
+| PATCH | `/products/{uid}/exclude` | Toggle `exclude_from_stock` for entire barcode/SKU group |
+| PATCH | `/products/{uid}/set-primary` | Set `primary_listing_uid` across entire barcode/SKU group |
+| GET | `/products/export/excel` | Excel export with 2 sheets (Grouped Summary + Individual Listings), respects all active filters |
+
+**Grouped endpoint filters**: `search`, `store_uid`, `state`, `has_stock`, `has_cost` (yes/no), `exclude_filter` (excluded/active), `missing_barcode` (yes/no)  
+**Grouped endpoint sort fields**: `title_1`, `sku`, `stock_available`, `stock_committed`, `barcode`, `cost`, `synced_at`, `grouped_count`
+
+#### Frontend — ProductsTab Component
+
+| Feature | Description |
+| --- | --- |
+| **Expandable grouped rows** | Click ×N badge → shows individual listings per store with stock, image, sync date |
+| **Primary listing selection** | ★ Folosește / ✓ Activ button on each listing. Persisted to DB via PATCH endpoint, affects stock/image on the parent row |
+| **Stock exclusion toggle** | 👁 Eye icon per row. Excludes entire barcode/SKU group from KPI totals. Excluded rows shown muted with strikethrough |
+| **6 filter dropdowns** | Store, State, Stock, Exclude status, Cost (cu/fără), Barcode (lipsă/complet) |
+| **Sortable columns** | Product name, SKU, Disponibil, Committed, Cost/buc — all with asc/desc toggle |
+| **Inline cost editing** | Click cost value → inline number input with Enter/Escape support |
+| **Missing barcode badge** | Amber ⚠ indicator when one or more listings in a group lack a barcode |
+| **KPI cards** | 7 cards: Total, Active, În Stoc, Fără Stoc, Stoc Disponibil, Stoc Committed, Excluse |
+| **Excel export** | Green "Excel" button generates `.xlsx` with Sheet 1 (grouped summary) + Sheet 2 (individual listings) |
+
+#### Project Structure Additions
+
+```
+backend/
+├── app/
+│   ├── models/
+│   │   └── product.py              # Product model (exclude_from_stock, primary_listing_uid)
+│   ├── api/
+│   │   └── products.py             # Grouped view, exclusion, set-primary, Excel export
+│   └── services/
+│       ├── product_sync_service.py # Product sync from Frisbo API
+│       └── frisbo/
+│           └── product_parser.py   # Product data transformation
+├── migrate_product_exclude.py      # Migration: exclude_from_stock + barcode index
+└── migrate_primary_listing.py      # Migration: primary_listing_uid column
+frontend/
+├── src/
+│   ├── components/
+│   │   └── ProductsTab.jsx         # Grouped inventory with expandable listings
+│   └── services/api/
+│       └── products.js             # Products API service (grouped, exclude, set-primary, export)
+```
+
+### 2026-03-23 — Sync Cancel, Line Item Fix, Livrabilitate Tab Enhancements
+
+**Backend files modified:** `backend/app/main.py`, `backend/app/api/sync.py`, `backend/app/services/sync_service.py`, `backend/app/services/frisbo/parser.py`  
+**Backend files added:** `backend/migrate_item_counts.py`  
+**Frontend files modified:** `frontend/src/pages/Analytics.jsx`, `frontend/src/components/Sidebar.jsx`, `frontend/src/store/useAppStore.js`, `frontend/src/services/api/sync.js`
+
+#### Sync Cancel & Stale Sync Cleanup
+
+| Feature | Before | After |
+| --- | --- | --- |
+| **Cancel running sync** | No way to stop a running sync; had to restart the program | New `POST /api/sync/cancel` endpoint marks all running syncs as `cancelled`. "Stop Sync" button (StopCircle icon) appears in sidebar when `isSyncing` is true |
+| **Stale sync cleanup on startup** | After a restart, syncs stuck in `running` state blocked new syncs from starting | `main.py` lifespan event automatically marks all `running` syncs as `cancelled` with error message `"Cancelled: server restarted while sync was running"` |
+| **Frontend sync state** | `isSyncing` could get out of sync with backend state after restart | Added `cancelSync` action to Zustand store; frontend checks backend status on load |
+
+#### Line Item Data Integrity Fix
+
+| Feature | Before | After |
+| --- | --- | --- |
+| **Zero-quantity line items** | Items removed from orders retained `qty: 0` entries in `line_items` JSON, inflating `item_count` and AOV | `parser.py` now filters out items with `quantity <= 0` before storing. `sync_service.py` fixed to update `line_items` even when the result is an empty list (`is not None` instead of truthiness check) |
+| **Migration script** | Existing data had stale zero-quantity items | `migrate_item_counts.py` cleaned 10,639 orders: removed zero-qty items, recalculated `item_count` and `unique_sku_count` |
+
+#### Livrabilitate (Deliverability) Tab Enhancements
+
+| Feature | Before | After |
+| --- | --- | --- |
+| **Independent date filter** | Deliverability used global date controls shared with other tabs | Dedicated `delivPeriod`, `delivDateFrom`, `delivDateTo` state + separate `fetchDeliverability()` function that calls `/analytics/deliverability` endpoint independently |
+| **Period selection** | Only custom date range inputs | Quick buttons (30 zile, 90 zile, Luna curentă, Luna trecută) + month dropdown with 18 months (matching Profitabilitate) + "Perioadă custom" toggle with date pickers |
+| **Default period** | No default — required manual date selection | Auto-defaults to **last complete month** via `getLastCompleteMonth()` helper |
+| **Sortable columns** | Table headers were static — no sorting | All 11 columns clickable with ArrowUpDown icons. Click toggles asc/desc. Active sort shows directional ↑/↓ indicator. Client-side sort with proper string vs. numeric comparison |
+| **Column visibility** | All columns always visible | ⚙ Coloane dropdown with checkboxes to toggle column visibility (total, delivered, cancelled, returned, in_transit, shipped, rates, deliverability) |
+| **Loading state** | No loading indicator for deliverability data | Spinning loader shown while `fetchDeliverability()` is in progress |
+
+#### API Endpoints
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| POST | `/api/sync/cancel` | Cancel all running syncs (marks as `cancelled` in DB) |
+| GET | `/analytics/deliverability` | Per-store deliverability stats with date range filtering (existing, now used independently by the tab) |
+

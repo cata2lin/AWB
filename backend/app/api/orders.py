@@ -29,6 +29,7 @@ async def get_orders(
     aggregated_status: Optional[List[str]] = Query(None, description="Filter by workflow/aggregated status (multi)"),
     courier_names: Optional[List[str]] = Query(None, description="Filter by courier name (multi)"),
     has_shipping_cost: Optional[bool] = Query(None, description="Filter by whether order has shipping cost"),
+    stale_courier: Optional[bool] = Query(None, description="Filter orders waiting for courier > 72 hours"),
     date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
     sort_field: Optional[str] = Query("frisbo_created_at", description="Field to sort by"),
@@ -38,7 +39,7 @@ async def get_orders(
     db: AsyncSession = Depends(get_db)
 ):
     """Get orders with optional filters and sorting."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     
     # Use selectinload to eagerly load Store relationship (required for async SQLAlchemy)
     query = select(Order).options(selectinload(Order.store))
@@ -91,7 +92,19 @@ async def get_orders(
     if courier_names:
         conditions.append(Order.courier_name.in_(courier_names))
     
-    # Date range filters
+    # Stale courier filter (waiting for courier > 72 hours)
+    if stale_courier is True:
+        stale_cutoff = datetime.utcnow() - timedelta(hours=72)
+        conditions.append(Order.waiting_for_courier_since.isnot(None))
+        conditions.append(Order.waiting_for_courier_since <= stale_cutoff)
+    elif stale_courier is False:
+        # Orders NOT stale (either not waiting, or waiting < 72h)
+        stale_cutoff = datetime.utcnow() - timedelta(hours=72)
+        conditions.append(
+            (Order.waiting_for_courier_since.is_(None)) |
+            (Order.waiting_for_courier_since > stale_cutoff)
+        )
+    
     # Shipping cost filter
     if has_shipping_cost is True:
         conditions.append(Order.transport_cost.isnot(None))
@@ -187,6 +200,12 @@ async def get_orders(
             "total_price": order.total_price,
             "subtotal_price": order.subtotal_price,
             "currency": order.currency,
+            # Waiting for courier data
+            "waiting_for_courier_since": order.waiting_for_courier_since,
+            "is_stale_courier": (
+                order.waiting_for_courier_since is not None and
+                (datetime.utcnow() - order.waiting_for_courier_since).total_seconds() > 72 * 3600
+            ),
         }
         # We'll add awb_count_actual later via a subquery if needed
         response.append(OrderResponse(**order_dict))
@@ -271,12 +290,13 @@ async def get_order_count(
     aggregated_status: Optional[List[str]] = Query(None),
     courier_names: Optional[List[str]] = Query(None),
     has_shipping_cost: Optional[bool] = Query(None),
+    stale_courier: Optional[bool] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Get order counts with same filters as main orders endpoint."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     
     query = select(func.count(Order.id))
     
@@ -318,6 +338,16 @@ async def get_order_count(
         conditions.append(Order.transport_cost > 0)
     elif has_shipping_cost is False:
         conditions.append((Order.transport_cost.is_(None)) | (Order.transport_cost == 0))
+    if stale_courier is True:
+        stale_cutoff = datetime.utcnow() - timedelta(hours=72)
+        conditions.append(Order.waiting_for_courier_since.isnot(None))
+        conditions.append(Order.waiting_for_courier_since <= stale_cutoff)
+    elif stale_courier is False:
+        stale_cutoff = datetime.utcnow() - timedelta(hours=72)
+        conditions.append(
+            (Order.waiting_for_courier_since.is_(None)) |
+            (Order.waiting_for_courier_since > stale_cutoff)
+        )
     if date_from:
         try:
             from_date = datetime.strptime(date_from, "%Y-%m-%d")
@@ -514,13 +544,24 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     )
     orders_printed_today = printed_today_result.scalar() or 0
     
+    # Stale courier count (waiting > 72h)
+    stale_cutoff = today_start - timedelta(hours=72)
+    stale_result = await db.execute(
+        select(func.count(Order.id)).where(
+            Order.waiting_for_courier_since.isnot(None),
+            Order.waiting_for_courier_since <= datetime.utcnow() - timedelta(hours=72),
+        )
+    )
+    stale_courier_count = stale_result.scalar() or 0
+    
     return DashboardStats(
         total_orders=total_orders,
         unprinted_orders=unprinted_orders,
         total_stores=total_stores,
         active_rules=active_rules,
         batches_today=batches_today,
-        orders_printed_today=orders_printed_today
+        orders_printed_today=orders_printed_today,
+        stale_courier_count=stale_courier_count,
     )
 
 

@@ -207,24 +207,34 @@ async def generate_print_batch(
     
     await db.commit()
     
-    # Try to update fulfillment status in Frisbo for printed orders
-    orders_data = [
-        {
-            "reference": o.order_number,
-            "tracking_number": o.tracking_number,
-            "courier_name": o.courier_name,
-        }
-        for o in orders
-        if o.order_number  # Only orders with a valid reference
-    ]
-    if orders_data:
-        try:
-            from app.services.frisbo_client import frisbo_client
-            frisbo_result = await frisbo_client.update_orders_printed_batch(orders_data)
-            logger.info(f"Frisbo status update: {frisbo_result}")
-        except Exception as e:
-            # Log but don't fail - local marking is sufficient
-            logger.warning(f"Frisbo status update failed (non-critical): {e}")
+    # Mark orders as 'waiting for courier' in Frisbo
+    # This tells Frisbo the package is ready for pickup
+    try:
+        from app.services.frisbo.client import FrisboClient
+        from app.core.config import settings
+        
+        # Group orders by org token (each org has its own client)
+        org_tokens = settings.get_org_tokens()
+        if org_tokens:
+            # Use first token as default (most orders belong to one org)
+            client = FrisboClient(token=org_tokens[0]["token"], org_name=org_tokens[0].get("name", "default"))
+            
+            marked_count = 0
+            failed_count = 0
+            for order in orders:
+                try:
+                    await client.mark_waiting_for_courier(order.uid)
+                    order.waiting_for_courier_since = datetime.utcnow()
+                    marked_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to mark order {order.uid} as waiting_for_courier: {e}")
+                    failed_count += 1
+            
+            await db.commit()
+            logger.info(f"Marked {marked_count} orders as waiting_for_courier in Frisbo ({failed_count} failed)")
+    except Exception as e:
+        # Non-critical — local print marking still succeeded
+        logger.warning(f"Frisbo mark_waiting_for_courier batch failed (non-critical): {e}")
     
     return {
         "batch_id": batch.id,

@@ -24,9 +24,11 @@ import {
     ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
     Calendar, ArrowRight, ArrowUpRight, ArrowDownRight, PieChart, MapPin,
     DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2,
-    Eye, EyeOff, Settings2
+    Eye, EyeOff, Settings2, Download, ArrowUpDown
 } from 'lucide-react'
+import { exportPnlToExcel, exportPnlComparativToExcel } from '../utils/pnlExport'
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
+import ProductsTab from '../components/ProductsTab'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -81,6 +83,10 @@ export default function Analytics() {
     const [profitStores, setProfitStores] = useState([]) // Dedicated store filter for profitability tabs
     const [pnlHiddenStores, setPnlHiddenStores] = useState([]) // Hide specific store columns in P&L Comparativ
 
+    // CSV Coverage Gaps state
+    const [csvGapsData, setCsvGapsData] = useState(null)
+    const [csvGapsLoading, setCsvGapsLoading] = useState(false)
+
     // SKU Risk state
     const [skuRiskData, setSkuRiskData] = useState(null)
     const [skuRiskLoading, setSkuRiskLoading] = useState(false)
@@ -109,6 +115,20 @@ export default function Analytics() {
         returned: 'Ret. / Ref.', in_transit: 'În Tranzit', shipped: 'Expediate',
         delivery_rate: 'Rată Livrare', expedition_rate: 'Rată Expediție',
         cancelled_rate: 'Rată Anulare', deliverability: 'Livrabilitate',
+    }
+    // Livrabilitate dedicated period & sort
+    const getLastCompleteMonth = () => {
+        const now = new Date()
+        const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        return `${lm.getFullYear()}-${String(lm.getMonth() + 1).padStart(2, '0')}`
+    }
+    const [delivPeriod, setDelivPeriod] = useState(getLastCompleteMonth)
+    const [delivDateFrom, setDelivDateFrom] = useState('')
+    const [delivDateTo, setDelivDateTo] = useState('')
+    const [delivLoading, setDelivLoading] = useState(false)
+    const [delivSort, setDelivSort] = useState({ col: 'total', dir: 'desc' })
+    const toggleDelivSort = (col) => {
+        setDelivSort(prev => prev.col === col ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })
     }
     // Sales Velocity state
     const [velocityData, setVelocityData] = useState(null)
@@ -191,43 +211,15 @@ export default function Analytics() {
                     params.set('days', days.toString())
                 }
 
-                // Build deliverability params with optional 3-day shift
-                const delParams = new URLSearchParams(params)
-                if (showComparison) {
-                    // Shift date range back by 3 days for deliverability
-                    // Orders from the last 3 days are likely still in transit
-                    const shiftDays = 3
-                    const today = new Date()
-                    const shiftedEnd = new Date(today)
-                    shiftedEnd.setDate(shiftedEnd.getDate() - shiftDays)
-                    const shiftedEndStr = shiftedEnd.toISOString().split('T')[0]
-
-                    if (customDateFrom && customDateTo) {
-                        // Custom dates: shift end date back by 3 days
-                        const origEnd = new Date(customDateTo)
-                        origEnd.setDate(origEnd.getDate() - shiftDays)
-                        delParams.set('date_to', origEnd.toISOString().split('T')[0])
-                    } else if (days) {
-                        // Predefined period: keep same window length but shift end to today-3
-                        const shiftedStart = new Date(today)
-                        shiftedStart.setDate(shiftedStart.getDate() - shiftDays - days)
-                        delParams.delete('days')
-                        delParams.set('date_from', shiftedStart.toISOString().split('T')[0])
-                        delParams.set('date_to', shiftedEndStr)
-                    }
-                }
-
                 const API_URL = import.meta.env.VITE_API_URL || '/api'
 
-                // Fetch fast endpoints first (geo, deliverability, print) — these render other tabs
-                const [geoRes, delRes, printRes] = await Promise.all([
+                // Fetch geo & print (deliverability has its own dedicated fetch now)
+                const [geoRes, printRes] = await Promise.all([
                     authFetch(`${API_URL}/analytics/geographic?${params}`).then(r => r.json()),
-                    authFetch(`${API_URL}/analytics/deliverability?${delParams}`).then(r => r.json()),
                     analyticsApi.getAnalytics(days || 30),
                 ])
 
                 setGeoData(geoRes)
-                setDeliverabilityData(delRes)
                 setPrintAnalytics(printRes)
                 setIsLoading(false)
 
@@ -238,7 +230,74 @@ export default function Analytics() {
             }
         }
         fetchData()
-    }, [selectedStores, days, effectiveDateRange, showComparison])
+    }, [selectedStores, days, effectiveDateRange])
+
+    // --- Livrabilitate dedicated fetch ---
+    const fetchDeliverability = async (period, customFrom, customTo) => {
+        setDelivLoading(true)
+        try {
+            const API_URL = import.meta.env.VITE_API_URL || '/api'
+            const params = new URLSearchParams()
+            if (selectedStores.length > 0) params.set('store_uids', selectedStores.join(','))
+
+            const now = new Date()
+            let dateFrom, dateTo
+
+            if (period === '30d') {
+                const d = new Date(now); d.setDate(d.getDate() - 30)
+                dateFrom = d.toISOString().split('T')[0]
+                dateTo = now.toISOString().split('T')[0]
+            } else if (period === '90d') {
+                const d = new Date(now); d.setDate(d.getDate() - 90)
+                dateFrom = d.toISOString().split('T')[0]
+                dateTo = now.toISOString().split('T')[0]
+            } else if (period === 'thisMonth') {
+                dateFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+                dateTo = now.toISOString().split('T')[0]
+            } else if (period === 'lastMonth') {
+                const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+                const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+                dateFrom = lm.toISOString().split('T')[0]
+                dateTo = lmEnd.toISOString().split('T')[0]
+            } else if (period === 'custom') {
+                if (!customFrom || !customTo) { setDelivLoading(false); return }
+                dateFrom = customFrom
+                dateTo = customTo
+            } else if (/^\d{4}-\d{2}$/.test(period)) {
+                const [y, m] = period.split('-').map(Number)
+                dateFrom = `${y}-${String(m).padStart(2, '0')}-01`
+                const lastDay = new Date(y, m, 0).getDate()
+                dateTo = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+            }
+
+            // Optional 3-day shift for in-transit
+            if (showComparison && dateFrom && dateTo) {
+                const end = new Date(dateTo)
+                end.setDate(end.getDate() - 3)
+                dateTo = end.toISOString().split('T')[0]
+            }
+
+            if (dateFrom) params.set('date_from', dateFrom)
+            if (dateTo) params.set('date_to', dateTo)
+
+            const res = await authFetch(`${API_URL}/analytics/deliverability?${params}`)
+            const data = await res.json()
+            setDeliverabilityData(data)
+        } catch (err) {
+            console.error('Failed to fetch deliverability:', err)
+        } finally {
+            setDelivLoading(false)
+        }
+    }
+
+    // Auto-fetch deliverability on mount and when period changes
+    useEffect(() => {
+        if (delivPeriod === 'custom') {
+            if (delivDateFrom && delivDateTo) fetchDeliverability('custom', delivDateFrom, delivDateTo)
+        } else {
+            fetchDeliverability(delivPeriod)
+        }
+    }, [delivPeriod, delivDateFrom, delivDateTo, selectedStores, showComparison])
 
     // Load saved marketing cost from profitability config
     useEffect(() => {
@@ -578,6 +637,16 @@ export default function Analytics() {
                     <PieChart className="w-4 h-4 inline mr-2" />
                     Profitabilitate SKU
                 </button>
+                <button
+                    onClick={() => setActiveTab('products')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'products'
+                        ? 'bg-white dark:bg-zinc-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <Package className="w-4 h-4 inline mr-2" />
+                    Produse
+                </button>
             </div>
 
             {/* Loading State */}
@@ -676,61 +745,80 @@ export default function Analytics() {
                     )}
 
                     {/* Deliverability Report Tab */}
-                    {activeTab === 'deliverability' && deliverabilityData && (
+                    {activeTab === 'deliverability' && (
                         <div className="space-y-6">
-                            {/* Period Comparison Toggle */}
-                            <div className="flex items-center gap-4">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={showComparison}
-                                        onChange={(e) => setShowComparison(e.target.checked)}
-                                        className="w-4 h-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    <span className="text-sm text-zinc-600 dark:text-white">
-                                        Exclude ultimele 3 zile (comenzi în tranzit)
-                                    </span>
+                            {/* Period Picker + Options */}
+                            <div className="flex flex-wrap items-center gap-3">
+                                {/* Quick period buttons */}
+                                {[
+                                    { key: '30d', label: '30 zile' },
+                                    { key: '90d', label: '90 zile' },
+                                    { key: 'thisMonth', label: 'Luna curentă' },
+                                    { key: 'lastMonth', label: 'Luna trecută' },
+                                ].map(p => (
+                                    <button key={p.key}
+                                        onClick={() => { setDelivPeriod(p.key); setDelivDateFrom(''); setDelivDateTo('') }}
+                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${delivPeriod === p.key
+                                            ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                                            : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                                        }`}
+                                    >{p.label}</button>
+                                ))}
+
+                                {/* Month dropdown */}
+                                <select
+                                    value={/^\d{4}-\d{2}$/.test(delivPeriod) ? delivPeriod : ''}
+                                    onChange={(e) => { if (e.target.value) { setDelivPeriod(e.target.value); setDelivDateFrom(''); setDelivDateTo('') } }}
+                                    className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-white border-0 cursor-pointer"
+                                >
+                                    <option value="">Lună specifică...</option>
+                                    {(() => {
+                                        const months = []
+                                        const now = new Date()
+                                        for (let i = 0; i < 18; i++) {
+                                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                                            const label = d.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
+                                            months.push(<option key={key} value={key}>{label}</option>)
+                                        }
+                                        return months
+                                    })()}
+                                </select>
+
+                                <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600" />
+
+                                {/* Custom range toggle */}
+                                <button
+                                    onClick={() => setDelivPeriod('custom')}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${delivPeriod === 'custom'
+                                        ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                                        : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                                    }`}
+                                >Perioadă custom</button>
+                                {delivPeriod === 'custom' && (
+                                    <>
+                                        <input type="date" value={delivDateFrom}
+                                            onChange={(e) => setDelivDateFrom(e.target.value)}
+                                            className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
+                                        <span className="text-zinc-400">→</span>
+                                        <input type="date" value={delivDateTo}
+                                            onChange={(e) => setDelivDateTo(e.target.value)}
+                                            className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
+                                    </>
+                                )}
+
+                                {/* Exclude 3 days toggle */}
+                                <label className="flex items-center gap-2 cursor-pointer ml-auto">
+                                    <input type="checkbox" checked={showComparison} onChange={(e) => setShowComparison(e.target.checked)}
+                                        className="w-3.5 h-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Exclude ultimele 3 zile</span>
                                 </label>
 
-                                {/* Custom Date Range */}
-                                <div className="flex items-center gap-2 ml-auto">
-                                    <span className="text-sm text-zinc-500 dark:text-white">Interval personalizat:</span>
-                                    <input
-                                        type="date"
-                                        value={customDateFrom}
-                                        onChange={(e) => {
-                                            setCustomDateFrom(e.target.value)
-                                            // Clear predefined period when custom dates are used
-                                            if (e.target.value && customDateTo) setDays(null)
-                                        }}
-                                        className="px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg"
-                                    />
-                                    <ArrowRight className="w-4 h-4 text-zinc-400" />
-                                    <input
-                                        type="date"
-                                        value={customDateTo}
-                                        onChange={(e) => {
-                                            setCustomDateTo(e.target.value)
-                                            // Clear predefined period when custom dates are used
-                                            if (customDateFrom && e.target.value) setDays(null)
-                                        }}
-                                        className="px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg"
-                                    />
-                                    {(customDateFrom || customDateTo) && (
-                                        <button
-                                            onClick={() => {
-                                                setCustomDateFrom('')
-                                                setCustomDateTo('')
-                                                if (!days) setDays(30)
-                                            }}
-                                            className="px-2 py-1.5 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                                        >
-                                            Șterge
-                                        </button>
-                                    )}
-                                </div>
+                                {delivLoading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500" />}
                             </div>
 
+                            {deliverabilityData && (
+                            <>
                             {/* Summary Cards */}
                             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                                 <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-zinc-400">
@@ -812,21 +900,49 @@ export default function Analytics() {
                                     <table className="w-full">
                                         <thead className="bg-zinc-50 dark:bg-zinc-900/50 sticky top-0 z-10">
                                             <tr>
-                                                <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Magazin</th>
-                                                {delivCols.total && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Total</th>}
-                                                {delivCols.delivered && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Livrate</th>}
-                                                {delivCols.cancelled && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Anulate</th>}
-                                                {delivCols.returned && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Ret. / Ref.</th>}
-                                                {delivCols.in_transit && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">În Tranzit</th>}
-                                                {delivCols.shipped && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Expediate</th>}
-                                                {delivCols.delivery_rate && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Livrare</th>}
-                                                {delivCols.expedition_rate && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Expediție</th>}
-                                                {delivCols.cancelled_rate && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Rată Anulare</th>}
-                                                {delivCols.deliverability && <th className="text-right px-3 py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase">Livrabilitate</th>}
+                                                {[
+                                                    { field: 'store_name', label: 'Magazin', align: 'left', show: true },
+                                                    { field: 'total', label: 'Total', show: delivCols.total },
+                                                    { field: 'delivered', label: 'Livrate', show: delivCols.delivered },
+                                                    { field: 'cancelled', label: 'Anulate', show: delivCols.cancelled },
+                                                    { field: 'returned', label: 'Ret. / Ref.', show: delivCols.returned },
+                                                    { field: 'in_transit', label: 'În Tranzit', show: delivCols.in_transit },
+                                                    { field: 'shipped', label: 'Expediate', show: delivCols.shipped },
+                                                    { field: 'delivery_rate', label: 'Rată Livrare', show: delivCols.delivery_rate },
+                                                    { field: 'expedition_rate', label: 'Rată Expediție', show: delivCols.expedition_rate },
+                                                    { field: 'cancelled_rate', label: 'Rată Anulare', show: delivCols.cancelled_rate },
+                                                    { field: 'deliverability_rate', label: 'Livrabilitate', show: delivCols.deliverability },
+                                                ].filter(c => c.show).map(c => (
+                                                    <th key={c.field}
+                                                        className={`${c.align === 'left' ? 'text-left px-4' : 'text-right px-3'} py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase cursor-pointer select-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
+                                                        onClick={() => toggleDelivSort(c.field)}>
+                                                        <span className="inline-flex items-center gap-1">
+                                                            {c.label}
+                                                            <ArrowUpDown className={`w-3 h-3 ${delivSort.col === c.field ? 'text-indigo-500' : 'opacity-40'}`} />
+                                                            {delivSort.col === c.field && (
+                                                                <span className="text-[9px] text-indigo-500">{delivSort.dir === 'asc' ? '↑' : '↓'}</span>
+                                                            )}
+                                                        </span>
+                                                    </th>
+                                                ))}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700">
-                                            {deliverabilityData.stores?.map((store) => (
+                                            {(() => {
+                                                const stores = [...(deliverabilityData.stores || [])]
+                                                const getVal = (store, col) => {
+                                                    if (col === 'store_name') return store.store_name || ''
+                                                    if (col === 'returned') return (store.returned || 0) + (store.refused || 0)
+                                                    if (col === 'in_transit') return (store.in_transit || 0) + (store.out_for_delivery || 0)
+                                                    return store[col] || 0
+                                                }
+                                                stores.sort((a, b) => {
+                                                    const va = getVal(a, delivSort.col)
+                                                    const vb = getVal(b, delivSort.col)
+                                                    if (typeof va === 'string') return delivSort.dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
+                                                    return delivSort.dir === 'asc' ? va - vb : vb - va
+                                                })
+                                                return stores.map((store) => (
                                                 <tr key={store.store_uid} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
                                                     <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-white">
                                                         {store.store_name}
@@ -872,11 +988,14 @@ export default function Analytics() {
                                                         </div>
                                                     </td>}
                                                 </tr>
-                                            ))}
+                                                ))
+                                            })()}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
+                            </>
+                            )}
                         </div>
                     )}
 
@@ -999,6 +1118,16 @@ export default function Analytics() {
                                         {profitLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
                                         Analizează
                                     </button>
+
+                                    {profitabilityData && (
+                                        <button
+                                            onClick={() => exportPnlToExcel(profitabilityData)}
+                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 self-end"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Export Excel
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -1852,6 +1981,111 @@ export default function Analytics() {
                                     </div>
                                 )}
                             </div>
+
+                            {/* ═══ CSV IMPORT COVERAGE GAPS ═══ */}
+                            <div className="bg-white dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <AlertTriangle className="w-5 h-5 text-amber-500" />
+                                        <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100">CSV Import Coverage Gaps</h3>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            setCsvGapsLoading(true)
+                                            try {
+                                                const data = await analyticsApi.getCsvCoverageGaps({ months: 6 })
+                                                setCsvGapsData(data)
+                                            } catch (e) { console.error('Failed to load CSV gaps:', e) }
+                                            setCsvGapsLoading(false)
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors flex items-center gap-1"
+                                    >
+                                        <RefreshCw className={`w-3.5 h-3.5 ${csvGapsLoading ? 'animate-spin' : ''}`} />
+                                        {csvGapsData ? 'Refresh' : 'Load Gaps'}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
+                                    Periods where orders exist but have no transport cost from CSV imports. Import the corresponding courier CSV to fill these gaps.
+                                </p>
+
+                                {csvGapsLoading ? (
+                                    <div className="p-6 text-center text-zinc-500">
+                                        <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
+                                        Analyzing coverage...
+                                    </div>
+                                ) : csvGapsData ? (
+                                    csvGapsData.couriers.length === 0 ? (
+                                        <div className="p-6 text-center text-emerald-500 dark:text-emerald-400 flex flex-col items-center gap-2">
+                                            <Package className="w-8 h-8" />
+                                            <span className="font-medium">All periods covered!</span>
+                                            <span className="text-xs text-zinc-500">No missing CSV imports detected in the last {csvGapsData.analysis_months} months.</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {csvGapsData.couriers.map(courier => (
+                                                <div key={courier.courier_name} className="border border-zinc-200 dark:border-zinc-700/50 rounded-lg overflow-hidden">
+                                                    <div className="bg-zinc-50 dark:bg-zinc-900/40 px-4 py-2.5 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Truck className="w-4 h-4 text-zinc-500" />
+                                                            <span className="font-semibold text-sm text-zinc-800 dark:text-zinc-100">{courier.courier_name}</span>
+                                                        </div>
+                                                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-medium">
+                                                            {courier.total_orders_missing} orders missing cost
+                                                        </span>
+                                                    </div>
+                                                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                                        {courier.gaps.map((gap, idx) => {
+                                                            const severity = gap.coverage_pct === 0 ? 'red' : gap.coverage_pct < 50 ? 'amber' : 'yellow'
+                                                            const colors = {
+                                                                red: 'bg-red-50 dark:bg-red-900/10 border-l-red-500',
+                                                                amber: 'bg-amber-50 dark:bg-amber-900/10 border-l-amber-500',
+                                                                yellow: 'bg-yellow-50 dark:bg-yellow-900/10 border-l-yellow-500',
+                                                            }
+                                                            return (
+                                                                <div key={idx} className={`px-4 py-2.5 border-l-3 ${colors[severity]} flex items-center justify-between`}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <Calendar className="w-4 h-4 text-zinc-400" />
+                                                                        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                                                                            {new Date(gap.date_from).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                                                            {' → '}
+                                                                            {new Date(gap.date_to).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                                                        </span>
+                                                                        <span className="text-xs text-zinc-400">({gap.weeks} {gap.weeks === 1 ? 'week' : 'weeks'})</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-4 text-xs">
+                                                                        <span className="text-zinc-500">
+                                                                            {gap.orders_with_cost}/{gap.total_orders} covered
+                                                                        </span>
+                                                                        <div className="w-20 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                                                            <div
+                                                                                className={`h-full rounded-full transition-all ${
+                                                                                    severity === 'red' ? 'bg-red-500' :
+                                                                                    severity === 'amber' ? 'bg-amber-500' : 'bg-yellow-500'
+                                                                                }`}
+                                                                                style={{ width: `${gap.coverage_pct}%` }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className={`font-medium ${
+                                                                            severity === 'red' ? 'text-red-600 dark:text-red-400' :
+                                                                            severity === 'amber' ? 'text-amber-600 dark:text-amber-400' : 'text-yellow-600 dark:text-yellow-400'
+                                                                        }`}>
+                                                                            {gap.orders_missing_cost} missing
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="p-6 text-center text-zinc-400 text-sm">
+                                        Click "Load Gaps" to analyze CSV import coverage across couriers.
+                                    </div>
+                                )}
+                            </div>
                         </div >
                     )
                     }
@@ -2124,9 +2358,18 @@ export default function Analytics() {
                         return (
                             <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
                                 <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-700">
-                                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                                        📊 P&L Comparativ — Toate Magazinele
-                                    </h3>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                                            📊 P&L Comparativ — Toate Magazinele
+                                        </h3>
+                                        <button
+                                            onClick={() => exportPnlComparativToExcel(profitabilityData)}
+                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Export Excel
+                                        </button>
+                                    </div>
                                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                                         Comparație side-by-side a profitabilității per magazin. Valori cu TVA.
                                         <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium">
@@ -4050,6 +4293,10 @@ export default function Analytics() {
                             </div>
                         )
                     })()}
+                    {/* ── Products/Inventory Tab ── */}
+                    {activeTab === 'products' && (
+                        <ProductsTab stores={stores} />
+                    )}
                 </>
             )
             }

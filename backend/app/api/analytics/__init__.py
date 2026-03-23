@@ -16,6 +16,7 @@ from app.api.analytics.geographic import get_geographic_stats
 from app.api.analytics.deliverability import get_deliverability_stats
 from app.api.analytics.profitability import get_overall_profitability
 from app.api.analytics.profitability_orders import get_order_profitability
+from app.api.analytics.csv_coverage import get_csv_coverage_gaps
 from app.core.database import get_db
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -27,6 +28,7 @@ router.add_api_route("/geographic", get_geographic_stats, methods=["GET"])
 router.add_api_route("/deliverability", get_deliverability_stats, methods=["GET"])
 router.add_api_route("/profitability", get_overall_profitability, methods=["GET"])
 router.add_api_route("/profitability/orders", get_order_profitability, methods=["GET"])
+router.add_api_route("/csv-coverage-gaps", get_csv_coverage_gaps, methods=["GET"])
 
 
 async def sync_marketing_costs_endpoint(

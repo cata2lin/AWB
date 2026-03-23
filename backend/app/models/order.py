@@ -62,6 +62,7 @@ class Order(Base):
     fulfilled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # When order was fulfilled
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    waiting_for_courier_since: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Set when mark_waiting_for_courier called
     
     # Relationships
     store: Mapped["Store"] = relationship(back_populates="orders")

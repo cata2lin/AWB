@@ -87,6 +87,9 @@ class OrderResponse(OrderBase):
     total_price: Optional[float] = None
     subtotal_price: Optional[float] = None
     currency: Optional[str] = None
+    # Waiting for courier
+    waiting_for_courier_since: Optional[datetime] = None
+    is_stale_courier: bool = False
     
     class Config:
         from_attributes = True
@@ -215,6 +218,7 @@ class DashboardStats(BaseModel):
     active_rules: int
     batches_today: int
     orders_printed_today: int
+    stale_courier_count: int = 0
 
 
 class StoreStats(BaseModel):

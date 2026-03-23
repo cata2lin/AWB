@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut } from 'lucide-react'
+import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
 const navItems = [
@@ -14,7 +14,7 @@ const navItems = [
 
 export default function Sidebar({ user, onLogout }) {
     const location = useLocation()
-    const { darkMode, toggleDarkMode, isSyncing, syncOrders, fullSyncOrders, lastSyncAt } = useAppStore()
+    const { darkMode, toggleDarkMode, isSyncing, syncOrders, fullSyncOrders, cancelSync, lastSyncAt } = useAppStore()
 
     return (
         <aside className="w-64 h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
@@ -64,6 +64,15 @@ export default function Sidebar({ user, onLogout }) {
                     <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                     {isSyncing ? 'Syncing...' : 'Full Re-Sync (toate)'}
                 </button>
+                {isSyncing && (
+                    <button
+                        onClick={cancelSync}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-lg text-xs font-medium transition-all shadow-lg shadow-red-500/20"
+                    >
+                        <StopCircle className="w-3.5 h-3.5" />
+                        Stop Sync
+                    </button>
+                )}
                 {lastSyncAt && (
                     <p className="text-xs text-zinc-400 text-center">
                         Last sync: {new Date(lastSyncAt).toLocaleTimeString()}

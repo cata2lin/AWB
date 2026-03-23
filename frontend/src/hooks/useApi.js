@@ -129,12 +129,20 @@ export const useTriggerSync = () => {
     const queryClient = useQueryClient()
 
     return useMutation({
-        mutationFn: syncApi.triggerSync,
+        mutationFn: (params) => syncApi.triggerSync(params),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sync'] })
             queryClient.invalidateQueries({ queryKey: ['orders'] })
             queryClient.invalidateQueries({ queryKey: ['stores'] })
         },
+    })
+}
+
+export const useSyncHistory = (limit = 20) => {
+    return useQuery({
+        queryKey: ['sync', 'history', limit],
+        queryFn: () => syncApi.getHistory(limit),
+        refetchInterval: 15 * 1000, // Poll every 15 seconds to catch running syncs
     })
 }
 

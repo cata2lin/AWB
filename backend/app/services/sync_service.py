@@ -26,9 +26,16 @@ DEFAULT_SYNC_DAYS = 45
 BATCH_SIZE = 100  # Save to database every N orders
 
 
-async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
+async def sync_orders(
+    sync_id: Optional[int] = None,
+    full_sync: bool = False,
+    sync_type: str = "45_day",
+    store_uids: Optional[List[str]] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
     """
-    Synchronize orders from ALL Frisbo organizations to local database.
+    Synchronize orders from Frisbo organizations to local database.
     
     Iterates through every org token in FRISBO_ORG_TOKENS.
     For each org, does streaming batch fetch + save (100 orders at a time).
@@ -36,13 +43,17 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
     Args:
         sync_id: ID of the SyncLog entry to update
         full_sync: If True, fetch ALL orders. If False, fetch only last 45 days.
+        sync_type: "45_day", "full", "custom"
+        store_uids: Optional list of store UIDs to filter (only sync matching orgs)
+        date_from: Optional ISO start date for custom sync
+        date_to: Optional ISO end date for custom sync
     """
     org_tokens = settings.get_org_tokens()
     if not org_tokens:
         logger.error("📦 No Frisbo org tokens configured! Check FRISBO_ORG_TOKENS in .env")
         return
     
-    logger.info(f"📦 Starting sync across {len(org_tokens)} organizations")
+    logger.info(f"📦 Starting {sync_type} sync across {len(org_tokens)} organizations")
     
     async with AsyncSessionLocal() as db:
         try:
@@ -55,13 +66,39 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                 sync_log = result.scalar_one_or_none()
             
             if not sync_log:
-                sync_log = SyncLog(status="running")
+                sync_log = SyncLog(status="running", sync_type=sync_type)
                 db.add(sync_log)
                 await db.flush()
             
+            # Record sync metadata in the log
+            sync_log.sync_type = sync_type
+            if store_uids:
+                sync_log.store_uids = store_uids
+            if date_from:
+                try:
+                    parsed = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                    sync_log.date_from = parsed.replace(tzinfo=None)
+                except Exception:
+                    pass
+            if date_to:
+                try:
+                    parsed = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                    sync_log.date_to = parsed.replace(tzinfo=None)
+                except Exception:
+                    pass
+            await db.commit()
+            
             # Determine date range for sync
             created_at_start = None
-            if not full_sync:
+            created_at_end = None
+            if sync_type == "custom" and date_from:
+                # Custom sync: use user-provided dates
+                created_at_start = date_from
+                created_at_end = date_to
+                logger.info(f"📦 CUSTOM SYNC: Orders from {date_from} to {date_to or 'now'}")
+                if store_uids:
+                    logger.info(f"📦 CUSTOM SYNC: Filtering stores: {store_uids}")
+            elif not full_sync:
                 # Smart sync: only orders from the last 45 days
                 cutoff_date = datetime.utcnow() - timedelta(days=DEFAULT_SYNC_DAYS)
                 created_at_start = cutoff_date.isoformat()
@@ -97,7 +134,9 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                         result = await client.search_orders(
                             skip=skip,
                             limit=BATCH_SIZE,
-                            created_at_start=created_at_start
+                            store_uids=store_uids,
+                            created_at_start=created_at_start,
+                            created_at_end=created_at_end
                         )
                     except Exception as e:
                         logger.error(f"📦 API error for org '{org_name}' at skip={skip}: {e}")
@@ -148,6 +187,11 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                             existing.fulfillment_status = parsed["fulfillment_status"]
                             existing.shipment_status = parsed.get("shipment_status")
                             existing.aggregated_status = parsed.get("aggregated_status")
+                            # Auto-clear stale courier alert when status moves past 'waiting_for_courier'
+                            new_agg = parsed.get("aggregated_status")
+                            if (existing.waiting_for_courier_since and
+                                    new_agg and new_agg != "waiting_for_courier"):
+                                existing.waiting_for_courier_since = None
                             existing.fulfilled_at = parsed.get("fulfilled_at") or existing.fulfilled_at
                             # Update pricing
                             existing.total_price = parsed.get("total_price") or existing.total_price
@@ -156,7 +200,7 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                             existing.currency = parsed.get("currency") or existing.currency
                             existing.payment_gateway = parsed.get("payment_gateway") or existing.payment_gateway
                             # Update line items (captures added/removed items in Frisbo)
-                            if parsed.get("line_items"):
+                            if parsed.get("line_items") is not None:
                                 existing.line_items = parsed["line_items"]
                                 existing.item_count = parsed["item_count"]
                                 existing.unique_sku_count = parsed["unique_sku_count"]
@@ -209,17 +253,42 @@ async def sync_orders(sync_id: Optional[int] = None, full_sync: bool = False):
                             for awb_data in all_awbs:
                                 tn = awb_data["tracking_number"]
                                 if tn in existing_awbs:
-                                    # Update existing AWB (but preserve csv_import costs)
+                                    # Update existing AWB (preserve csv_import costs, update shipment data)
                                     existing_awb = existing_awbs[tn]
                                     existing_awb.courier_name = awb_data.get("courier_name") or existing_awb.courier_name
                                     existing_awb.awb_type = awb_data.get("awb_type") or existing_awb.awb_type
+                                    # Update Frisbo shipment data (these change over time)
+                                    existing_awb.shipment_uid = awb_data.get("shipment_uid") or existing_awb.shipment_uid
+                                    existing_awb.awb_pdf_url = awb_data.get("awb_pdf_url") or existing_awb.awb_pdf_url
+                                    existing_awb.awb_pdf_format = awb_data.get("awb_pdf_format") or existing_awb.awb_pdf_format
+                                    existing_awb.shipment_status = awb_data.get("shipment_status") or existing_awb.shipment_status
+                                    existing_awb.shipment_status_date = awb_data.get("shipment_status_date") or existing_awb.shipment_status_date
+                                    existing_awb.shipment_events = awb_data.get("shipment_events") or existing_awb.shipment_events
+                                    existing_awb.is_return_label = awb_data.get("is_return_label") if awb_data.get("is_return_label") is not None else existing_awb.is_return_label
+                                    existing_awb.is_redirect_label = awb_data.get("is_redirect_label") if awb_data.get("is_redirect_label") is not None else existing_awb.is_redirect_label
+                                    existing_awb.paid_by = awb_data.get("paid_by") or existing_awb.paid_by
+                                    existing_awb.cod_value = awb_data.get("cod_value") if awb_data.get("cod_value") is not None else existing_awb.cod_value
+                                    existing_awb.cod_currency = awb_data.get("cod_currency") or existing_awb.cod_currency
+                                    existing_awb.shipment_created_at = awb_data.get("shipment_created_at") or existing_awb.shipment_created_at
                                 else:
-                                    # Create new AWB record
+                                    # Create new AWB record with full shipment data
                                     new_awb = OrderAwb(
                                         order_id=order_obj.id,
                                         tracking_number=tn,
                                         courier_name=awb_data.get("courier_name"),
                                         awb_type=awb_data.get("awb_type", "outbound"),
+                                        shipment_uid=awb_data.get("shipment_uid"),
+                                        awb_pdf_url=awb_data.get("awb_pdf_url"),
+                                        awb_pdf_format=awb_data.get("awb_pdf_format"),
+                                        shipment_status=awb_data.get("shipment_status"),
+                                        shipment_status_date=awb_data.get("shipment_status_date"),
+                                        is_return_label=awb_data.get("is_return_label", False),
+                                        is_redirect_label=awb_data.get("is_redirect_label", False),
+                                        paid_by=awb_data.get("paid_by"),
+                                        cod_value=awb_data.get("cod_value"),
+                                        cod_currency=awb_data.get("cod_currency"),
+                                        shipment_created_at=awb_data.get("shipment_created_at"),
+                                        shipment_events=awb_data.get("shipment_events"),
                                         data_source="frisbo_sync",
                                         created_at=datetime.utcnow(),
                                     )

@@ -13,6 +13,7 @@ from app.models.marketing_daily_cost import MarketingDailyCost
 from app.models.sku_marketing_cost import SkuMarketingCost
 from app.models.user import User
 from app.models.user_activity import UserActivity
+from app.models.product import Product
 
 __all__ = [
     "Store", "Order", "OrderAwb", "Rule", "RulePreset",
@@ -21,5 +22,6 @@ __all__ = [
     "ProfitabilityConfig", "ExchangeRate", "BusinessCost",
     "MarketingDailyCost", "SkuMarketingCost",
     "User", "UserActivity",
+    "Product",
 ]
 

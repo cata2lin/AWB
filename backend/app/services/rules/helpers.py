@@ -47,7 +47,7 @@ def get_line_item_count(order) -> int:
     # Use item_count (total quantity) which matches the "X items" UI label
     if order.item_count and order.item_count > 0:
         return order.item_count
-    # Fallback: sum quantities from line_items
+    # Fallback: sum quantities from line_items (skip qty=0 which means removed/cancelled)
     items = order.line_items or []
-    total = sum(item.get("quantity", 1) for item in items)
+    total = sum(int(item.get("quantity", 1) or 1) for item in items if int(item.get("quantity", 0) or 0) > 0)
     return max(total, 1)

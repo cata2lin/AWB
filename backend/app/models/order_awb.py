@@ -1,7 +1,7 @@
 """OrderAwb model — stores all AWBs per order (outbound + return)."""
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Float, DateTime, Boolean, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,6 +28,20 @@ class OrderAwb(Base):
     
     # 'outbound' = sent to customer, 'return' = sent back
     awb_type: Mapped[str] = mapped_column(String(20), default="outbound")
+    
+    # --- Frisbo shipment data (populated during order sync) ---
+    shipment_uid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)          # Frisbo shipment UID
+    awb_pdf_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)                  # Direct label download URL
+    awb_pdf_format: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)         # Label format (pdf, zpl)
+    shipment_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)        # Latest event key
+    shipment_status_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True) # Latest event date
+    is_return_label: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False)  # ShipmentDocument.is_return
+    is_redirect_label: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False) # ShipmentDocument.is_redirect
+    paid_by: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)                # sender/receiver/third_party
+    cod_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)                 # Cash on delivery value
+    cod_currency: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)           # COD currency
+    shipment_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True) # Frisbo shipment creation
+    shipment_events: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)             # Full events array
     
     # Shipping data (populated from courier CSV import)
     transport_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)            # cu TVA

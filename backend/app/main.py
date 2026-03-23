@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api
+from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.services.scheduler import scheduler
@@ -49,6 +49,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"Auto-create admin failed: {e}")
+    
+    # Clear any stale "running" syncs from previous process (they're dead)
+    try:
+        from sqlalchemy import select
+        from app.models import SyncLog
+        from datetime import datetime
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(SyncLog).where(SyncLog.status == "running")
+            )
+            stale = result.scalars().all()
+            if stale:
+                import logging
+                for s in stale:
+                    s.status = "cancelled"
+                    s.completed_at = datetime.utcnow()
+                    s.error_message = "Cancelled: server restarted"
+                await db.commit()
+                logging.getLogger(__name__).info(f"Cleared {len(stale)} stale running sync(s) from previous run")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Stale sync cleanup failed: {e}")
     
     # Start background scheduler
     scheduler.start()
@@ -104,6 +126,7 @@ app.include_router(sales_velocity.router, prefix="/api", tags=["sales-velocity"]
 app.include_router(sku_profitability.router, prefix="/api", tags=["sku-profitability"])
 app.include_router(sku_marketing_costs.router, prefix="/api", tags=["sku-marketing-costs"])
 app.include_router(system.router, prefix="/api/system", tags=["system"])
+app.include_router(products.router, prefix="/api/products", tags=["products"])
 
 
 @app.get("/api/health")

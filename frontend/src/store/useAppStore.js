@@ -173,6 +173,18 @@ export const useAppStore = create(
                     set({ isSyncing: false })
                 }
             },
+            cancelSync: async () => {
+                const API = import.meta.env.VITE_API_URL || ''
+                const token = localStorage.getItem('awb_token')
+                const headers = token ? { Authorization: `Bearer ${token}` } : {}
+                try {
+                    await fetch(`${API}/api/sync/cancel`, { method: 'POST', headers })
+                    set({ isSyncing: false })
+                } catch (e) {
+                    console.error('Cancel sync failed:', e)
+                    set({ isSyncing: false })
+                }
+            },
 
             // Print batch config
             batchSize: 200,

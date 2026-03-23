@@ -347,6 +347,101 @@ class FrisboClient:
     def parse_order(self, raw_order: Dict) -> Dict:
         """Parse raw Frisbo order into our internal format. Delegates to parser module."""
         return parse_order(raw_order)
+    
+    # --- ORDER STATUS MANAGEMENT ---
+    
+    async def mark_waiting_for_courier(self, order_uid: str) -> Dict:
+        """
+        Mark an order as 'waiting for courier' in Frisbo.
+        
+        Called after printing the AWB. This transitions the order status
+        so Frisbo knows the package is ready for pickup.
+        
+        Uses GET /orders/order/{order_uid}/mark_waiting_for_courier
+        """
+        return await self._request("GET", f"/orders/order/{order_uid}/mark_waiting_for_courier")
+    
+    # --- PRODUCT / INVENTORY ITEMS ---
+    
+    async def search_products(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        store_uids: Optional[List[str]] = None,
+    ) -> Dict:
+        """
+        Search inventory items (products) with filters.
+        
+        Uses GET /inventory_items/search endpoint.
+        
+        Args:
+            skip: Offset
+            limit: Page size (max 100)
+            store_uids: Filter by store UIDs
+        
+        Returns:
+            {"success": true, "data": {"inventory_items": [...]}}
+        """
+        params = {
+            "skip": skip,
+            "limit": min(limit, 100),
+        }
+        
+        if store_uids:
+            params["store_uids[]"] = store_uids
+        
+        return await self._request("GET", "/inventory_items/search", params=params)
+    
+    async def fetch_all_products(
+        self,
+        store_uids: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Fetch all products with pagination.
+        
+        Same pattern as fetch_orders() — paginates until all items are fetched.
+        
+        Returns:
+            List of all inventory items
+        """
+        all_items = []
+        skip = 0
+        limit = 100
+        
+        logger.info(f"📦 Fetching all products{'  for stores: ' + str(store_uids) if store_uids else ''}")
+        
+        while True:
+            result = await self.search_products(
+                skip=skip,
+                limit=limit,
+                store_uids=store_uids,
+            )
+            
+            items = []
+            if isinstance(result, dict):
+                if result.get("success") is False:
+                    logger.error(f"Frisbo products API returned success=false: {result}")
+                    break
+                
+                data = result.get("data", {})
+                if isinstance(data, dict):
+                    items = data.get("inventory_items", [])
+                elif isinstance(data, list):
+                    items = data
+            
+            if not isinstance(items, list):
+                items = []
+            
+            logger.info(f"Fetched {len(items)} products (skip={skip})")
+            all_items.extend(items)
+            
+            if len(items) < limit:
+                break
+            
+            skip += limit
+        
+        logger.info(f"Total products fetched: {len(all_items)}")
+        return all_items
 
 
 # Singleton instance
