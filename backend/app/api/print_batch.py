@@ -583,34 +583,114 @@ async def download_batch_pdf(batch_id: int, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/history", response_model=List[PrintBatchResponse])
+@router.get("/history")
 async def get_batch_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Search by batch number or order number"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    sort_by: str = Query("created_at", description="Sort field"),
+    sort_dir: str = Query("desc", description="Sort direction: asc or desc"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get print batch history."""
-    result = await db.execute(
-        select(PrintBatch)
-        .order_by(PrintBatch.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    """Get print batch history with filtering, search, and sorting."""
+    from sqlalchemy import func, or_
+
+    query = select(PrintBatch)
+    count_query = select(func.count(PrintBatch.id))
+
+    # Status filter
+    if status:
+        query = query.where(PrintBatch.status == status)
+        count_query = count_query.where(PrintBatch.status == status)
+
+    # Date range filter
+    if date_from:
+        try:
+            dt_from = datetime.strptime(date_from, "%Y-%m-%d")
+            query = query.where(PrintBatch.created_at >= dt_from)
+            count_query = count_query.where(PrintBatch.created_at >= dt_from)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            query = query.where(PrintBatch.created_at <= dt_to)
+            count_query = count_query.where(PrintBatch.created_at <= dt_to)
+        except ValueError:
+            pass
+
+    # Search — match batch_number or any order_number inside the batch
+    if search:
+        search_term = f"%{search}%"
+        # Subquery: find batch IDs that contain matching order numbers
+        order_match_subquery = (
+            select(PrintBatchItem.batch_id)
+            .join(Order, PrintBatchItem.order_uid == Order.uid)
+            .where(Order.order_number.ilike(search_term))
+            .distinct()
+        )
+        query = query.where(
+            or_(
+                PrintBatch.batch_number.ilike(search_term),
+                PrintBatch.id.in_(order_match_subquery)
+            )
+        )
+        count_query = count_query.where(
+            or_(
+                PrintBatch.batch_number.ilike(search_term),
+                PrintBatch.id.in_(order_match_subquery)
+            )
+        )
+
+    # Sorting
+    sort_column = getattr(PrintBatch, sort_by, PrintBatch.created_at)
+    if sort_dir == "asc":
+        query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(sort_column.desc())
+
+    # Get total count
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+
+    # Fetch page
+    result = await db.execute(query.offset(skip).limit(limit))
     batches = result.scalars().all()
-    return batches
+
+    return {
+        "batches": [
+            {
+                "id": b.id,
+                "batch_number": b.batch_number,
+                "order_count": b.order_count,
+                "group_count": b.group_count,
+                "file_size": b.file_size,
+                "status": b.status,
+                "error_message": b.error_message,
+                "created_at": b.created_at.isoformat() if b.created_at else None,
+            }
+            for b in batches
+        ],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.get("/history/{batch_id}")
 async def get_batch_details(batch_id: int, db: AsyncSession = Depends(get_db)):
-    """Get details of a specific batch including orders."""
+    """Get details of a specific batch including all orders."""
     result = await db.execute(
         select(PrintBatch).where(PrintBatch.id == batch_id)
     )
     batch = result.scalar_one_or_none()
-    
+
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
-    
+
     # Get batch items with order details
     items_result = await db.execute(
         select(PrintBatchItem, Order)
@@ -619,9 +699,18 @@ async def get_batch_details(batch_id: int, db: AsyncSession = Depends(get_db)):
         .order_by(PrintBatchItem.group_name, PrintBatchItem.group_position)
     )
     items = items_result.all()
-    
+
     return {
-        "batch": batch,
+        "batch": {
+            "id": batch.id,
+            "batch_number": batch.batch_number,
+            "order_count": batch.order_count,
+            "group_count": batch.group_count,
+            "file_size": batch.file_size,
+            "status": batch.status,
+            "error_message": batch.error_message,
+            "created_at": batch.created_at.isoformat() if batch.created_at else None,
+        },
         "items": [
             {
                 "group_name": item.PrintBatchItem.group_name,
@@ -629,8 +718,84 @@ async def get_batch_details(batch_id: int, db: AsyncSession = Depends(get_db)):
                 "order_uid": item.Order.uid,
                 "order_number": item.Order.order_number,
                 "customer_name": item.Order.customer_name,
-                "tracking_number": item.Order.tracking_number
+                "tracking_number": item.Order.tracking_number,
+                "courier_name": item.Order.courier_name,
+                "store_uid": item.Order.store_uid,
             }
             for item in items
         ]
     }
+
+
+@router.get("/reprint/{batch_id}")
+async def reprint_batch(batch_id: int, db: AsyncSession = Depends(get_db)):
+    """Re-download an existing batch PDF. Does NOT re-mark orders."""
+    result = await db.execute(
+        select(PrintBatch).where(PrintBatch.id == batch_id)
+    )
+    batch = result.scalar_one_or_none()
+
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    if not os.path.exists(batch.file_path):
+        raise HTTPException(status_code=404, detail="PDF file no longer exists on disk")
+
+    return FileResponse(
+        batch.file_path,
+        media_type="application/pdf",
+        filename=f"{batch.batch_number}.pdf"
+    )
+
+
+@router.post("/reprint-order/{order_uid}")
+async def reprint_single_order(order_uid: str, db: AsyncSession = Depends(get_db)):
+    """
+    Reprint a single order's AWB from stored URL.
+
+    Does NOT change print status or notify Frisbo.
+    Useful for reprinting a damaged label from a previous batch.
+    """
+    result = await db.execute(select(Order).where(Order.uid == order_uid))
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if not order.awb_pdf_url:
+        raise HTTPException(status_code=400, detail="Order has no stored AWB URL")
+
+    # Download using the first available org token
+    from app.services.frisbo.client import FrisboClient
+    from app.core.config import settings
+
+    org_tokens = settings.get_org_tokens()
+    if not org_tokens:
+        raise HTTPException(status_code=500, detail="No Frisbo org tokens configured")
+
+    awb_pdf = None
+    for token_cfg in org_tokens:
+        client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
+        try:
+            awb_pdf = await client.download_awb_pdf(order.awb_pdf_url)
+            break
+        except Exception:
+            continue
+
+    if not awb_pdf:
+        raise HTTPException(status_code=500, detail="Could not download AWB PDF from any org token")
+
+    # Save to temp file and serve
+    reprint_name = f"reprint_{order_uid}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    pdf_service = PDFService()
+    file_path = os.path.join(pdf_service.storage_path, f"{reprint_name}.pdf")
+
+    with open(file_path, "wb") as f:
+        f.write(awb_pdf)
+
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename=f"reprint_{order.order_number}.pdf"
+    )
+

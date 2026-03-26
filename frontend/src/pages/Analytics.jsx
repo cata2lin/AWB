@@ -29,6 +29,7 @@ import {
 import { exportPnlToExcel, exportPnlComparativToExcel } from '../utils/pnlExport'
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
 import ProductsTab from '../components/ProductsTab'
+import PrintHistoryTab from '../components/PrintHistoryTab'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -658,91 +659,7 @@ export default function Analytics() {
             ) : (
                 <>
                     {/* Print Analytics Tab */}
-                    {activeTab === 'print' && printAnalytics && (
-                        <div className="space-y-6">
-                            {/* KPI Cards */}
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
-                                    <div className="text-sm text-zinc-500 dark:text-white">Total Printed</div>
-                                    <div className="text-2xl font-bold text-zinc-900 dark:text-white mt-1">
-                                        {formatNumber(printAnalytics.kpis?.total_printed || 0)}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
-                                    <div className="text-sm text-zinc-500 dark:text-white">Total Batches</div>
-                                    <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
-                                        {formatNumber(printAnalytics.kpis?.total_batches || 0)}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
-                                    <div className="text-sm text-zinc-500 dark:text-white">Avg/Day</div>
-                                    <div className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
-                                        {printAnalytics.kpis?.avg_per_day || 0}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
-                                    <div className="text-sm text-zinc-500 dark:text-white">Batches Today</div>
-                                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">
-                                        {printAnalytics.kpis?.batches_today || 0}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700">
-                                    <div className="text-sm text-zinc-500 dark:text-white">Peak Hour</div>
-                                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                        {printAnalytics.kpis?.peak_hour || '--'}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Daily Chart */}
-                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
-                                <h3 className="font-semibold text-zinc-900 dark:text-white mb-4">Daily Print Volume</h3>
-                                <div className="h-48 flex items-end gap-1">
-                                    {printAnalytics.daily_data?.slice(-30).map((day, idx) => (
-                                        <div
-                                            key={day.date}
-                                            className="flex-1 bg-indigo-500 dark:bg-indigo-600 rounded-t hover:bg-indigo-600 dark:hover:bg-indigo-500 transition-colors cursor-pointer group relative"
-                                            style={{
-                                                height: `${Math.max(4, (day.printed / Math.max(...printAnalytics.daily_data.map(d => d.printed), 1)) * 100)}%`
-                                            }}
-                                            title={`${day.dateLabel}: ${day.printed} orders`}
-                                        >
-                                            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none">
-                                                {day.dateLabel}: {day.printed}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Store Distribution */}
-                            {printAnalytics.store_distribution?.length > 0 && (
-                                <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
-                                    <h3 className="font-semibold text-zinc-900 dark:text-white mb-4">Print by Store</h3>
-                                    <div className="space-y-2">
-                                        {printAnalytics.store_distribution.map(store => {
-                                            const total = printAnalytics.store_distribution.reduce((a, b) => a + b.count, 0)
-                                            const pct = total > 0 ? (store.count / total * 100) : 0
-                                            return (
-                                                <div key={store.name} className="flex items-center gap-3">
-                                                    <span className="text-sm text-zinc-600 dark:text-white w-32 truncate">{store.name}</span>
-                                                    <div className="flex-1 h-2 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full bg-indigo-500"
-                                                            style={{ width: `${pct}%` }}
-                                                        />
-                                                    </div>
-                                                    <span className="text-sm font-medium text-zinc-900 dark:text-white w-16 text-right">
-                                                        {formatNumber(store.count)}
-                                                    </span>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                    {activeTab === 'print' && <PrintHistoryTab />}
 
                     {/* Deliverability Report Tab */}
                     {activeTab === 'deliverability' && (
