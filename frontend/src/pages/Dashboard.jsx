@@ -35,12 +35,12 @@ export default function Dashboard() {
     const totalPrintable = stores.reduce((sum, s) => sum + (s.printable_count || 0), 0)
     const selectedPrintable = selectedStoreIds.length > 0
         ? stores.filter(s => selectedStoreIds.includes(s.uid)).reduce((sum, s) => sum + (s.printable_count || 0), 0)
-        : 0
+        : totalPrintable
 
     // Also track unprinted without AWB for user info
     const selectedUnprinted = selectedStoreIds.length > 0
         ? stores.filter(s => selectedStoreIds.includes(s.uid)).reduce((sum, s) => sum + (s.unprinted_count || 0), 0)
-        : 0
+        : totalUnfulfilled
 
     const handleSync = (syncType = '45_day') => {
         setShowSyncMenu(false)
@@ -355,17 +355,7 @@ export default function Dashboard() {
             )}
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-5 border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/30 transition-colors">
-                    <div className="flex items-center gap-3 mb-1">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-500/10 flex items-center justify-center">
-                            <Package className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                        </div>
-                        <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Total Unfulfilled</span>
-                    </div>
-                    <p className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight mt-2">{statsLoading ? '...' : totalUnfulfilled.toLocaleString()}</p>
-                </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white dark:bg-zinc-900 rounded-xl p-5 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500/30 transition-colors">
                     <div className="flex items-center gap-3 mb-1">
                         <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 flex items-center justify-center">
@@ -376,7 +366,7 @@ export default function Dashboard() {
                     <p className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight mt-2">{selectedPrintable.toLocaleString()}</p>
                     {selectedUnprinted > selectedPrintable && (
                         <p className="text-xs text-zinc-400 mt-1">
-                            ({selectedUnprinted - selectedPrintable} without AWB)
+                            ({selectedUnprinted - selectedPrintable} not ready)
                         </p>
                     )}
                 </div>
@@ -510,7 +500,7 @@ export default function Dashboard() {
                                 id: store.uid,
                                 name: store.name,
                                 color: store.color_code,
-                                unfulfilledCount: store.unprinted_count || 0
+                                unfulfilledCount: store.printable_count || 0
                             }} />
                         ))}
                     </div>
@@ -607,7 +597,7 @@ export default function Dashboard() {
             </div>
 
             {/* Floating Bottom Action Bar */}
-            {(selectedStoreIds.length > 0 || totalUnfulfilled > 0) && (
+            {(selectedPrintable > 0 || totalPrintable > 0) && (
                 <div className="fixed bottom-0 left-64 right-0 z-30 bg-white/80 dark:bg-zinc-900/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 px-6 py-4">
                     <div className="flex items-center justify-between max-w-full">
                         <div className="flex items-center gap-6 text-sm">
@@ -619,9 +609,10 @@ export default function Dashboard() {
                             </div>
                             <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-700" />
                             <div>
-                                <span className="text-zinc-500 dark:text-zinc-400 font-medium">AVAILABLE ORDERS</span>
+                                <span className="text-zinc-500 dark:text-zinc-400 font-medium">READY TO PRINT</span>
                                 <p className="text-zinc-900 dark:text-white font-semibold">
-                                    {selectedUnprinted > 0 ? selectedUnprinted.toLocaleString() : totalUnfulfilled.toLocaleString()} orders
+                                    {selectedPrintable.toLocaleString()} orders
+                                    {selectedUnprinted > selectedPrintable && <span className="text-xs text-zinc-400 font-normal ml-1">({selectedUnprinted - selectedPrintable} without AWB)</span>}
                                 </p>
                             </div>
                         </div>
@@ -646,7 +637,7 @@ export default function Dashboard() {
                                 ) : (
                                     <>
                                         <Printer className="w-4 h-4" />
-                                        Generate Print Batch ({selectedUnprinted > 0 ? Math.min(selectedUnprinted, batchSize) : Math.min(totalUnfulfilled, batchSize)} orders)
+                                        Generate Print Batch ({Math.min(selectedPrintable, batchSize)} orders)
                                     </>
                                 )}
                             </button>

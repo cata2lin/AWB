@@ -166,7 +166,7 @@ class FrisboClient:
     
     async def get_order(self, order_uid: str) -> Dict:
         """Get a single order by UID."""
-        return await self._request("GET", f"/orders/{order_uid}")
+        return await self._request("GET", f"/orders/order/{order_uid}")
     
     async def fetch_orders(
         self,
@@ -250,6 +250,9 @@ class FrisboClient:
         """
         Download AWB PDF from a shipment URL.
         
+        S3 pre-signed URLs don't accept extra auth headers,
+        so only send Frisbo auth for Frisbo API domain URLs.
+        
         Args:
             url: Direct URL to the AWB PDF
             
@@ -258,8 +261,14 @@ class FrisboClient:
         """
         await self.rate_limiter.acquire()
         
+        # Only add Frisbo auth headers for Frisbo API URLs
+        # S3 pre-signed URLs will reject extra Authorization headers
+        headers = {}
+        if self.base_url in url:
+            headers = self._get_headers()
+        
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(url, headers=self._get_headers())
+            response = await client.get(url, headers=headers)
             response.raise_for_status()
             return response.content
     
@@ -360,6 +369,59 @@ class FrisboClient:
         Uses GET /orders/order/{order_uid}/mark_waiting_for_courier
         """
         return await self._request("GET", f"/orders/order/{order_uid}/mark_waiting_for_courier")
+    
+    async def mark_waiting_for_pickup(self, order_uid: str) -> Dict:
+        """
+        Mark an order as 'waiting for pickup' in Frisbo.
+        
+        Used for the drop-off flow — when the seller brings
+        the package to the courier, vs courier coming to pick it up.
+        
+        Uses GET /orders/order/{order_uid}/mark_waiting_for_pickup
+        """
+        return await self._request("GET", f"/orders/order/{order_uid}/mark_waiting_for_pickup")
+    
+    async def print_shipment(self, order_uid: str) -> Dict:
+        """
+        Retrieve the shipping label for an order.
+        
+        Returns the AWB label data/documents directly by order UID.
+        This is the proper way to get a shipping label — no need to
+        parse the order's shipments array to find the PDF URL.
+        
+        Uses GET /orders/order/{order_uid}/print_shipment
+        """
+        return await self._request("GET", f"/orders/order/{order_uid}/print_shipment")
+    
+    async def regenerate_shipment(self, order_uid: str, parcel_count: int = 1) -> Dict:
+        """
+        Recreate the shipping label — generates a brand new AWB from the courier.
+        
+        This actually contacts the courier to create a new label,
+        unlike print_shipment which just retrieves the existing one.
+        
+        Uses POST /orders/order/{order_uid}/regenerate_shipment
+        
+        Args:
+            order_uid: The order's UID
+            parcel_count: Number of parcels (default 1)
+        """
+        return await self._request(
+            "POST",
+            f"/orders/order/{order_uid}/regenerate_shipment",
+            json={"order_uid": order_uid, "parcel_count": parcel_count}
+        )
+    
+    async def get_shipments(self, order_uid: str) -> Dict:
+        """
+        Get all shipping labels for an order.
+        
+        Returns { "shipments": [...] } with all labels.
+        Useful for multi-parcel orders.
+        
+        Uses GET /orders/order/{order_uid}/shipments
+        """
+        return await self._request("GET", f"/orders/order/{order_uid}/shipments")
     
     # --- PRODUCT / INVENTORY ITEMS ---
     

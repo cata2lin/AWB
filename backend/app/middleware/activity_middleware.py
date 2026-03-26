@@ -48,6 +48,14 @@ class ActivityMiddleware(BaseHTTPMiddleware):
             payload = decode_access_token(token)
             if payload:
                 username = payload.get("sub", "anonymous")
+        
+        # Fallback: check for ?token= query param (for window.open / file downloads)
+        if username == "anonymous":
+            query_token = request.query_params.get("token")
+            if query_token:
+                payload = decode_access_token(query_token)
+                if payload:
+                    username = payload.get("sub", "anonymous")
 
         # Enforce auth on protected endpoints (everything except login, health)
         is_protected = not (path.startswith("/api/auth/login") or path in SKIP_PATHS)

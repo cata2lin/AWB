@@ -14,8 +14,19 @@ export const printApi = {
         const { data } = await api.post('/print/generate', orderUids)
         return data
     },
+    /** Print a single order — downloads AWB, marks printed, notifies Frisbo */
+    printSingle: async (orderUid) => {
+        const { data } = await api.post(`/print/single/${orderUid}`)
+        return data
+    },
+    /** Re-download AWB without changing status — for reprinting */
+    regenerate: async (orderUid) => {
+        const { data } = await api.post(`/print/regenerate/${orderUid}`)
+        return data
+    },
     getDownloadUrl: (batchId) => {
-        return `${API_BASE_URL}/print/download/${batchId}`
+        const token = localStorage.getItem('awb_token')
+        return `${API_BASE_URL}/print/download/${batchId}${token ? `?token=${token}` : ''}`
     },
     getHistory: async (skip = 0, limit = 20) => {
         const { data } = await api.get('/print/history', { params: { skip, limit } })
@@ -26,3 +37,4 @@ export const printApi = {
         return data
     },
 }
+

@@ -26,7 +26,10 @@ async def get_stores(db: AsyncSession = Depends(get_db)):
             func.count(case((Order.is_printed == False, Order.id))).label("unprinted"),
             func.count(case(
                 (
-                    (Order.is_printed == False) & (Order.awb_pdf_url.isnot(None)),
+                    (Order.is_printed == False)
+                    & (Order.fulfillment_status == "ready_for_picking")
+                    & (Order.shipment_status == "generated_awb")
+                    & (Order.aggregated_status == "ready_for_picking"),
                     Order.id,
                 )
             )).label("printable"),

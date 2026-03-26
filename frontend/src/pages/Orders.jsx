@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useStores } from '../hooks/useApi'
-import { ordersApi } from '../services/api'
+import { ordersApi, printApi } from '../services/api'
 import MultiSelectFilter from '../components/MultiSelectFilter'
 import {
     Search, ArrowUpDown, Package, AlertCircle, ChevronDown, ChevronLeft, ChevronRight,
     User, MapPin, Mail, Filter, X, Printer, FileText, Calendar, Tag, Truck, Store, Save, Lock,
-    DollarSign, RotateCcw, ExternalLink, Loader2
+    DollarSign, RotateCcw, ExternalLink, Loader2, Download, RefreshCw
 } from 'lucide-react'
 
 export default function Orders() {
@@ -59,6 +59,9 @@ export default function Orders() {
 
     // Expand state
     const [expandedOrderUid, setExpandedOrderUid] = useState(null)
+
+    // Per-order print/regenerate loading state
+    const [printingOrder, setPrintingOrder] = useState(null)  // { uid, action: 'print'|'regen' }
 
     // Data state
     const [orders, setOrders] = useState([])
@@ -1166,6 +1169,98 @@ export default function Orders() {
                                                                         <Save className="w-3 h-3" />
                                                                         Salvează (Manual)
                                                                     </button>
+                                                                </div>
+
+                                                                {/* ═══ Per-Order Print Actions ═══ */}
+                                                                <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                                                    <p className="text-[10px] text-zinc-400 mb-2 uppercase tracking-wider font-medium">Acțiuni AWB</p>
+                                                                    {(() => { const hasAwb = !!(order.awb_pdf_url || order.tracking_number); return (<>
+                                                                    <div className="flex gap-2">
+                                                                        {/* Print AWB button */}
+                                                                        <button
+                                                                            disabled={!hasAwb || (printingOrder?.uid === order.uid)}
+                                                                            onClick={async () => {
+                                                                                setPrintingOrder({ uid: order.uid, action: 'print' })
+                                                                                try {
+                                                                                    const result = await printApi.printSingle(order.uid)
+                                                                                    // Trigger PDF download
+                                                                                    const downloadUrl = printApi.getDownloadUrl(result.batch_id)
+                                                                                    const link = document.createElement('a')
+                                                                                    link.href = downloadUrl
+                                                                                    link.download = `${order.order_number || order.uid}.pdf`
+                                                                                    document.body.appendChild(link)
+                                                                                    link.click()
+                                                                                    document.body.removeChild(link)
+                                                                                    // Refresh the row to show updated status
+                                                                                    order.is_printed = true
+                                                                                    order.printed_at = new Date().toISOString()
+                                                                                    setExpandedOrderUid(null)
+                                                                                    setTimeout(() => handleExpand(order.uid), 150)
+                                                                                } catch (err) {
+                                                                                    console.error('Print failed:', err)
+                                                                                    alert('Eroare la printare: ' + (err.response?.data?.detail || err.message))
+                                                                                } finally {
+                                                                                    setPrintingOrder(null)
+                                                                                }
+                                                                            }}
+                                                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                                                                                !hasAwb
+                                                                                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                                                                                    : 'bg-green-600 hover:bg-green-700 text-white'
+                                                                            }`}
+                                                                        >
+                                                                            {printingOrder?.uid === order.uid && printingOrder?.action === 'print'
+                                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                                : <Printer className="w-3.5 h-3.5" />
+                                                                            }
+                                                                            {printingOrder?.uid === order.uid && printingOrder?.action === 'print'
+                                                                                ? 'Se printează...'
+                                                                                : 'Printează AWB'
+                                                                            }
+                                                                        </button>
+
+                                                                        {/* Regenerate AWB button */}
+                                                                        <button
+                                                                            disabled={!hasAwb || (printingOrder?.uid === order.uid)}
+                                                                            onClick={async () => {
+                                                                                setPrintingOrder({ uid: order.uid, action: 'regen' })
+                                                                                try {
+                                                                                    const result = await printApi.regenerate(order.uid)
+                                                                                    // Trigger PDF download
+                                                                                    const downloadUrl = printApi.getDownloadUrl(result.batch_id)
+                                                                                    const link = document.createElement('a')
+                                                                                    link.href = downloadUrl
+                                                                                    link.download = `${order.order_number || order.uid}_regen.pdf`
+                                                                                    document.body.appendChild(link)
+                                                                                    link.click()
+                                                                                    document.body.removeChild(link)
+                                                                                } catch (err) {
+                                                                                    console.error('Regenerate failed:', err)
+                                                                                    alert('Eroare la regenerare: ' + (err.response?.data?.detail || err.message))
+                                                                                } finally {
+                                                                                    setPrintingOrder(null)
+                                                                                }
+                                                                            }}
+                                                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                                                                                !hasAwb
+                                                                                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                                                                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                                            }`}
+                                                                        >
+                                                                            {printingOrder?.uid === order.uid && printingOrder?.action === 'regen'
+                                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                                : <RefreshCw className="w-3.5 h-3.5" />
+                                                                            }
+                                                                            {printingOrder?.uid === order.uid && printingOrder?.action === 'regen'
+                                                                                ? 'Se regenerează...'
+                                                                                : 'Regenerează AWB'
+                                                                            }
+                                                                        </button>
+                                                                    </div>
+                                                                    {!hasAwb && (
+                                                                        <p className="text-[10px] text-amber-500 mt-1">⚠ Comanda nu are AWB — butoanele sunt dezactivate</p>
+                                                                    )}
+                                                                    </>)})()}
                                                                 </div>
                                                             </div>
                                                         </div>

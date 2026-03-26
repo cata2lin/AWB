@@ -5,6 +5,7 @@ Handles print preview, batch generation, and batch history.
 """
 from typing import List, Optional
 import logging
+import os
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -35,8 +36,14 @@ async def get_print_preview(
     Uses the rules engine to group unprinted orders.
     Shows all unprinted orders regardless of AWB status.
     """
-    # Build query for unprinted orders (regardless of AWB status for preview)
-    query = select(Order).where(Order.is_printed == False)
+    # Only include orders matching the printable status triple:
+    # fulfillment = "ready_for_picking", shipment = "generated_awb", aggregated = "ready_for_picking"
+    query = select(Order).where(
+        (Order.is_printed == False)
+        & (Order.fulfillment_status == "ready_for_picking")
+        & (Order.shipment_status == "generated_awb")
+        & (Order.aggregated_status == "ready_for_picking")
+    )
     
     if request.store_uids:
         query = query.where(Order.store_uid.in_(request.store_uids))
@@ -213,21 +220,27 @@ async def generate_print_batch(
         from app.services.frisbo.client import FrisboClient
         from app.core.config import settings
         
-        # Group orders by org token (each org has its own client)
+        # Iterate all org tokens per order (orders may belong to different orgs)
         org_tokens = settings.get_org_tokens()
         if org_tokens:
-            # Use first token as default (most orders belong to one org)
-            client = FrisboClient(token=org_tokens[0]["token"], org_name=org_tokens[0].get("name", "default"))
-            
             marked_count = 0
             failed_count = 0
             for order in orders:
-                try:
-                    await client.mark_waiting_for_courier(order.uid)
+                marked = False
+                for token_cfg in org_tokens:
+                    client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
+                    try:
+                        await client.mark_waiting_for_courier(order.uid)
+                        marked = True
+                        break
+                    except Exception as e:
+                        if "Order not found" in str(e):
+                            continue
+                        logger.warning(f"mark_waiting_for_courier [{token_cfg.get('name')}] failed for {order.uid}: {e}")
+                if marked:
                     order.waiting_for_courier_since = datetime.utcnow()
                     marked_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to mark order {order.uid} as waiting_for_courier: {e}")
+                else:
                     failed_count += 1
             
             await db.commit()
@@ -242,6 +255,309 @@ async def generate_print_batch(
         "file_path": file_path,
         "order_count": len(orders),
         "group_count": len(groups)
+    }
+
+
+def _extract_label_url(response: dict) -> str | None:
+    """
+    Extract the AWB label download URL from a Frisbo API response.
+    
+    Based on OpenAPI schema:
+      - print_shipment returns: { order, shipment }
+      - shipments returns: { shipments: [] }
+      - Shipment.documents[].labels[].download_url  ← the PDF URL
+    
+    Tries multiple paths to handle variations in the response structure.
+    """
+    if not isinstance(response, dict):
+        return None
+    
+    # The response might be wrapped in a "data" key by our client
+    data = response.get("data", response)
+    if not isinstance(data, dict):
+        return None
+    
+    # Path 1: print_shipment response → { shipment: { documents: [{ labels: [{ download_url }] }] } }
+    shipment = data.get("shipment")
+    if isinstance(shipment, dict):
+        for doc in shipment.get("documents", []):
+            if isinstance(doc, dict):
+                for label in doc.get("labels", []):
+                    if isinstance(label, dict) and label.get("download_url"):
+                        return label["download_url"]
+    
+    # Path 2: shipments array response → { shipments: [{ documents: ... }] }
+    for s in data.get("shipments", []):
+        if isinstance(s, dict):
+            for doc in s.get("documents", []):
+                if isinstance(doc, dict):
+                    for label in doc.get("labels", []):
+                        if isinstance(label, dict) and label.get("download_url"):
+                            return label["download_url"]
+    
+    # Path 3: direct URL field (unlikely but safe)
+    return data.get("download_url") or data.get("label_url") or None
+
+
+@router.post("/single/{order_uid}")
+async def print_single_order(order_uid: str, db: AsyncSession = Depends(get_db)):
+    """
+    Print a single order's AWB.
+    
+    Uses Frisbo's print_shipment endpoint to retrieve the label.
+    Falls back to stored awb_pdf_url or order re-fetch if needed.
+    Marks the order as printed and notifies Frisbo.
+    """
+    # Fetch order from DB
+    result = await db.execute(select(Order).where(Order.uid == order_uid))
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Get a Frisbo client for API calls
+    from app.services.frisbo.client import FrisboClient
+    from app.services.frisbo.parser import parse_order as parse_frisbo_order
+    from app.core.config import settings
+    
+    org_tokens = settings.get_org_tokens()
+    if not org_tokens:
+        raise HTTPException(status_code=500, detail="No Frisbo org tokens configured")
+    
+    # Strategy: try each org token's print_shipment until we find the label
+    awb_pdf = None
+    download_url = None
+    working_client = None
+    
+    for token_cfg in org_tokens:
+        client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
+        
+        # Try print_shipment with this token
+        try:
+            label_response = await client.print_shipment(order.uid)
+            logger.info(f"print_shipment [{token_cfg.get('name')}] raw: {str(label_response)[:500]}")
+            download_url = _extract_label_url(label_response)
+            if download_url:
+                logger.info(f"✅ Found label via print_shipment [{token_cfg.get('name')}]: {download_url[:120]}")
+                working_client = client
+                break
+        except Exception as e:
+            err_str = str(e)
+            # "Order not found" = wrong org token → skip to next token entirely
+            if "Order not found" in err_str:
+                logger.debug(f"print_shipment [{token_cfg.get('name')}] — wrong org, skipping")
+                continue
+            # Any other failure (e.g. "not ready for picking") → try get_shipments below
+            logger.debug(f"print_shipment [{token_cfg.get('name')}] failed: {err_str[:200]}")
+        
+        # Try get_shipments as fallback with this token
+        try:
+            shipments_response = await client.get_shipments(order.uid)
+            logger.info(f"get_shipments [{token_cfg.get('name')}] raw: {str(shipments_response)[:500]}")
+            download_url = _extract_label_url(shipments_response)
+            if download_url:
+                logger.info(f"✅ Found label via get_shipments [{token_cfg.get('name')}]: {download_url[:120]}")
+                working_client = client
+                break
+        except Exception as e:
+            if "Order not found" in str(e):
+                continue
+            logger.warning(f"get_shipments [{token_cfg.get('name')}] failed: {e}")
+    
+    # Use the first token as fallback if none matched
+    if not working_client:
+        working_client = FrisboClient(token=org_tokens[0]["token"], org_name=org_tokens[0].get("name", "default"))
+    
+    # Download the PDF if we have a URL
+    if download_url:
+        try:
+            awb_pdf = await working_client.download_awb_pdf(download_url)
+            order.awb_pdf_url = download_url
+        except Exception as e:
+            logger.warning(f"PDF download failed for {download_url}: {e}")
+    
+    # Attempt 2: Use stored awb_pdf_url or fetch from order data
+    if not awb_pdf:
+        awb_url = order.awb_pdf_url
+        if not awb_url:
+            try:
+                raw = await working_client.get_order(order.uid)
+                logger.info(f"get_order raw response: {str(raw)[:1000]}")
+                raw_order = raw.get("data", raw) if isinstance(raw, dict) else raw
+                # For the Order endpoint, the order object is inside data.order
+                if isinstance(raw_order, dict) and "order" in raw_order:
+                    raw_order = raw_order["order"]
+                parsed = parse_frisbo_order(raw_order)
+                awb_url = parsed.get("awb_pdf_url")
+                if awb_url:
+                    order.awb_pdf_url = awb_url
+                    logger.info(f"Got AWB URL from get_order fallback for {order.uid}")
+            except Exception as e:
+                logger.warning(f"get_order fallback failed for {order.uid}: {e}")
+        
+        if not awb_url:
+            raise HTTPException(status_code=400, detail="Could not find AWB label — not available in Frisbo")
+        
+        try:
+            awb_pdf = await working_client.download_awb_pdf(awb_url)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AWB download failed: {str(e)}")
+    
+    # Save to file
+    batch_number = f"single_{order_uid}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    pdf_service = PDFService()
+    file_path = os.path.join(pdf_service.storage_path, f"{batch_number}.pdf")
+    
+    with open(file_path, "wb") as f:
+        f.write(awb_pdf)
+    
+    file_size = len(awb_pdf)
+    
+    # Create batch record
+    batch = PrintBatch(
+        batch_number=batch_number,
+        file_path=file_path,
+        file_size=file_size,
+        order_count=1,
+        group_count=1,
+        status="completed"
+    )
+    db.add(batch)
+    await db.flush()
+    
+    # Create batch item + mark printed
+    batch_item = PrintBatchItem(
+        batch_id=batch.id,
+        order_uid=order.uid,
+        group_name="Single Print",
+        group_position=0
+    )
+    db.add(batch_item)
+    
+    order.is_printed = True
+    order.printed_at = datetime.utcnow()
+    
+    await db.commit()
+    
+    # Notify Frisbo — mark as waiting for courier (non-critical)
+    try:
+        await working_client.mark_waiting_for_courier(order.uid)
+        order.waiting_for_courier_since = datetime.utcnow()
+        await db.commit()
+        logger.info(f"Marked order {order.uid} as waiting_for_courier in Frisbo")
+    except Exception as e:
+        logger.warning(f"Frisbo mark_waiting_for_courier failed for {order.uid} (non-critical): {e}")
+    
+    return {
+        "batch_id": batch.id,
+        "batch_number": batch_number,
+        "order_uid": order.uid,
+        "order_number": order.order_number,
+    }
+
+
+@router.post("/regenerate/{order_uid}")
+async def regenerate_order_awb(order_uid: str, db: AsyncSession = Depends(get_db)):
+    """
+    Regenerate an order's AWB — creates a brand new label with the courier.
+    
+    Uses Frisbo's regenerate_shipment endpoint to create a new label,
+    then retrieves the new label via print_shipment.
+    Does not change the order's printed status.
+    """
+    # Fetch order from DB
+    result = await db.execute(select(Order).where(Order.uid == order_uid))
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Get Frisbo client
+    from app.services.frisbo.client import FrisboClient
+    from app.services.frisbo.parser import parse_order as parse_frisbo_order
+    from app.core.config import settings
+    
+    org_tokens = settings.get_org_tokens()
+    if not org_tokens:
+        raise HTTPException(status_code=500, detail="No Frisbo org tokens configured")
+    
+    # Find the correct org token by trying regenerate_shipment on each
+    client = None
+    regen_response = None
+    for token_cfg in org_tokens:
+        try_client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
+        try:
+            regen_response = await try_client.regenerate_shipment(order.uid, parcel_count=order.package_count or 1)
+            logger.info(f"regenerate_shipment [{token_cfg.get('name')}] response: {str(regen_response)[:300]}")
+            client = try_client
+            break
+        except Exception as e:
+            if "Order not found" in str(e) or "500" in str(e) or "404" in str(e):
+                continue
+            logger.warning(f"regenerate_shipment [{token_cfg.get('name')}] failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Frisbo AWB regeneration failed: {str(e)}")
+    
+    if not client:
+        raise HTTPException(status_code=500, detail="Could not find correct Frisbo org for this order")
+    
+    # Step 2: Retrieve the new label via print_shipment
+    awb_pdf = None
+    
+    try:
+        label_response = await client.print_shipment(order.uid)
+        download_url = _extract_label_url(label_response)
+        
+        if download_url:
+            awb_pdf = await client.download_awb_pdf(download_url)
+            order.awb_pdf_url = download_url
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"print_shipment after regenerate failed for {order.uid}: {e}")
+    
+    # Fallback: re-fetch order to get the new URL from order data
+    if not awb_pdf:
+        try:
+            raw = await client.get_order(order.uid)
+            raw_order = raw.get("data", raw) if isinstance(raw, dict) else raw
+            if isinstance(raw_order, dict) and "order" in raw_order:
+                raw_order = raw_order["order"]
+            parsed = parse_frisbo_order(raw_order)
+            awb_url = parsed.get("awb_pdf_url")
+            if awb_url:
+                awb_pdf = await client.download_awb_pdf(awb_url)
+                order.awb_pdf_url = awb_url
+                await db.commit()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve regenerated label: {str(e)}")
+    
+    if not awb_pdf:
+        raise HTTPException(status_code=500, detail="Regeneration succeeded but could not retrieve the new label")
+    
+    # Save to file
+    batch_number = f"regen_{order_uid}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    pdf_service = PDFService()
+    file_path = os.path.join(pdf_service.storage_path, f"{batch_number}.pdf")
+    
+    with open(file_path, "wb") as f:
+        f.write(awb_pdf)
+    
+    # Create batch record
+    batch = PrintBatch(
+        batch_number=batch_number,
+        file_path=file_path,
+        file_size=len(awb_pdf),
+        order_count=1,
+        group_count=1,
+        status="regenerated"
+    )
+    db.add(batch)
+    await db.commit()
+    
+    return {
+        "batch_id": batch.id,
+        "batch_number": batch_number,
+        "order_uid": order.uid,
+        "order_number": order.order_number,
     }
 
 

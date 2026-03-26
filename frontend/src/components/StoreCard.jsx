@@ -36,7 +36,7 @@ export default function StoreCard({ store }) {
             <p className="text-2xl font-bold mt-2 tracking-tight" style={{ color: store.color }}>
                 {store.unfulfilledCount.toLocaleString()}
             </p>
-            <p className="text-xs text-zinc-400">unfulfilled orders</p>
+            <p className="text-xs text-zinc-400">ready to print</p>
         </button>
     )
 }

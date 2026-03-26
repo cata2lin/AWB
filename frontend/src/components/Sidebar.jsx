@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
 import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
@@ -15,6 +16,38 @@ const navItems = [
 export default function Sidebar({ user, onLogout }) {
     const location = useLocation()
     const { darkMode, toggleDarkMode, isSyncing, syncOrders, fullSyncOrders, cancelSync, lastSyncAt } = useAppStore()
+
+    // Poll sync status every 10s to detect auto-syncs from the scheduler
+    useEffect(() => {
+        const API = import.meta.env.VITE_API_URL || ''
+        const token = localStorage.getItem('awb_token')
+        const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+        const poll = async () => {
+            try {
+                const res = await fetch(`${API}/api/sync/status`, { headers })
+                if (!res.ok) return
+                const data = await res.json()
+                const backendRunning = data.status === 'running'
+                const storeState = useAppStore.getState()
+                
+                if (backendRunning && !storeState.isSyncing) {
+                    // Auto-sync detected — show the stop button
+                    useAppStore.setState({ isSyncing: true })
+                } else if (!backendRunning && storeState.isSyncing) {
+                    // Sync just finished — only clear if we weren't the ones polling via manual sync
+                    // (manual syncs have their own polling loop that clears isSyncing)
+                    useAppStore.setState({ isSyncing: false, lastSyncAt: new Date().toISOString() })
+                }
+            } catch {
+                // ignore polling errors
+            }
+        }
+
+        const interval = setInterval(poll, 10000)
+        poll() // check immediately on mount
+        return () => clearInterval(interval)
+    }, [])
 
     return (
         <aside className="w-64 h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">

@@ -51,6 +51,32 @@ class Settings(BaseSettings):
         
         return []
     
+    def get_org_token_map(self) -> Dict[str, Dict[str, str]]:
+        """
+        Build a mapping of organization_uid -> {name, token} by decoding the JWT payloads.
+        
+        Each Frisbo JWT contains the org_uid in its payload:
+          {"iat": ..., "organization_uid": "..."}
+        """
+        import base64
+        result = {}
+        for t in self.get_org_tokens():
+            try:
+                payload = t["token"].split(".")[1]
+                payload += "=" * (4 - len(payload) % 4)  # pad base64
+                decoded = json.loads(base64.b64decode(payload))
+                org_uid = decoded.get("organization_uid")
+                if org_uid:
+                    result[org_uid] = t
+            except Exception:
+                continue
+        return result
+    
+    def get_token_for_org(self, org_uid: str) -> Dict[str, str]:
+        """Find the correct token config for a given organization_uid. Falls back to first token."""
+        org_map = self.get_org_token_map()
+        return org_map.get(org_uid, self.get_org_tokens()[0] if self.get_org_tokens() else {})
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
