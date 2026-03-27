@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/useAppStore'
 import { useStores, useSyncStatus, useTriggerSync, useOrderStats, useSyncHistory } from '../hooks/useApi'
 import { printApi } from '../services/api'
@@ -9,6 +10,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 
 export default function Dashboard() {
     const { selectedStoreIds, batchSize } = useAppStore()
+    const queryClient = useQueryClient()
     const [isPrinting, setIsPrinting] = useState(false)
     const [printResult, setPrintResult] = useState(null)
     const [printError, setPrintError] = useState(null)
@@ -122,6 +124,12 @@ export default function Dashboard() {
                 const downloadUrl = printApi.getDownloadUrl(result.batch_id)
                 window.open(downloadUrl, '_blank')
             }
+
+            // Immediately refresh dashboard data so printed orders disappear
+            queryClient.invalidateQueries({ queryKey: ['stores'] })
+            queryClient.invalidateQueries({ queryKey: ['orders'] })
+            queryClient.invalidateQueries({ queryKey: ['print', 'history'] })
+            setPreviewData(null)
         } catch (err) {
             setPrintError(`Print failed: ${err.message}`)
         } finally {
@@ -452,12 +460,18 @@ export default function Dashboard() {
                             const result = await printApi.generateBatch(allOrderUids)
                             setPrintResult(result)
                             setShowPreview(false)
+                            setPreviewData(null)
 
                             // Auto-download the PDF
                             if (result.batch_id) {
                                 const downloadUrl = printApi.getDownloadUrl(result.batch_id)
                                 window.open(downloadUrl, '_blank')
                             }
+
+                            // Immediately refresh dashboard data so printed orders disappear
+                            queryClient.invalidateQueries({ queryKey: ['stores'] })
+                            queryClient.invalidateQueries({ queryKey: ['orders'] })
+                            queryClient.invalidateQueries({ queryKey: ['print', 'history'] })
                         } catch (err) {
                             setPrintError(`Print failed: ${err.message}`)
                         } finally {
