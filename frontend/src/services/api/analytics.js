@@ -38,6 +38,10 @@ export const analyticsApi = {
         const { data } = await api.get('/analytics/csv-coverage-gaps', { params })
         return data
     },
+    getPurchaseOrders: async (params = {}) => {
+        const { data } = await api.get('/analytics/purchase-orders', { params })
+        return data
+    },
 }
 
 export const skuMarketingCostsApi = {

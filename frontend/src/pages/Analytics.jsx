@@ -30,6 +30,7 @@ import { exportPnlToExcel, exportPnlComparativToExcel } from '../utils/pnlExport
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
 import ProductsTab from '../components/ProductsTab'
 import PrintHistoryTab from '../components/PrintHistoryTab'
+import PurchaseOrdersTab from '../components/PurchaseOrdersTab'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -607,6 +608,16 @@ export default function Analytics() {
                 >
                     <Printer className="w-4 h-4 inline mr-2" />
                     Print Analytics
+                </button>
+                <button
+                    onClick={() => setActiveTab('purchaseOrders')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'purchaseOrders'
+                        ? 'bg-white dark:bg-zinc-700 text-teal-600 dark:text-teal-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <Package className="w-4 h-4 inline mr-2" />
+                    Purchase Orders
                 </button>
                 <button
                     onClick={() => setActiveTab('skuRisk')}
@@ -4210,9 +4221,13 @@ export default function Analytics() {
                             </div>
                         )
                     })()}
-                    {/* ── Products/Inventory Tab ── */}
+                    {/* Products/Inventory Tab */}
                     {activeTab === 'products' && (
                         <ProductsTab stores={stores} />
+                    )}
+                    {/* Purchase Orders Tab */}
+                    {activeTab === 'purchaseOrders' && (
+                        <PurchaseOrdersTab />
                     )}
                 </>
             )
