@@ -295,10 +295,17 @@ async def sync_orders(
                                     db.add(new_awb)
                     
                     # COMMIT THIS BATCH TO DATABASE IMMEDIATELY
-                    sync_log.orders_fetched = total_fetched
-                    sync_log.orders_new = new_count
-                    sync_log.orders_updated = updated_count
-                    await db.commit()
+                    try:
+                        sync_log.orders_fetched = total_fetched
+                        sync_log.orders_new = new_count
+                        sync_log.orders_updated = updated_count
+                        await db.commit()
+                    except Exception as batch_err:
+                        # Batch commit failed (e.g. column truncation) — rollback and skip
+                        logger.error(f"📦 [{org_name}] BATCH COMMIT FAILED at skip={skip}: {batch_err}")
+                        await db.rollback()
+                        skip += BATCH_SIZE
+                        continue
                     
                     logger.info(f"📦 [{org_name}] BATCH SAVED: {org_fetched} org / {total_fetched} total (new: {new_count}, updated: {updated_count})")
                     
@@ -325,11 +332,19 @@ async def sync_orders(
             logger.error(f"📦 SYNC FAILED: {e}")
             import traceback
             traceback.print_exc()
+            # Session may be in PendingRollbackError state — rollback first
+            try:
+                await db.rollback()
+            except Exception:
+                pass
             if sync_log:
-                sync_log.status = "failed"
-                sync_log.error_message = str(e)
-                sync_log.completed_at = datetime.utcnow()
-                await db.commit()
+                try:
+                    sync_log.status = "failed"
+                    sync_log.error_message = str(e)[:1000]
+                    sync_log.completed_at = datetime.utcnow()
+                    await db.commit()
+                except Exception:
+                    logger.error("📦 Could not update sync_log after failure")
             raise
 
 

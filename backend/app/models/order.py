@@ -33,11 +33,11 @@ class Order(Base):
     shipment_uid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     
     # Status tracking
-    fulfillment_status: Mapped[str] = mapped_column(String(50), default="unfulfilled")
-    financial_status: Mapped[str] = mapped_column(String(50), default="pending")
+    fulfillment_status: Mapped[str] = mapped_column(String(255), default="unfulfilled")
+    financial_status: Mapped[str] = mapped_column(String(255), default="pending")
     payment_gateway: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # e.g. "Plată ramburs" (COD), "Shopify Payments" (card)
-    shipment_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)  # not_created, created_awb, etc.
-    aggregated_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)  # not_fulfilled, waiting_for_courier, etc.
+    shipment_status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)  # not_created, created_awb, etc.
+    aggregated_status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)  # not_fulfilled, waiting_for_courier, etc.
     is_printed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     
     # Multi-AWB support (max 10 per order)
