@@ -189,13 +189,78 @@ async def generate_print_batch(
     if not orders:
         raise HTTPException(status_code=400, detail="No orders found")
     
-    # Verify all orders have AWB URLs
+    # ── Resolve AWB URLs — fetch from Frisbo if not stored (like single print) ──
     orders_without_awb = [o for o in orders if not o.awb_pdf_url]
     if orders_without_awb:
+        logger.info(f"[BATCH PRINT] {len(orders_without_awb)} orders missing awb_pdf_url, attempting Frisbo fetch...")
+        for o in orders_without_awb:
+            logger.info(f"[BATCH PRINT]   Missing URL: uid={o.uid}, order={o.order_number}, tracking={o.tracking_number}")
+        
+        try:
+            from app.services.frisbo.client import FrisboClient
+            from app.services.frisbo.parser import parse_order as parse_frisbo_order
+            from app.core.config import settings
+            
+            org_tokens = settings.get_org_tokens()
+            if org_tokens:
+                for o in orders_without_awb:
+                    for token_cfg in org_tokens:
+                        client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
+                        try:
+                            # Try print_shipment first
+                            label_response = await client.print_shipment(o.uid)
+                            download_url = _extract_label_url(label_response)
+                            if download_url:
+                                o.awb_pdf_url = download_url
+                                logger.info(f"[BATCH PRINT]   ✅ Got URL via print_shipment for {o.order_number}")
+                                break
+                        except Exception as e:
+                            if "Order not found" in str(e):
+                                continue
+                        
+                        # Try get_shipments as fallback
+                        try:
+                            shipments_response = await client.get_shipments(o.uid)
+                            download_url = _extract_label_url(shipments_response)
+                            if download_url:
+                                o.awb_pdf_url = download_url
+                                logger.info(f"[BATCH PRINT]   ✅ Got URL via get_shipments for {o.order_number}")
+                                break
+                        except Exception as e:
+                            if "Order not found" in str(e):
+                                continue
+                        
+                        # Try get_order as final fallback
+                        try:
+                            raw = await client.get_order(o.uid)
+                            raw_order = raw.get("data", raw) if isinstance(raw, dict) else raw
+                            if isinstance(raw_order, dict) and "order" in raw_order:
+                                raw_order = raw_order["order"]
+                            parsed = parse_frisbo_order(raw_order)
+                            awb_url = parsed.get("awb_pdf_url")
+                            if awb_url:
+                                o.awb_pdf_url = awb_url
+                                logger.info(f"[BATCH PRINT]   ✅ Got URL via get_order for {o.order_number}")
+                                break
+                        except Exception as e:
+                            if "Order not found" in str(e):
+                                continue
+                
+                await db.commit()
+        except Exception as e:
+            logger.warning(f"[BATCH PRINT] Frisbo URL fetch failed (non-critical): {e}")
+    
+    # Re-check after Frisbo fetch attempts
+    still_missing = [o for o in orders if not o.awb_pdf_url]
+    if still_missing:
+        missing_info = [f"{o.order_number} (uid={o.uid})" for o in still_missing[:5]]
+        logger.error(f"[BATCH PRINT] Still missing AWB URLs after Frisbo fetch: {missing_info}")
         raise HTTPException(
             status_code=400,
-            detail=f"{len(orders_without_awb)} orders do not have AWB labels"
+            detail=f"{len(still_missing)} orders do not have AWB labels: {', '.join(o.order_number or o.uid for o in still_missing[:5])}"
         )
+    
+    logger.info(f"[BATCH PRINT] All {len(orders)} orders have AWB URLs, proceeding with PDF generation")
     
     # Get active rules and group orders
     rules_result = await db.execute(
@@ -216,6 +281,7 @@ async def generate_print_batch(
             batch_number=batch_number
         )
     except Exception as e:
+        logger.error(f"[BATCH PRINT] PDF generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
     
     # Create batch record
