@@ -36,4 +36,14 @@ export const courierCsvApi = {
     },
     /** Available courier presets */
     presets: ['sameday', 'packeta', 'speedy', 'dpd'],
+    /** Scan the server's CSV folder for available files */
+    scanFolder: async () => {
+        const { data } = await api.get('/courier-csv/scan-folder')
+        return data
+    },
+    /** Bulk-import all CSVs from the server's CSV folder */
+    importFolder: async () => {
+        const { data } = await api.post('/courier-csv/import-folder')
+        return data
+    },
 }

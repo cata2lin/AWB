@@ -601,3 +601,220 @@ async def reimport_csv(
         "courier_name": courier_name,
         "message": f"Re-importing '{original.filename}' with current parsing logic. Poll /courier-csv/import/{reimport_log.id}/status for progress.",
     }
+
+
+# ── Folder scan / bulk import from server ──
+
+import logging as _logging
+_csv_logger = _logging.getLogger(__name__)
+
+CSV_IMPORT_FOLDER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "csv"
+)
+
+
+@router.get("/scan-folder")
+async def scan_csv_folder():
+    """
+    List CSV files available on the server's csv/ folder for bulk import.
+    Returns filenames, sizes, and detected courier type for each.
+    """
+    folder = CSV_IMPORT_FOLDER
+    if not os.path.isdir(folder):
+        return {"folder": folder, "exists": False, "files": []}
+
+    files = []
+    for fname in sorted(os.listdir(folder)):
+        if not fname.lower().endswith('.csv'):
+            continue
+        fpath = os.path.join(folder, fname)
+        fsize = os.path.getsize(fpath)
+
+        detected_courier = None
+        headers_preview = []
+        for enc in ['utf-8-sig', 'utf-16', 'latin-1']:
+            try:
+                with open(fpath, 'r', encoding=enc, errors='replace') as f:
+                    sample = ''.join(f.readline() for _ in range(5))
+                if not sample.strip():
+                    continue
+                _, hdrs = detect_csv_params(sample)
+                detected_courier = detect_courier_from_headers(hdrs, encoding=enc)
+                headers_preview = [h.strip() for h in hdrs[:6]]
+                if detected_courier:
+                    break
+            except Exception:
+                continue
+
+        files.append({
+            "filename": fname,
+            "size_bytes": fsize,
+            "size_mb": round(fsize / (1024 * 1024), 1),
+            "detected_courier": detected_courier,
+            "headers_preview": headers_preview,
+        })
+
+    return {
+        "folder": folder,
+        "exists": True,
+        "file_count": len(files),
+        "files": files,
+    }
+
+
+@router.post("/import-folder")
+async def import_folder_csvs(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Bulk-import all courier CSVs from the server's csv/ folder.
+    Auto-detects courier type. Skips non-courier CSVs.
+    """
+    folder = CSV_IMPORT_FOLDER
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=404, detail=f"CSV folder not found: {folder}")
+
+    csv_files = sorted([f for f in os.listdir(folder) if f.lower().endswith('.csv')])
+    if not csv_files:
+        return {"status": "no_files", "message": "No CSV files found in folder"}
+
+    results = {"imported": 0, "skipped": 0, "failed": 0, "details": []}
+
+    for fname in csv_files:
+        fpath = os.path.join(folder, fname)
+
+        detected_key = None
+        file_encoding = 'utf-8-sig'
+        detected_delimiter = ','
+        sample = ''
+        headers = []
+
+        for enc in ['utf-8-sig', 'utf-16', 'latin-1']:
+            try:
+                with open(fpath, 'r', encoding=enc, errors='replace') as f:
+                    sample = ''.join(f.readline() for _ in range(10))
+                if not sample.strip():
+                    continue
+                detected_delimiter, headers = detect_csv_params(sample)
+                detected_key = detect_courier_from_headers(headers, delimiter=detected_delimiter, encoding=enc)
+                if detected_key:
+                    file_encoding = enc
+                    break
+                if headers:
+                    file_encoding = enc
+            except Exception:
+                continue
+
+        if not detected_key:
+            results["skipped"] += 1
+            results["details"].append({
+                "filename": fname, "status": "skipped",
+                "reason": f"Cannot identify courier: {[h.strip() for h in headers[:6]]}"
+            })
+            continue
+
+        preset = COURIER_PRESETS[detected_key]
+        file_encoding = preset.get('encoding', file_encoding)
+        delimiter = preset.get('delimiter', detected_delimiter) or detected_delimiter
+        pcols = preset.get('columns', {})
+
+        # Re-read with correct encoding
+        if file_encoding != 'utf-8-sig':
+            try:
+                with open(fpath, 'r', encoding=file_encoding, errors='replace') as f:
+                    sample = ''.join(f.readline() for _ in range(10))
+                detected_delimiter, headers = detect_csv_params(sample)
+            except Exception as e:
+                results["failed"] += 1
+                results["details"].append({"filename": fname, "status": "failed", "reason": str(e)})
+                continue
+
+        if delimiter != detected_delimiter:
+            reader = csv.reader(io.StringIO(sample.split('\n')[0]), delimiter=delimiter)
+            try:
+                headers = next(reader)
+            except StopIteration:
+                pass
+
+        # Find column indices
+        awb_idx = find_column_by_name(headers, pcols.get('awb')) if pcols.get('awb') else None
+        if awb_idx is None and 'awb_column_index' in preset:
+            awb_idx = preset['awb_column_index']
+        if awb_idx is None:
+            awb_idx = find_column(headers, 'awb')
+        if awb_idx is None:
+            results["failed"] += 1
+            results["details"].append({"filename": fname, "status": "failed", "reason": "No AWB column"})
+            continue
+
+        pkg_idx = find_column_by_name(headers, pcols['packages']) if pcols.get('packages') else None
+        if pkg_idx is None: pkg_idx = find_column(headers, 'package_count')
+        wgt_idx = find_column_by_name(headers, pcols['weight']) if pcols.get('weight') else None
+        if wgt_idx is None: wgt_idx = find_column(headers, 'weight')
+        cost_idx = find_column_by_name(headers, pcols['cost']) if pcols.get('cost') else None
+        if cost_idx is None: cost_idx = find_column(headers, 'transport_cost')
+        order_ref_idx = find_column_by_name(headers, pcols.get('order_ref')) if pcols.get('order_ref') else None
+        if order_ref_idx is None: order_ref_idx = find_column(headers, 'order_ref')
+        awb_type_idx = find_column_by_name(headers, pcols.get('awb_type')) if pcols.get('awb_type') else None
+        if awb_type_idx is None: awb_type_idx = find_column(headers, 'awb_type')
+        original_awb_idx = find_column_by_name(headers, pcols.get('original_awb')) if pcols.get('original_awb') else None
+        if original_awb_idx is None: original_awb_idx = find_column(headers, 'original_awb')
+        cost_fara_tva_idx = find_column_by_name(headers, pcols.get('cost_fara_tva')) if pcols.get('cost_fara_tva') else None
+        if cost_fara_tva_idx is None: cost_fara_tva_idx = find_column(headers, 'cost_fara_tva')
+        cost_tva_idx = find_column_by_name(headers, pcols.get('cost_tva')) if pcols.get('cost_tva') else None
+        if cost_tva_idx is None: cost_tva_idx = find_column(headers, 'cost_tva')
+        cost_currency_idx = find_column_by_name(headers, pcols.get('cost_currency')) if pcols.get('cost_currency') else None
+        if cost_currency_idx is None: cost_currency_idx = find_column(headers, 'cost_currency')
+        content_idx = find_column_by_name(headers, pcols.get('content')) if pcols.get('content') else None
+        if content_idx is None: content_idx = find_column(headers, 'content')
+        status_idx = find_column_by_name(headers, pcols.get('status')) if pcols.get('status') else None
+        if status_idx is None: status_idx = find_column(headers, 'status')
+
+        # Create import log
+        import_log = CourierCsvImport(
+            filename=fname, courier_name=detected_key.upper(),
+            total_rows=0, matched_rows=0, unmatched_rows=0, status="processing",
+        )
+        db.add(import_log)
+        await db.commit()
+        await db.refresh(import_log)
+
+        # Archive
+        csv_archive_dir = os.path.join(settings.pdf_storage_path, "csv_imports")
+        os.makedirs(csv_archive_dir, exist_ok=True)
+        archive_path = os.path.join(csv_archive_dir, f"import_{import_log.id}_{fname}")
+        try:
+            shutil.copy2(fpath, archive_path)
+            import_log.saved_file_path = archive_path
+            await db.commit()
+        except Exception:
+            pass
+
+        # Process in background
+        try:
+            asyncio.ensure_future(process_csv_background(
+                import_id=import_log.id, file_path=fpath,
+                delimiter=delimiter, awb_idx=awb_idx, pkg_idx=pkg_idx,
+                wgt_idx=wgt_idx, cost_idx=cost_idx, encoding=file_encoding,
+                awb_transform=preset.get('awb_transform'),
+                cost_transform=preset.get('cost_transform'),
+                order_ref_idx=order_ref_idx, awb_type_idx=awb_type_idx,
+                original_awb_idx=original_awb_idx,
+                cost_fara_tva_idx=cost_fara_tva_idx, cost_tva_idx=cost_tva_idx,
+                cost_currency_idx=cost_currency_idx, content_idx=content_idx,
+                status_idx=status_idx,
+                order_ref_transform=preset.get('order_ref_transform'),
+                awb_type_transform=preset.get('awb_type_transform'),
+                courier_key=detected_key, delete_file_after=False,
+            ))
+            results["imported"] += 1
+            results["details"].append({
+                "filename": fname, "status": "processing",
+                "import_id": import_log.id, "detected_courier": detected_key.upper(),
+            })
+        except Exception as e:
+            results["failed"] += 1
+            results["details"].append({"filename": fname, "status": "failed", "reason": str(e)})
+
+    return {"status": "completed", "total_files": len(csv_files), **results}

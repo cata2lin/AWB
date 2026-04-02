@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useStores, useUpdateStore, useSyncStatus } from '../hooks/useApi'
 import { profitabilityConfigApi, businessCostsApi, courierCsvApi } from '../services/api'
-import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, Save, Check, Plus, Trash2, Copy, ChevronLeft, ChevronRight, Edit2, X, FileUp, Loader, Truck, Zap, RotateCcw } from 'lucide-react'
+import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, Save, Check, Plus, Trash2, Copy, ChevronLeft, ChevronRight, Edit2, X, FileUp, Loader, Truck, Zap, RotateCcw, FolderOpen, HardDrive } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 export default function Settings() {
@@ -43,6 +43,12 @@ export default function Settings() {
     const [csvHistory, setCsvHistory] = useState([])
     const [csvEstimating, setCsvEstimating] = useState(false)
     const [csvReimporting, setCsvReimporting] = useState(null) // import_id being reimported
+
+    // --- Server folder scan state ---
+    const [folderData, setFolderData] = useState(null)
+    const [folderScanning, setFolderScanning] = useState(false)
+    const [folderImporting, setFolderImporting] = useState(false)
+    const [folderImportResult, setFolderImportResult] = useState(null)
 
     // Load profitability config
     useEffect(() => {
@@ -777,6 +783,112 @@ export default function Settings() {
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4 flex items-center gap-2 tracking-tight">
                     <Truck className="w-5 h-5" /> Import CSV Curier
                 </h2>
+
+                {/* Server folder scan */}
+                <div className="mb-5 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700/50">
+                    <div className="flex items-center gap-2 mb-2">
+                        <HardDrive className="w-4 h-4 text-indigo-500" />
+                        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Import din folder server</span>
+                    </div>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+                        Plasați fișierele CSV în folderul <code className="bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-[10px]">csv/</code> de pe server, apoi scanați și importați.
+                    </p>
+                    <div className="flex items-center gap-2 mb-3">
+                        <button
+                            onClick={async () => {
+                                setFolderScanning(true)
+                                try {
+                                    const data = await courierCsvApi.scanFolder()
+                                    setFolderData(data)
+                                } catch (err) {
+                                    alert('Eroare scanare: ' + err.message)
+                                }
+                                setFolderScanning(false)
+                            }}
+                            disabled={folderScanning}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/30 hover:bg-indigo-200 dark:hover:bg-indigo-800/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                        >
+                            {folderScanning ? <Loader className="w-3 h-3 animate-spin" /> : <FolderOpen className="w-3 h-3" />}
+                            Scanează folder
+                        </button>
+                        {folderData && folderData.exists && folderData.file_count > 0 && (
+                            <button
+                                onClick={async () => {
+                                    if (!confirm(`Importă toate cele ${folderData.file_count} fișiere CSV cu auto-detect?`)) return
+                                    setFolderImporting(true)
+                                    setFolderImportResult(null)
+                                    try {
+                                        const res = await courierCsvApi.importFolder()
+                                        setFolderImportResult(res)
+                                        // Refresh history
+                                        const h = await courierCsvApi.getImportHistory(10)
+                                        setCsvHistory(h.imports || [])
+                                    } catch (err) {
+                                        setFolderImportResult({ status: 'error', message: err.message })
+                                    }
+                                    setFolderImporting(false)
+                                }}
+                                disabled={folderImporting}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-400 text-white rounded-lg text-xs font-medium transition-colors"
+                            >
+                                {folderImporting ? <Loader className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                                {folderImporting ? 'Se importă...' : `Import toate (${folderData.file_count})`}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Folder scan results */}
+                    {folderData && !folderData.exists && (
+                        <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> Folderul nu există: <code className="bg-zinc-200 dark:bg-zinc-700 px-1 rounded">{folderData.folder}</code>
+                        </div>
+                    )}
+                    {folderData && folderData.exists && folderData.files.length === 0 && (
+                        <div className="text-xs text-zinc-500">Niciun fișier CSV găsit în folder.</div>
+                    )}
+                    {folderData && folderData.files && folderData.files.length > 0 && (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="text-left text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
+                                        <th className="pb-1 pr-3">Fișier</th>
+                                        <th className="pb-1 pr-3">Mărime</th>
+                                        <th className="pb-1 pr-3">Curier detectat</th>
+                                        <th className="pb-1">Headers</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {folderData.files.map(f => (
+                                        <tr key={f.filename} className="border-b border-zinc-100 dark:border-zinc-700/50">
+                                            <td className="py-1 pr-3 text-zinc-800 dark:text-zinc-200 truncate max-w-[200px]" title={f.filename}>{f.filename}</td>
+                                            <td className="py-1 pr-3 text-zinc-500">{f.size_mb} MB</td>
+                                            <td className="py-1 pr-3">
+                                                {f.detected_courier
+                                                    ? <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-medium uppercase">{f.detected_courier}</span>
+                                                    : <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-[10px]">necunoscut</span>
+                                                }
+                                            </td>
+                                            <td className="py-1 text-zinc-400 text-[10px] truncate max-w-[200px]" title={f.headers_preview?.join(', ')}>{f.headers_preview?.join(', ')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Import result */}
+                    {folderImportResult && (
+                        <div className={`mt-3 p-2 rounded text-xs ${folderImportResult.status === 'error'
+                            ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                            : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                        }`}>
+                            {folderImportResult.status === 'error'
+                                ? `❌ ${folderImportResult.message}`
+                                : `✅ Import: ${folderImportResult.imported} procesate, ${folderImportResult.skipped} ignorate, ${folderImportResult.failed} eșuate`
+                            }
+                        </div>
+                    )}
+                </div>
 
                 {/* Upload form */}
                 <div className="flex flex-wrap items-end gap-3 mb-4">

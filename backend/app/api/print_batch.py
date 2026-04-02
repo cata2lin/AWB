@@ -7,7 +7,8 @@ from typing import List, Optional
 import logging
 import os
 from datetime import datetime
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -134,11 +135,15 @@ async def get_print_preview(
 
 @router.post("/generate")
 async def generate_print_batch(
-    order_uids: List[str] = Body(...),
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Generate a print batch PDF.
+    
+    Accepts the body as either:
+      - A bare JSON array: ["uid1", "uid2"]
+      - A wrapped object:  {"order_uids": ["uid1", "uid2"]}
     
     1. Fetch orders
     2. Apply rules engine for grouping
@@ -148,11 +153,38 @@ async def generate_print_batch(
     6. Mark orders as printed
     7. Return batch info
     """
+    # ── Parse request body manually (handles both bare array and wrapped) ──
+    try:
+        body = await request.json()
+        logger.info(f"[BATCH PRINT] Raw body type={type(body).__name__}, content={str(body)[:500]}")
+    except Exception as e:
+        logger.error(f"[BATCH PRINT] Failed to parse request body: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+    
+    # Accept both ["uid1","uid2"] and {"order_uids": ["uid1","uid2"]}
+    if isinstance(body, list):
+        order_uids = body
+    elif isinstance(body, dict) and "order_uids" in body:
+        order_uids = body["order_uids"]
+    else:
+        logger.error(f"[BATCH PRINT] Unexpected body format: {type(body).__name__} = {str(body)[:200]}")
+        raise HTTPException(
+            status_code=400,
+            detail="Expected a JSON array of order UIDs, or {\"order_uids\": [...]}"
+        )
+    
+    if not order_uids or not isinstance(order_uids, list):
+        raise HTTPException(status_code=400, detail="order_uids must be a non-empty list")
+    
+    logger.info(f"[BATCH PRINT] Processing {len(order_uids)} order UIDs: {order_uids[:5]}{'...' if len(order_uids) > 5 else ''}")
+    
     # Fetch orders
     result = await db.execute(
         select(Order).where(Order.uid.in_(order_uids))
     )
     orders = result.scalars().all()
+    
+    logger.info(f"[BATCH PRINT] Found {len(orders)} orders in DB for {len(order_uids)} requested UIDs")
     
     if not orders:
         raise HTTPException(status_code=400, detail="No orders found")

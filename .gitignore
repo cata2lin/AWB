@@ -41,6 +41,11 @@ frisbo_response.json
 frisbo_analysis.json
 
 # =========================
+# CSV import data
+# =========================
+csv/*.csv
+
+# =========================
 # OS files
 # =========================
 .DS_Store
