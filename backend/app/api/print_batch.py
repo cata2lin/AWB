@@ -7,7 +7,7 @@ from typing import List, Optional
 import logging
 import os
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -134,7 +134,7 @@ async def get_print_preview(
 
 @router.post("/generate")
 async def generate_print_batch(
-    order_uids: List[str],
+    order_uids: List[str] = Body(...),
     db: AsyncSession = Depends(get_db)
 ):
     """

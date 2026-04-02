@@ -423,32 +423,6 @@ async def list_grouped_products(
     return {"total": total, "skip": skip, "limit": limit, "products": page}
 
 
-# ── Single product ──
-
-@router.get("/{product_uid}")
-async def get_product(product_uid: str, db: AsyncSession = Depends(get_db)):
-    """Get a single product by UID."""
-    result = await db.execute(select(Product).where(Product.uid == product_uid))
-    product = result.scalar_one_or_none()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    sn = {}
-    if product.store_uids:
-        sr = await db.execute(select(Store.uid, Store.name).where(Store.uid.in_(product.store_uids)))
-        sn = {r[0]: r[1] for r in sr.all()}
-
-    return {
-        "id": product.id, "uid": product.uid, "barcode": product.barcode,
-        "title_1": product.title_1, "title_2": product.title_2, "sku": product.sku,
-        "state": product.state, "images": product.images,
-        "stores": [{"uid": u, "name": sn.get(u, u)} for u in (product.store_uids or [])],
-        "stock_available": product.stock_available, "stock_committed": product.stock_committed,
-        "stock_incoming": product.stock_incoming, "exclude_from_stock": product.exclude_from_stock,
-        "synced_at": product.synced_at,
-    }
-
-
 # ── Exclusion Toggle ──
 
 class ExcludeRequest(BaseModel):
@@ -855,3 +829,30 @@ async def import_cogs_excel(
         "errors": errors,
     }
 
+
+# ── Single product ──
+# IMPORTANT: This MUST be the LAST route — /{product_uid} is a catch-all
+# that would shadow /export/excel, /import/cogs-template etc. if placed before them.
+
+@router.get("/{product_uid}")
+async def get_product(product_uid: str, db: AsyncSession = Depends(get_db)):
+    """Get a single product by UID."""
+    result = await db.execute(select(Product).where(Product.uid == product_uid))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    sn = {}
+    if product.store_uids:
+        sr = await db.execute(select(Store.uid, Store.name).where(Store.uid.in_(product.store_uids)))
+        sn = {r[0]: r[1] for r in sr.all()}
+
+    return {
+        "id": product.id, "uid": product.uid, "barcode": product.barcode,
+        "title_1": product.title_1, "title_2": product.title_2, "sku": product.sku,
+        "state": product.state, "images": product.images,
+        "stores": [{"uid": u, "name": sn.get(u, u)} for u in (product.store_uids or [])],
+        "stock_available": product.stock_available, "stock_committed": product.stock_committed,
+        "stock_incoming": product.stock_incoming, "exclude_from_stock": product.exclude_from_stock,
+        "synced_at": product.synced_at,
+    }
