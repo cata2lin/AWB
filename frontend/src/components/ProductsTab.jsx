@@ -120,7 +120,8 @@ export default function ProductsTab({ stores = [] }) {
             setCogsImportResult(result)
             // Reload costs + products
             const costsResp = await skuCostsApi.getSkuCosts()
-            const map = {}; costsResp.forEach(c => { map[c.sku] = c.cost })
+            const items = Array.isArray(costsResp) ? costsResp : (costsResp?.items || costsResp?.sku_costs || [])
+            const map = {}; items.forEach(c => { if (c.sku && c.cost != null) map[c.sku] = c.cost })
             setSkuCosts(map)
             await fetchProducts()
             // Auto-hide result after 8 seconds
