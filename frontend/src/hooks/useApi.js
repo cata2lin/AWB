@@ -171,7 +171,7 @@ export const useGenerateBatch = () => {
 export const usePrintHistory = (skip = 0, limit = 20) => {
     return useQuery({
         queryKey: ['print', 'history', skip, limit],
-        queryFn: () => printApi.getHistory(skip, limit),
+        queryFn: () => printApi.getHistory({ skip, limit }),
     })
 }
 

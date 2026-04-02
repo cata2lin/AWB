@@ -131,7 +131,8 @@ export default function Dashboard() {
             queryClient.invalidateQueries({ queryKey: ['print', 'history'] })
             setPreviewData(null)
         } catch (err) {
-            setPrintError(`Print failed: ${err.message}`)
+            const detail = err.response?.data?.detail || err.message
+            setPrintError(`Print failed: ${detail}`)
         } finally {
             setIsPrinting(false)
         }
@@ -473,7 +474,8 @@ export default function Dashboard() {
                             queryClient.invalidateQueries({ queryKey: ['orders'] })
                             queryClient.invalidateQueries({ queryKey: ['print', 'history'] })
                         } catch (err) {
-                            setPrintError(`Print failed: ${err.message}`)
+                            const detail = err.response?.data?.detail || err.message
+                            setPrintError(`Print failed: ${detail}`)
                         } finally {
                             setIsPrinting(false)
                         }
