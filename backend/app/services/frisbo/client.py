@@ -55,18 +55,12 @@ class FrisboClient:
         url = f"{self.base_url}{endpoint}"
         headers = self._get_headers()
         
-        # Log request details
-        logger.info("-" * 60)
-        logger.info(f"🚀 FRISBO API REQUEST")
-        logger.info(f"  Method: {method}")
-        logger.info(f"  URL: {url}")
-        logger.info(f"  Params: {params}")
-        logger.info(f"  Headers: Authorization: Bearer {self.token[:15]}...")
-        if json:
-            logger.info(f"  Body: {json}")
+        # Concise request log
+        logger.info(f"🚀 {method} {endpoint} (org: {self.org_name})")
+        logger.debug(f"  Params: {params}, Body: {json}")
         
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:  # Increased timeout for slow Frisbo API
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.request(
                     method,
                     url,
@@ -75,27 +69,19 @@ class FrisboClient:
                     json=json
                 )
                 
-                # Log response details
-                logger.info(f"📥 FRISBO API RESPONSE")
-                logger.info(f"  Status Code: {response.status_code}")
-                logger.info(f"  Response Headers: {dict(response.headers)}")
-                
-                # Try to get response body regardless of status
+                # Parse response body
                 try:
                     response_body = response.json()
-                    logger.info(f"  Response Body (preview): {str(response_body)[:500]}...")
                 except Exception:
                     response_body = response.text
-                    logger.info(f"  Response Text: {response_body[:500]}...")
                 
-                # Check for errors
+                # Log response
                 if response.status_code >= 400:
-                    logger.error(f"❌ API ERROR: {response.status_code}")
-                    logger.error(f"  Full Response: {response_body}")
+                    logger.error(f"❌ {method} {endpoint} → {response.status_code}: {str(response_body)[:200]}")
                     response.raise_for_status()
                 
-                logger.info(f"✅ Request successful")
-                logger.info("-" * 60)
+                logger.info(f"✅ {method} {endpoint} → {response.status_code}")
+                logger.debug(f"  Response: {str(response_body)[:500]}")
                 
                 return response_body if isinstance(response_body, dict) else {"data": response_body}
                 
@@ -103,12 +89,18 @@ class FrisboClient:
             logger.error(f"❌ HTTP STATUS ERROR: {e}")
             logger.error(f"  Request URL: {e.request.url}")
             logger.error(f"  Response Status: {e.response.status_code}")
+            error_detail = str(e)
             try:
                 error_body = e.response.json()
                 logger.error(f"  Error Body: {error_body}")
+                # Include body errors in exception so callers can check for "Order not found"
+                if isinstance(error_body, dict) and error_body.get("errors"):
+                    error_detail = "; ".join(error_body["errors"])
+                elif isinstance(error_body, dict) and error_body.get("message"):
+                    error_detail = error_body["message"]
             except Exception:
                 logger.error(f"  Error Text: {e.response.text}")
-            raise
+            raise RuntimeError(error_detail) from e
         except httpx.RequestError as e:
             logger.error(f"❌ REQUEST ERROR: {e}")
             logger.error(f"  Request URL: {e.request.url if e.request else 'N/A'}")

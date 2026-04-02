@@ -312,13 +312,12 @@ async def generate_print_batch(
     
     await db.commit()
     
-    # Mark orders as 'waiting for courier' in Frisbo
+    # Mark orders as 'waiting for courier' in Frisbo (non-critical)
     # This tells Frisbo the package is ready for pickup
     try:
         from app.services.frisbo.client import FrisboClient
         from app.core.config import settings
         
-        # Iterate all org tokens per order (orders may belong to different orgs)
         org_tokens = settings.get_org_tokens()
         if org_tokens:
             marked_count = 0
@@ -332,9 +331,16 @@ async def generate_print_batch(
                         marked = True
                         break
                     except Exception as e:
-                        if "Order not found" in str(e):
+                        err_str = str(e)
+                        # "Order not found" = wrong org or order not in Frisbo → try next token
+                        if "Order not found" in err_str or "not found" in err_str.lower():
                             continue
-                        logger.warning(f"mark_waiting_for_courier [{token_cfg.get('name')}] failed for {order.uid}: {e}")
+                        # "500" errors from Frisbo → try next token
+                        if "500" in err_str:
+                            continue
+                        # Other errors → log and try next token
+                        logger.debug(f"mark_waiting_for_courier [{token_cfg.get('name')}] for {order.uid}: {err_str[:150]}")
+                        continue
                 if marked:
                     order.waiting_for_courier_since = datetime.utcnow()
                     marked_count += 1
@@ -342,10 +348,13 @@ async def generate_print_batch(
                     failed_count += 1
             
             await db.commit()
-            logger.info(f"Marked {marked_count} orders as waiting_for_courier in Frisbo ({failed_count} failed)")
+            if failed_count > 0:
+                logger.warning(f"[BATCH PRINT] Frisbo mark_waiting_for_courier: {marked_count} succeeded, {failed_count} failed (non-critical)")
+            else:
+                logger.info(f"[BATCH PRINT] Marked {marked_count} orders as waiting_for_courier in Frisbo")
     except Exception as e:
         # Non-critical — local print marking still succeeded
-        logger.warning(f"Frisbo mark_waiting_for_courier batch failed (non-critical): {e}")
+        logger.warning(f"[BATCH PRINT] Frisbo mark_waiting_for_courier batch failed (non-critical): {e}")
     
     return {
         "batch_id": batch.id,
