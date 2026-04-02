@@ -7,6 +7,79 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
+# ── AWB statuses that should NOT count toward transport costs ──
+# These are AWBs that were created but never actually shipped/used.
+#
+# Sameday/DPD numeric statuses:
+#   0 = "Fara comanda" (no order)
+#   1 = "Neridicat" (not picked up)
+#   7 = "Anulat" (cancelled)
+#   8 = "Inchis intern" (closed internally)
+#
+# Packeta text statuses:
+#   "Expedierea a fost înregistrată." (registered but not shipped)
+#   "Așteptăm ridicarea tuturor coletelor." (waiting for pickup)
+#   "Expedierea a fost anulată." (cancelled)
+#   "Ridicarea nu a avut loc" (pickup didn't happen)
+#
+# NOTE: Returned packages ("9 - Returnat", "Ți-am returnat coletul")
+# ARE billable — the courier actually transported them.
+
+NON_BILLABLE_STATUS_PATTERNS = [
+    # Exact numeric codes (Sameday/DPD Status column)
+    '0',
+    '1',
+    '7',
+    '8',
+    # Sameday/DPD State Name column
+    '0 - Fara comanda',
+    '1 - Neridicat',
+    '7 - Anulat',
+    '8 - Inchis intern',
+    # Packeta packetExport English exact matches
+    'Cancelled',
+    'We are waiting for the package handover',
+]
+
+# Substring patterns for Packeta and other text-based statuses
+NON_BILLABLE_STATUS_SUBSTRINGS = [
+    'anulat',            # "Expedierea a fost anulată" / "7 - Anulat"
+    'cancelled',         # Packeta EN "Cancelled"
+    'neridicat',         # "1 - Neridicat"
+    'fara comanda',      # "0 - Fara comanda"
+    'inchis intern',     # "8 - Inchis intern"
+    'înregistrată',      # "Expedierea a fost înregistrată."
+    'așteptăm ridicarea',   # "Așteptăm ridicarea tuturor coletelor." (export_AWB RO)
+    'așteptăm predarea',    # "Așteptăm predarea coletului" (packetExport RO)
+    'waiting for the package handover',  # Packeta EN
+    'ridic' + 'area nu a avut loc',  # "Ridicarea nu a avut loc..."
+]
+
+
+def is_billable_status(csv_status: str) -> bool:
+    """
+    Determine if an AWB's csv_status indicates it was actually shipped/delivered.
+    Returns True if the AWB should count toward transport costs.
+    Returns True if csv_status is None (no CSV data yet = assume billable).
+    """
+    if not csv_status:
+        return True  # No status data → assume billable (conservative)
+    
+    status = csv_status.strip()
+    
+    # Check exact matches first
+    if status in NON_BILLABLE_STATUS_PATTERNS:
+        return False
+    
+    # Check substring patterns (case-insensitive)
+    status_lower = status.lower()
+    for pattern in NON_BILLABLE_STATUS_SUBSTRINGS:
+        if pattern in status_lower:
+            return False
+    
+    return True
+
+
 class OrderAwb(Base):
     """
     One row per AWB per order.

@@ -358,28 +358,45 @@ def _apply_data_to_order_awb(order_awb: OrderAwb, data: dict, courier_key: Optio
 
 async def _recalculate_order_transport_costs(db: AsyncSession, order_ids: set):
     """
-    Recalculate Order.transport_cost = SUM(outbound AWB costs) for affected orders.
+    Recalculate Order.transport_cost = SUM(billable outbound AWB costs).
+    
+    Only AWBs with billable csv_status are included. AWBs that were created
+    but never picked up (status 0/1), cancelled (7), or closed internally (8)
+    are excluded from the transport cost sum.
     """
+    from app.models.order_awb import is_billable_status
+    
     if not order_ids:
         return
 
     oid_list = list(order_ids)
 
-    # Get cost sums (outbound only) in sub-batches
+    # Fetch all outbound AWBs with costs, then filter by billable status in Python
+    # (can't use Python functions in SQL WHERE clauses)
     cost_sums = {}
+    excluded_counts = {}
+    
     for sub in _sub_batches(oid_list):
         result = await db.execute(
-            select(
-                OrderAwb.order_id,
-                func.sum(OrderAwb.transport_cost).label('total_cost')
-            )
+            select(OrderAwb)
             .where(OrderAwb.order_id.in_(sub))
             .where(OrderAwb.awb_type == 'outbound')
             .where(OrderAwb.transport_cost.isnot(None))
-            .group_by(OrderAwb.order_id)
         )
-        for row in result.all():
-            cost_sums[row.order_id] = row.total_cost
+        for awb in result.scalars().all():
+            if is_billable_status(awb.csv_status):
+                cost_sums[awb.order_id] = cost_sums.get(awb.order_id, 0) + awb.transport_cost
+            else:
+                excluded_counts[awb.order_id] = excluded_counts.get(awb.order_id, 0) + 1
+                logger.info(
+                    f"[CSV] Excluding non-billable AWB {awb.tracking_number} "
+                    f"(status='{awb.csv_status}', cost={awb.transport_cost}) "
+                    f"from order_id={awb.order_id}"
+                )
+    
+    if excluded_counts:
+        total_excluded = sum(excluded_counts.values())
+        logger.info(f"[CSV] Excluded {total_excluded} non-billable AWBs across {len(excluded_counts)} orders")
 
     # Update orders
     for sub in _sub_batches(oid_list):
@@ -388,6 +405,10 @@ async def _recalculate_order_transport_costs(db: AsyncSession, order_ids: set):
             total_cost = cost_sums.get(order.id)
             if total_cost is not None:
                 order.transport_cost = round(total_cost, 2)
+                order.shipping_data_source = 'csv_import'
+            elif order.id in excluded_counts and order.id not in cost_sums:
+                # All AWBs were non-billable → set cost to 0
+                order.transport_cost = 0
                 order.shipping_data_source = 'csv_import'
 
 

@@ -1,0 +1,164 @@
+
+============================================================
+FILE: Shipments from me (10).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 994
+
+  📊 Status [1]: "status"
+        994x  "42991616"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (11).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 554
+
+  📊 Status [1]: "status"
+        554x  "42991616"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (12).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 538
+
+  📊 Status [1]: "status"
+        538x  "42991616"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (13).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 147
+
+  📊 Status [1]: "status"
+        147x  "42991616"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (14).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 91
+
+  📊 Status [1]: "status"
+         91x  "42991616"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (15).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 63
+
+  📊 Status [1]: "status"
+         63x  "42991616"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (4).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 2529
+
+  📊 Status [1]: "status"
+       2255x  "42991616"
+        229x  "26214400"
+         27x  "34603008"
+         18x  "17825792"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (6).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 6535
+
+  📊 Status [1]: "status"
+       6199x  "42991616"
+        256x  "26214400"
+         41x  "9437184"
+         22x  "17825792"
+         17x  "34603008"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (7).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 1686
+
+  📊 Status [1]: "status"
+       1658x  "42991616"
+         28x  "43253760"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (8).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 1950
+
+  📊 Status [1]: "status"
+       1947x  "42991616"
+          2x  "17825792"
+          1x  "26214400"
+
+  📊 Status [7]: "Digital statement"
+
+============================================================
+FILE: Shipments from me (9).csv
+============================================================
+  Columns: 51
+  Headers: ['', 'status', 'return delivery', 'instructions', 'payment', 'Inventory', '№', 'Digital statement', 'created', 'received', 'Days kept', 'Sender', 'contact person', "sender's phone number", 'country', 'region', 'code', 'city', 'address', 'office', 'consignee', 'contact person', 'country', 'region', 'code', 'city', 'address', 'telephone', 'office', 'regional center office', 'regional center code', 'time', 'employee', 'shipment received by', 'services', 'orders', 'SMS notification', 'cash on delivery amount', 'Cash on Delivery Agreement', 'type cash on delivery', 'payer', 'weight', 'invoice', 'volume', 'tariff code', 'Units', 'description', 'price', 'Неуспешна доставка', 'order number', 'partner number']
+  Status columns: [(1, 'status'), (7, 'Digital statement')]
+  Cost columns: [(37, 'cash on delivery amount'), (42, 'invoice'), (47, 'price')]
+  Total rows: 859
+
+  📊 Status [1]: "status"
+        859x  "42991616"
+
+  📊 Status [7]: "Digital statement"

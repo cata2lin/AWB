@@ -597,7 +597,9 @@ async def get_order(order_uid: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{order_uid}/awbs")
 async def get_order_awbs(order_uid: str, db: AsyncSession = Depends(get_db)):
-    """Get all AWB records for an order."""
+    """Get all AWB records for an order, including billable status."""
+    from app.models.order_awb import is_billable_status
+    
     # Find order
     result = await db.execute(select(Order).where(Order.uid == order_uid))
     order = result.scalar_one_or_none()
@@ -612,10 +614,20 @@ async def get_order_awbs(order_uid: str, db: AsyncSession = Depends(get_db)):
     )
     awbs = awb_result.scalars().all()
     
+    # Calculate billable totals
+    billable_cost = 0
+    billable_count = 0
+    for awb in awbs:
+        if awb.awb_type == 'outbound' and awb.transport_cost and is_billable_status(awb.csv_status):
+            billable_cost += awb.transport_cost
+            billable_count += 1
+    
     return {
         "order_uid": order_uid,
         "order_number": order.order_number,
         "awb_count": len(awbs),
+        "billable_count": billable_count,
+        "billable_total": round(billable_cost, 2),
         "awbs": [
             {
                 "id": awb.id,
@@ -631,6 +643,9 @@ async def get_order_awbs(order_uid: str, db: AsyncSession = Depends(get_db)):
                 "package_count": awb.package_count,
                 "package_weight": awb.package_weight,
                 "data_source": awb.data_source,
+                "csv_status": awb.csv_status,
+                "shipment_status": awb.shipment_status,
+                "is_billable": is_billable_status(awb.csv_status),
                 "created_at": awb.created_at.isoformat() if awb.created_at else None,
             }
             for awb in awbs

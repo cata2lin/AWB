@@ -1052,7 +1052,7 @@ export default function Orders() {
                                                                             </thead>
                                                                             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                                                                 {awbCache[order.uid].awbs.map((awb) => (
-                                                                                    <tr key={awb.id} className={awb.awb_type === 'return' ? 'bg-red-50/50 dark:bg-red-900/10' : ''}>
+                                                                                    <tr key={awb.id} className={`${awb.awb_type === 'return' ? 'bg-red-50/50 dark:bg-red-900/10' : ''} ${awb.is_billable === false ? 'opacity-50' : ''}`}>
                                                                                         <td className="px-2 py-1.5">
                                                                                             <code className="text-indigo-600 dark:text-indigo-400 font-mono">{awb.tracking_number}</code>
                                                                                             {awb.original_awb && (
@@ -1069,9 +1069,19 @@ export default function Orders() {
                                                                                                 }`}>
                                                                                                 {awb.awb_type === 'return' ? '↩ Return' : '📦 Outbound'}
                                                                                             </span>
+                                                                                            {awb.csv_status && (
+                                                                                                <span className={`block mt-0.5 text-[9px] px-1 py-0.5 rounded ${
+                                                                                                    awb.is_billable === false
+                                                                                                        ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                                                                                                        : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                                                                                                }`}>
+                                                                                                    {awb.is_billable === false && '⛔ '}{awb.csv_status}
+                                                                                                </span>
+                                                                                            )}
                                                                                         </td>
-                                                                                        <td className="px-2 py-1.5 text-right font-medium text-zinc-900 dark:text-white">
+                                                                                        <td className={`px-2 py-1.5 text-right font-medium ${awb.is_billable === false ? 'line-through text-zinc-400 dark:text-zinc-600' : 'text-zinc-900 dark:text-white'}`}>
                                                                                             {awb.transport_cost != null ? `${awb.transport_cost.toFixed(2)}` : '—'}
+                                                                                            {awb.is_billable === false && <span className="block text-[9px] text-red-500 no-underline" style={{textDecoration: 'none'}}>excluded</span>}
                                                                                         </td>
                                                                                         <td className="px-2 py-1.5 text-right text-zinc-600 dark:text-zinc-400">
                                                                                             {awb.transport_cost_fara_tva != null ? `${awb.transport_cost_fara_tva.toFixed(2)}` : '—'}
@@ -1097,17 +1107,17 @@ export default function Orders() {
                                                                                 <tfoot className="bg-zinc-50 dark:bg-zinc-800/80">
                                                                                     <tr>
                                                                                         <td colSpan={2} className="px-2 py-1.5 text-right font-semibold text-zinc-700 dark:text-zinc-300">
-                                                                                            Total ({awbCache[order.uid].awbs.filter(a => a.awb_type !== 'return').length} outbound)
+                                                                                            Billable ({awbCache[order.uid].awbs.filter(a => a.awb_type !== 'return' && a.is_billable !== false).length} of {awbCache[order.uid].awbs.filter(a => a.awb_type !== 'return').length} outbound)
                                                                                         </td>
                                                                                         <td className="px-2 py-1.5 text-right font-bold text-zinc-900 dark:text-white">
                                                                                             {awbCache[order.uid].awbs
-                                                                                                .filter(a => a.awb_type !== 'return' && a.transport_cost != null)
+                                                                                                .filter(a => a.awb_type !== 'return' && a.transport_cost != null && a.is_billable !== false)
                                                                                                 .reduce((sum, a) => sum + a.transport_cost, 0)
                                                                                                 .toFixed(2)}
                                                                                         </td>
                                                                                         <td className="px-2 py-1.5 text-right font-semibold text-zinc-600 dark:text-zinc-400">
                                                                                             {awbCache[order.uid].awbs
-                                                                                                .filter(a => a.awb_type !== 'return' && a.transport_cost_fara_tva != null)
+                                                                                                .filter(a => a.awb_type !== 'return' && a.transport_cost_fara_tva != null && a.is_billable !== false)
                                                                                                 .reduce((sum, a) => sum + a.transport_cost_fara_tva, 0)
                                                                                                 .toFixed(2)}
                                                                                         </td>

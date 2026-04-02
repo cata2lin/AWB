@@ -1,0 +1,342 @@
+================================================================================
+DEEP CSV STATUS ANALYSIS — ALL COURIER TYPES
+================================================================================
+
+Total CSV files: 29
+File groups: 5
+
+
+================================================================================
+GROUP: DPD (dpd)
+Files: 1
+================================================================================
+
+--- dpd februarie-11.03.csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 105
+  Status columns: [(84, 'Testare la livrare'), (100, 'Status'), (101, 'State Name')]
+  Cost columns: [(7, 'Tarifar|Id'), (8, 'Tarifar|Nume'), (19, 'Valoarea marfurilor'), (33, 'Destinatar|Cod tara'), (44, 'Expeditor|Cod tara'), (60, 'Valoare declarata extindere raspundere'), (62, 'Metoda de plata  (Valoare declarata extindere raspundere)'), (63, 'Platitor(Valoare declarata extindere raspundere)'), (64, 'Suma neta'), (65, 'Suma ambalaj'), (66, 'Total fara TVA'), (67, 'Total VAT'), (68, 'Taxa valoare declarata extindere raspundere'), (69, 'Total'), (70, 'Total|Valuta'), (73, 'Suma Money Transfer'), (97, 'Cod de bare International (DPD)'), (98, 'Cod de bare International'), (99, 'Cod de bare International (ACS)'), (102, 'Data platii COD'), (103, 'Suma platii COD'), (104, 'Valuta suma plata COD')]
+  Tracking columns: [(82, 'Consolidation shipment')]
+  Reference columns: [(1, 'Comanda preluare'), (79, 'Ref 1'), (80, 'Ref 2'), (81, 'Consolidation reference')]
+  First 30 headers: ['Expediere', 'Comanda preluare', 'Preluat', 'Tip', 'Expediere primara', 'Service Id', 'Service Name', 'Tarifar|Id', 'Tarifar|Nume', 'Documente', 'Numar colete', 'Palet.', 'Greutate|Masurata', 'Greutate|Declarata', 'Greutate', 'Ambalaj', 'Lista detalii colete', 'Continut', 'Marfuri periculoase in cantitati limitate', 'Valoarea marfurilor', 'Valuta', 'UIT', 'Termen de livrae', 'Ora fixa', 'Motivul inchiderii', 'SWAP', 'Redirectionare colet', 'Destinatar|Id', 'Destinatar|Nume', 'Destinatar|Sediu']
+  Headers 30-60: ['Destinatar|Sediu', 'Destinatar|Telefon', 'Destinatar|Email', 'Destinatar|Cod tara', 'Destinatar|Localitate', 'Destinatar|Adresa', 'Destinatar|Adresa (nota)', 'Auto assign pickup office', 'Expeditor|Id', 'Expeditor|Nume', 'Expeditor|Sediu', 'Expeditor|Persoana de contact', 'Expeditor|Telefon', 'Expeditor|Email', 'Expeditor|Cod tara', 'Expeditor|Localitate', 'Expeditor|Address', 'Expeditor|Adresa (nota)', 'Tert', 'Retur documente', 'Retur confirmare de livrare', 'Servicii retur', 'Sediu receptie colet', 'Sediu receptie colet|Id', 'Sediu preluare colet', 'Sediu preluare colet|Id', 'Metoda de plata', 'Platitor', 'Metoda de plata (ambalaj)', 'Platitor (ambalaj)']
+  Headers 60-100: ['Valoare declarata extindere raspundere', 'Fragil', 'Metoda de plata  (Valoare declarata extindere raspundere)', 'Platitor(Valoare declarata extindere raspundere)', 'Suma neta', 'Suma ambalaj', 'Total fara TVA', 'Total VAT', 'Taxa valoare declarata extindere raspundere', 'Total', 'Total|Valuta', 'Plata la livrare', 'Moneda', 'Suma Money Transfer', 'Cerere de transfer de bani|Moneda', 'Money Transfer', 'Transfer de bani|Moneda', 'Livrare la etaj', 'Nota (client)', 'Ref 1', 'Ref 2', 'Consolidation reference', 'Consolidation shipment', 'Deschidere la livrare', 'Testare la livrare', 'Livrare|Destinatar', 'Livrare|Timp', 'Livrare|Comentariu', 'Intoduceti timp', 'Introduceti Angajat', 'Detalii - colete', 'Prima incercare de livrare|Ora', 'Prima incercare de livrare|Motiv nelivrare', 'Ultima incercare de livrare|Ora', 'Utltima incercare de livrare|Motiv nelivrare', 'Retur|Ora', 'Retur|Motiv', 'Cod de bare International (DPD)', 'Cod de bare International', 'Cod de bare International (ACS)']
+  Headers 100+: ['Status', 'State Name', 'Data platii COD', 'Suma platii COD', 'Valuta suma plata COD']
+  Rows sampled: 71564
+
+  📊 Status column [84]: "Testare la livrare"
+     Unique values: 1
+      71564x  "-" | 71564 with cost, avg=2008.82
+
+  📊 Status column [100]: "Status"
+     Unique values: 10
+      52295x  "5" | 52295 with cost, avg=2005.13
+       7527x  "9" | 7527 with cost, avg=2009.42
+       4646x  "6" | 4646 with cost, avg=2041.26
+       4516x  "1" | 4516 with cost, avg=2000.30
+        910x  "7" | 910 with cost, avg=2001.19
+        839x  "2" | 839 with cost, avg=2027.21
+        365x  "4" | 365 with cost, avg=2057.36
+        288x  "0" | 288 with cost, avg=2187.40
+        174x  "3" | 174 with cost, avg=2000.23
+          4x  "8" | 4 with cost, avg=2000.00
+
+  📊 Status column [101]: "State Name"
+     Unique values: 10
+      52295x  "5. Livrat 1" | 52295 with cost, avg=2005.13
+       7527x  "9 - Returnat" | 7527 with cost, avg=2009.42
+       4646x  "6. Livrat 2" | 4646 with cost, avg=2041.26
+       4516x  "1 - Neridicat" | 4516 with cost, avg=2000.30
+        910x  "7 - Anulat" | 910 with cost, avg=2001.19
+        839x  "2 - In tranzit" | 839 with cost, avg=2027.21
+        365x  "4 - Nelivrat, intarziere mai mare de o zi" | 365 with cost, avg=2057.36
+        288x  "0 - Fara comanda" | 288 with cost, avg=2187.40
+        174x  "3 - Nelivrat, intarziat o zi" | 174 with cost, avg=2000.23
+          4x  "8 - Inchis intern" | 4 with cost, avg=2000.00
+
+================================================================================
+GROUP: Packeta (export_AWB)
+Files: 2
+================================================================================
+
+--- export_AWB_260216.csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 30
+  Status columns: [(4, 'Status')]
+  Cost columns: [(9, 'Ramburs'), (28, 'Cost'), (29, 'Observatii cost')]
+  Tracking columns: [(0, 'AWB')]
+  Reference columns: []
+  First 30 headers: ['AWB', 'Marketplace', 'Data crearii', 'Data livrare', 'Status', 'Denumire serviciu', 'Tip expediere', 'Tip Serviciu', 'Nr. trimiteri', 'Ramburs', 'Alege plata la', 'Client', 'Numar de telefon', 'Doresc ridicare de la tert', 'Adresa ridicare Tert', 'Adresa ridicare', 'Nume expeditor', 'Adresa expeditor', 'Oras expeditor', 'Judet expeditor', 'Telefon expeditor', 'Nume destinatar', 'Adresa destinatar', 'Oras destinatar', 'Judet destinatar', 'Alias Destinatar', 'Telefon destinatar', 'Observatii', 'Cost', 'Observatii cost']
+  Rows sampled: 324
+
+  📊 Status column [4]: "Status"
+     Unique values: 11
+        105x  "Rambursul a fost transferat." | 210 with cost, avg=72.93
+         92x  "Coletul a fost livrat cu succes." | 99 with cost, avg=19.38
+         36x  "Ți-am returnat coletul cu succes." | 72 with cost, avg=72.66
+         33x  "Rambursul a fost compensat conform soldului datorat." | 66 with cost, avg=73.33
+         31x  "Expedierea a fost înregistrată." | 51 with cost, avg=57.87
+         14x  "Coletul a fost încărcat în punctul de livrare." | 25 with cost, avg=69.40
+          7x  "Un curier a fost alocat pentru ridicarea coletelor." | 13 with cost, avg=68.25
+          2x  "Nu am reușit să livrăm coletul. Revenim cu detalii sau o nouă încercare." | 2 with cost, avg=19.27
+          2x  "Expedierea a fost anulată." | 3 with cost, avg=23.70
+          1x  "Coletul a fost ridicat din punctul de livrare și îți va fi returnat." | 2 with cost, avg=62.73
+          1x  "Așteptăm ridicarea tuturor coletelor." | 1 with cost, avg=7.87
+
+--- export_AWB_260312.csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 30
+  Status columns: [(4, 'Status')]
+  Cost columns: [(9, 'Ramburs'), (28, 'Cost'), (29, 'Observatii cost')]
+  Tracking columns: [(0, 'AWB')]
+  Reference columns: []
+  First 30 headers: ['AWB', 'Marketplace', 'Data crearii', 'Data livrare', 'Status', 'Denumire serviciu', 'Tip expediere', 'Tip Serviciu', 'Nr. trimiteri', 'Ramburs', 'Alege plata la', 'Client', 'Numar de telefon', 'Doresc ridicare de la tert', 'Adresa ridicare Tert', 'Adresa ridicare', 'Nume expeditor', 'Adresa expeditor', 'Oras expeditor', 'Judet expeditor', 'Telefon expeditor', 'Nume destinatar', 'Adresa destinatar', 'Oras destinatar', 'Judet destinatar', 'Alias Destinatar', 'Telefon destinatar', 'Observatii', 'Cost', 'Observatii cost']
+  Rows sampled: 1721
+
+  📊 Status column [4]: "Status"
+     Unique values: 18
+        599x  "Rambursul a fost transferat." | 1198 with cost, avg=88.35
+        347x  "Ți-am returnat coletul cu succes." | 692 with cost, avg=79.29
+        293x  "Coletul a fost livrat cu succes." | 295 with cost, avg=11.60
+        275x  "Rambursul a fost compensat conform soldului datorat." | 550 with cost, avg=71.59
+        160x  "Expedierea a fost anulată." | 268 with cost, avg=59.63
+         20x  "Ridicarea nu a avut loc, coletul nu a fost predat de expeditor." | 37 with cost, avg=73.00
+          6x  "Curierul urmează să efectueze livrarea în curând." | 10 with cost, avg=52.27
+          5x  "Coletul a fost încărcat în punctul de livrare." | 8 with cost, avg=50.40
+          3x  "Expedierea a fost înregistrată." | 5 with cost, avg=60.54
+          3x  "Despăgubirea a fost facturată." | 5 with cost, avg=55.60
+          2x  "Rambursul nu a fost transferat, este blocat pentru compensarea soldului datorat." | 4 with cost, avg=62.28
+          2x  "Din păcate, coletul nu poate fi localizat. Revenim cu vești." | 2 with cost, avg=10.19
+          1x  "Coletul se află în depozitul local și urmează a fi procesat în curând." | 2 with cost, avg=62.74
+          1x  "Punctul de livrare este aglomerat." | 1 with cost, avg=10.35
+          1x  "Coletul se află în depozitul central și urmează să fie procesat." | 2 with cost, avg=65.53
+          1x  "Coletul nu era în punctul de ridicare. Am inițiat procesul de investigație." | 1 with cost, avg=13.69
+          1x  "Coletul nu mai poate fi livrat. Vom aplica o despăgubire totală." | 2 with cost, avg=54.59
+          1x  "Rambursul a fost transferat în contul expeditorului." | 2 with cost, avg=97.08
+
+================================================================================
+GROUP: Packeta (packetExport)
+Files: 6
+================================================================================
+
+--- packetExport-20260216-1129.csv ---
+  Encoding: utf-8-sig, Delimiter: ';'
+  Total columns: 17
+  Status columns: [(11, 'Status')]
+  Cost columns: [(4, 'Barcode'), (9, 'COD'), (15, 'Packet price')]
+  Tracking columns: [(4, 'Barcode')]
+  Reference columns: [(3, 'Order')]
+  First 30 headers: ['Label format', 'Submission number', 'Date', 'Order', 'Barcode', "Recipient's name", "Recipient's surname", 'Pick up point or carrier', 'Sender', 'COD', 'Currency', 'Status', 'Ready for pick up until', 'Delivered on', 'Consigned Date', 'Packet price', 'Currency']
+  Rows sampled: 6906
+
+  📊 Status column [11]: "Status"
+     Unique values: 8
+       4852x  "The package has been delivered" | 8733 with cost, avg=219.07
+        518x  "Handed over to carrier company" | 518 with cost, avg=196.14
+        402x  "Returned to sender" | 797 with cost, avg=210.86
+        393x  "We are waiting for the package handover" | 393 with cost, avg=264.25
+        372x  "Return (on the way back)" | 452 with cost, avg=296.96
+        240x  "The package is on its way" | 240 with cost, avg=240.69
+        125x  "The package is ready for pickup" | 125 with cost, avg=414.97
+          4x  "Cancelled" | 4 with cost, avg=248.74
+
+--- packetExport-20260312-1300.csv ---
+  Encoding: utf-8-sig, Delimiter: ';'
+  Total columns: 17
+  Status columns: [(11, 'Status')]
+  Cost columns: [(4, 'Cod de bare'), (9, 'Ramburs')]
+  Tracking columns: []
+  Reference columns: []
+  First 30 headers: ['Label format', 'Numărul de trimitere', 'Dată', 'Comandă', 'Cod de bare', 'Numele destinatarului', 'Numele de familie al destinatarului', 'Punct pick-up sau transportator', 'Expeditor', 'Ramburs', 'Monedă de schimb', 'Status', 'Pregătit pentru ridicare până în', 'Livrat la', 'Data expedierii', 'preţul coletelor', 'Monedă de schimb']
+  Rows sampled: 25000
+
+  📊 Status column [11]: "Status"
+     Unique values: 9
+      19119x  "Coletul a fost livrat" | 19009 with cost, avg=339.06
+       3204x  "Returnat expeditorului" | 3179 with cost, avg=327.52
+       1141x  "Așteptăm predarea coletului" | 1130 with cost, avg=313.22
+        921x  "Predat companiei de transport" | 914 with cost, avg=171.83
+        251x  "Coletul este pregătit pentru ridicare" | 250 with cost, avg=427.45
+        239x  "Retur (pe drum către expeditor)" | 238 with cost, avg=171.89
+         95x  "Coletul este pe drum" | 95 with cost, avg=185.69
+         29x  "Anulat" | 28 with cost, avg=276.65
+          1x  "Terminat" | 1 with cost, avg=559.00
+
+--- packetExport-20260312-1314.csv ---
+  Encoding: utf-8-sig, Delimiter: ';'
+  Total columns: 17
+  Status columns: [(11, 'Status')]
+  Cost columns: [(4, 'Barcode'), (9, 'COD'), (15, 'Packet price')]
+  Tracking columns: [(4, 'Barcode')]
+  Reference columns: [(3, 'Order')]
+  First 30 headers: ['Label format', 'Submission number', 'Date', 'Order', 'Barcode', "Recipient's name", "Recipient's surname", 'Pick up point or carrier', 'Sender', 'COD', 'Currency', 'Status', 'Ready for pick up until', 'Delivered on', 'Consigned Date', 'Packet price', 'Currency']
+  Rows sampled: 25000
+
+  📊 Status column [11]: "Status"
+     Unique values: 9
+      19133x  "The package has been delivered" | 37106 with cost, avg=183.96
+       3203x  "Returned to sender" | 6379 with cost, avg=181.18
+       1144x  "We are waiting for the package handover" | 1133 with cost, avg=312.87
+        898x  "Handed over to carrier company" | 892 with cost, avg=165.89
+        258x  "The package is ready for pickup" | 257 with cost, avg=426.56
+        239x  "Return (on the way back)" | 266 with cost, avg=157.53
+         95x  "The package is on its way" | 96 with cost, avg=184.13
+         29x  "Cancelled" | 28 with cost, avg=276.65
+          1x  "Finished" | 2 with cost, avg=297.30
+
+================================================================================
+GROUP: Sameday/DPD (ReportShipments)
+Files: 9
+================================================================================
+
+--- ReportShipments(2026-02-16_12-28-03).csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 105
+  Status columns: [(84, 'Testare la livrare'), (100, 'Status'), (101, 'State Name')]
+  Cost columns: [(7, 'Tarifar|Id'), (8, 'Tarifar|Nume'), (19, 'Valoarea marfurilor'), (33, 'Destinatar|Cod tara'), (44, 'Expeditor|Cod tara'), (60, 'Valoare declarata extindere raspundere'), (62, 'Metoda de plata  (Valoare declarata extindere raspundere)'), (63, 'Platitor(Valoare declarata extindere raspundere)'), (64, 'Suma neta'), (65, 'Suma ambalaj'), (66, 'Total fara TVA'), (67, 'Total VAT'), (68, 'Taxa valoare declarata extindere raspundere'), (69, 'Total'), (70, 'Total|Valuta'), (73, 'Suma Money Transfer'), (97, 'Cod de bare International (DPD)'), (98, 'Cod de bare International'), (99, 'Cod de bare International (ACS)'), (102, 'Data platii COD'), (103, 'Suma platii COD'), (104, 'Valuta suma plata COD')]
+  Tracking columns: [(82, 'Consolidation shipment')]
+  Reference columns: [(1, 'Comanda preluare'), (79, 'Ref 1'), (80, 'Ref 2'), (81, 'Consolidation reference')]
+  First 30 headers: ['Expediere', 'Comanda preluare', 'Preluat', 'Tip', 'Expediere primara', 'Service Id', 'Service Name', 'Tarifar|Id', 'Tarifar|Nume', 'Documente', 'Numar colete', 'Palet.', 'Greutate|Masurata', 'Greutate|Declarata', 'Greutate', 'Ambalaj', 'Lista detalii colete', 'Continut', 'Marfuri periculoase in cantitati limitate', 'Valoarea marfurilor', 'Valuta', 'UIT', 'Termen de livrae', 'Ora fixa', 'Motivul inchiderii', 'SWAP', 'Redirectionare colet', 'Destinatar|Id', 'Destinatar|Nume', 'Destinatar|Sediu']
+  Headers 30-60: ['Destinatar|Sediu', 'Destinatar|Telefon', 'Destinatar|Email', 'Destinatar|Cod tara', 'Destinatar|Localitate', 'Destinatar|Adresa', 'Destinatar|Adresa (nota)', 'Auto assign pickup office', 'Expeditor|Id', 'Expeditor|Nume', 'Expeditor|Sediu', 'Expeditor|Persoana de contact', 'Expeditor|Telefon', 'Expeditor|Email', 'Expeditor|Cod tara', 'Expeditor|Localitate', 'Expeditor|Address', 'Expeditor|Adresa (nota)', 'Tert', 'Retur documente', 'Retur confirmare de livrare', 'Servicii retur', 'Sediu receptie colet', 'Sediu receptie colet|Id', 'Sediu preluare colet', 'Sediu preluare colet|Id', 'Metoda de plata', 'Platitor', 'Metoda de plata (ambalaj)', 'Platitor (ambalaj)']
+  Headers 60-100: ['Valoare declarata extindere raspundere', 'Fragil', 'Metoda de plata  (Valoare declarata extindere raspundere)', 'Platitor(Valoare declarata extindere raspundere)', 'Suma neta', 'Suma ambalaj', 'Total fara TVA', 'Total VAT', 'Taxa valoare declarata extindere raspundere', 'Total', 'Total|Valuta', 'Plata la livrare', 'Moneda', 'Suma Money Transfer', 'Cerere de transfer de bani|Moneda', 'Money Transfer', 'Transfer de bani|Moneda', 'Livrare la etaj', 'Nota (client)', 'Ref 1', 'Ref 2', 'Consolidation reference', 'Consolidation shipment', 'Deschidere la livrare', 'Testare la livrare', 'Livrare|Destinatar', 'Livrare|Timp', 'Livrare|Comentariu', 'Intoduceti timp', 'Introduceti Angajat', 'Detalii - colete', 'Prima incercare de livrare|Ora', 'Prima incercare de livrare|Motiv nelivrare', 'Ultima incercare de livrare|Ora', 'Utltima incercare de livrare|Motiv nelivrare', 'Retur|Ora', 'Retur|Motiv', 'Cod de bare International (DPD)', 'Cod de bare International', 'Cod de bare International (ACS)']
+  Headers 100+: ['Status', 'State Name', 'Data platii COD', 'Suma platii COD', 'Valuta suma plata COD']
+  Rows sampled: 53912
+
+  📊 Status column [84]: "Testare la livrare"
+     Unique values: 1
+      53912x  "-" | 53912 with cost, avg=2011.47
+
+  📊 Status column [100]: "Status"
+     Unique values: 8
+      37650x  "5" | 37650 with cost, avg=2006.96
+       5813x  "1" | 5813 with cost, avg=2000.31
+       5256x  "9" | 5256 with cost, avg=2010.60
+       2857x  "6" | 2857 with cost, avg=2059.01
+       1392x  "2" | 1392 with cost, avg=2025.24
+        630x  "4" | 630 with cost, avg=2061.47
+        311x  "0" | 311 with cost, avg=2181.25
+          3x  "8" | 3 with cost, avg=2000.67
+
+  📊 Status column [101]: "State Name"
+     Unique values: 8
+      37650x  "5. Livrat 1" | 37650 with cost, avg=2006.96
+       5813x  "1 - Neridicat" | 5813 with cost, avg=2000.31
+       5256x  "9 - Returnat" | 5256 with cost, avg=2010.60
+       2857x  "6. Livrat 2" | 2857 with cost, avg=2059.01
+       1392x  "2 - In tranzit" | 1392 with cost, avg=2025.24
+        630x  "4 - Nelivrat, intarziere mai mare de o zi" | 630 with cost, avg=2061.47
+        311x  "0 - Fara comanda" | 311 with cost, avg=2181.25
+          3x  "8 - Inchis intern" | 3 with cost, avg=2000.67
+
+--- ReportShipments(2026-02-25_13-08-50).csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 112
+  Status columns: [(91, 'Testare la livrare'), (107, 'Status'), (108, 'State Name')]
+  Cost columns: [(14, 'Tarifar|Id'), (15, 'Tarifar|Nume'), (26, 'Valoarea marfurilor'), (40, 'Destinatar|Cod tara'), (51, 'Expeditor|Cod tara'), (67, 'Valoare declarata extindere raspundere'), (69, 'Metoda de plata  (Valoare declarata extindere raspundere)'), (70, 'Platitor(Valoare declarata extindere raspundere)'), (71, 'Suma neta'), (72, 'Suma ambalaj'), (73, 'Total fara TVA'), (74, 'Total VAT'), (75, 'Taxa valoare declarata extindere raspundere'), (76, 'Total'), (77, 'Total|Valuta'), (80, 'Suma Money Transfer'), (104, 'Cod de bare International (DPD)'), (105, 'Cod de bare International'), (106, 'Cod de bare International (ACS)'), (109, 'Data platii COD'), (110, 'Suma platii COD'), (111, 'Valuta suma plata COD')]
+  Tracking columns: [(89, 'Consolidation shipment')]
+  Reference columns: [(1, 'Comanda preluare'), (86, 'Ref 1'), (87, 'Ref 2'), (88, 'Consolidation reference')]
+  First 30 headers: ['Expediere', 'Comanda preluare', 'Colet', 'Numar secvential', 'Id Ambalaj', 'Greutate colet', 'Latime colet', 'Inaltime colet', 'Lungime colet', 'Preluat', 'Tip', 'Expediere primara', 'Service Id', 'Service Name', 'Tarifar|Id', 'Tarifar|Nume', 'Documente', 'Numar colete', 'Palet.', 'Greutate|Masurata', 'Greutate|Declarata', 'Greutate', 'Ambalaj', 'Lista detalii colete', 'Continut', 'Marfuri periculoase in cantitati limitate', 'Valoarea marfurilor', 'Valuta', 'UIT', 'Termen de livrae']
+  Headers 30-60: ['Ora fixa', 'Motivul inchiderii', 'SWAP', 'Redirectionare colet', 'Destinatar|Id', 'Destinatar|Nume', 'Destinatar|Sediu', 'Destinatar|Sediu', 'Destinatar|Telefon', 'Destinatar|Email', 'Destinatar|Cod tara', 'Destinatar|Localitate', 'Destinatar|Adresa', 'Destinatar|Adresa (nota)', 'Auto assign pickup office', 'Expeditor|Id', 'Expeditor|Nume', 'Expeditor|Sediu', 'Expeditor|Persoana de contact', 'Expeditor|Telefon', 'Expeditor|Email', 'Expeditor|Cod tara', 'Expeditor|Localitate', 'Expeditor|Address', 'Expeditor|Adresa (nota)', 'Tert', 'Retur documente', 'Retur confirmare de livrare', 'Servicii retur', 'Sediu receptie colet']
+  Headers 60-100: ['Sediu receptie colet|Id', 'Sediu preluare colet', 'Sediu preluare colet|Id', 'Metoda de plata', 'Platitor', 'Metoda de plata (ambalaj)', 'Platitor (ambalaj)', 'Valoare declarata extindere raspundere', 'Fragil', 'Metoda de plata  (Valoare declarata extindere raspundere)', 'Platitor(Valoare declarata extindere raspundere)', 'Suma neta', 'Suma ambalaj', 'Total fara TVA', 'Total VAT', 'Taxa valoare declarata extindere raspundere', 'Total', 'Total|Valuta', 'Plata la livrare', 'Moneda', 'Suma Money Transfer', 'Cerere de transfer de bani|Moneda', 'Money Transfer', 'Transfer de bani|Moneda', 'Livrare la etaj', 'Nota (client)', 'Ref 1', 'Ref 2', 'Consolidation reference', 'Consolidation shipment', 'Deschidere la livrare', 'Testare la livrare', 'Livrare|Destinatar', 'Livrare|Timp', 'Livrare|Comentariu', 'Intoduceti timp', 'Introduceti Angajat', 'Detalii - colete', 'Prima incercare de livrare|Ora', 'Prima incercare de livrare|Motiv nelivrare']
+  Headers 100+: ['Ultima incercare de livrare|Ora', 'Utltima incercare de livrare|Motiv nelivrare', 'Retur|Ora', 'Retur|Motiv', 'Cod de bare International (DPD)', 'Cod de bare International', 'Cod de bare International (ACS)', 'Status', 'State Name', 'Data platii COD', 'Suma platii COD', 'Valuta suma plata COD']
+  Rows sampled: 64011
+
+  📊 Status column [91]: "Testare la livrare"
+     Unique values: 1
+      64011x  "-" | 64011 with cost, avg=2014.23
+
+  📊 Status column [107]: "Status"
+     Unique values: 8
+      44504x  "5" | 44504 with cost, avg=2007.54
+       9556x  "9" | 9556 with cost, avg=2018.20
+       7609x  "6" | 7609 with cost, avg=2050.00
+       1885x  "7" | 1885 with cost, avg=2000.34
+        394x  "1" | 394 with cost, avg=2000.27
+         33x  "4" | 33 with cost, avg=2000.00
+         26x  "0" | 26 with cost, avg=2773.08
+          4x  "8" | 4 with cost, avg=2000.50
+
+  📊 Status column [108]: "State Name"
+     Unique values: 8
+      44504x  "5. Livrat 1" | 44504 with cost, avg=2007.54
+       9556x  "9 - Returnat" | 9556 with cost, avg=2018.20
+       7609x  "6. Livrat 2" | 7609 with cost, avg=2050.00
+       1885x  "7 - Anulat" | 1885 with cost, avg=2000.34
+        394x  "1 - Neridicat" | 394 with cost, avg=2000.27
+         33x  "4 - Nelivrat, intarziere mai mare de o zi" | 33 with cost, avg=2000.00
+         26x  "0 - Fara comanda" | 26 with cost, avg=2773.08
+          4x  "8 - Inchis intern" | 4 with cost, avg=2000.50
+
+--- ReportShipments(2026-02-25_13-22-09).csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 112
+  Status columns: [(91, 'Testare la livrare'), (107, 'Status'), (108, 'State Name')]
+  Cost columns: [(14, 'Tarifar|Id'), (15, 'Tarifar|Nume'), (26, 'Valoarea marfurilor'), (40, 'Destinatar|Cod tara'), (51, 'Expeditor|Cod tara'), (67, 'Valoare declarata extindere raspundere'), (69, 'Metoda de plata  (Valoare declarata extindere raspundere)'), (70, 'Platitor(Valoare declarata extindere raspundere)'), (71, 'Suma neta'), (72, 'Suma ambalaj'), (73, 'Total fara TVA'), (74, 'Total VAT'), (75, 'Taxa valoare declarata extindere raspundere'), (76, 'Total'), (77, 'Total|Valuta'), (80, 'Suma Money Transfer'), (104, 'Cod de bare International (DPD)'), (105, 'Cod de bare International'), (106, 'Cod de bare International (ACS)'), (109, 'Data platii COD'), (110, 'Suma platii COD'), (111, 'Valuta suma plata COD')]
+  Tracking columns: [(89, 'Consolidation shipment')]
+  Reference columns: [(1, 'Comanda preluare'), (86, 'Ref 1'), (87, 'Ref 2'), (88, 'Consolidation reference')]
+  First 30 headers: ['Expediere', 'Comanda preluare', 'Colet', 'Numar secvential', 'Id Ambalaj', 'Greutate colet', 'Latime colet', 'Inaltime colet', 'Lungime colet', 'Preluat', 'Tip', 'Expediere primara', 'Service Id', 'Service Name', 'Tarifar|Id', 'Tarifar|Nume', 'Documente', 'Numar colete', 'Palet.', 'Greutate|Masurata', 'Greutate|Declarata', 'Greutate', 'Ambalaj', 'Lista detalii colete', 'Continut', 'Marfuri periculoase in cantitati limitate', 'Valoarea marfurilor', 'Valuta', 'UIT', 'Termen de livrae']
+  Headers 30-60: ['Ora fixa', 'Motivul inchiderii', 'SWAP', 'Redirectionare colet', 'Destinatar|Id', 'Destinatar|Nume', 'Destinatar|Sediu', 'Destinatar|Sediu', 'Destinatar|Telefon', 'Destinatar|Email', 'Destinatar|Cod tara', 'Destinatar|Localitate', 'Destinatar|Adresa', 'Destinatar|Adresa (nota)', 'Auto assign pickup office', 'Expeditor|Id', 'Expeditor|Nume', 'Expeditor|Sediu', 'Expeditor|Persoana de contact', 'Expeditor|Telefon', 'Expeditor|Email', 'Expeditor|Cod tara', 'Expeditor|Localitate', 'Expeditor|Address', 'Expeditor|Adresa (nota)', 'Tert', 'Retur documente', 'Retur confirmare de livrare', 'Servicii retur', 'Sediu receptie colet']
+  Headers 60-100: ['Sediu receptie colet|Id', 'Sediu preluare colet', 'Sediu preluare colet|Id', 'Metoda de plata', 'Platitor', 'Metoda de plata (ambalaj)', 'Platitor (ambalaj)', 'Valoare declarata extindere raspundere', 'Fragil', 'Metoda de plata  (Valoare declarata extindere raspundere)', 'Platitor(Valoare declarata extindere raspundere)', 'Suma neta', 'Suma ambalaj', 'Total fara TVA', 'Total VAT', 'Taxa valoare declarata extindere raspundere', 'Total', 'Total|Valuta', 'Plata la livrare', 'Moneda', 'Suma Money Transfer', 'Cerere de transfer de bani|Moneda', 'Money Transfer', 'Transfer de bani|Moneda', 'Livrare la etaj', 'Nota (client)', 'Ref 1', 'Ref 2', 'Consolidation reference', 'Consolidation shipment', 'Deschidere la livrare', 'Testare la livrare', 'Livrare|Destinatar', 'Livrare|Timp', 'Livrare|Comentariu', 'Intoduceti timp', 'Introduceti Angajat', 'Detalii - colete', 'Prima incercare de livrare|Ora', 'Prima incercare de livrare|Motiv nelivrare']
+  Headers 100+: ['Ultima incercare de livrare|Ora', 'Utltima incercare de livrare|Motiv nelivrare', 'Retur|Ora', 'Retur|Motiv', 'Cod de bare International (DPD)', 'Cod de bare International', 'Cod de bare International (ACS)', 'Status', 'State Name', 'Data platii COD', 'Suma platii COD', 'Valuta suma plata COD']
+  Rows sampled: 53707
+
+  📊 Status column [91]: "Testare la livrare"
+     Unique values: 1
+      53707x  "-" | 53707 with cost, avg=2012.05
+
+  📊 Status column [107]: "Status"
+     Unique values: 8
+      37264x  "5" | 37264 with cost, avg=2006.71
+       7900x  "9" | 7900 with cost, avg=2014.00
+       6323x  "6" | 6323 with cost, avg=2042.42
+       1820x  "7" | 1820 with cost, avg=2000.35
+        351x  "1" | 351 with cost, avg=2000.27
+         23x  "0" | 23 with cost, avg=2769.04
+         22x  "4" | 22 with cost, avg=2000.00
+          4x  "8" | 4 with cost, avg=2000.50
+
+  📊 Status column [108]: "State Name"
+     Unique values: 8
+      37264x  "5. Livrat 1" | 37264 with cost, avg=2006.71
+       7900x  "9 - Returnat" | 7900 with cost, avg=2014.00
+       6323x  "6. Livrat 2" | 6323 with cost, avg=2042.42
+       1820x  "7 - Anulat" | 1820 with cost, avg=2000.35
+        351x  "1 - Neridicat" | 351 with cost, avg=2000.27
+         23x  "0 - Fara comanda" | 23 with cost, avg=2769.04
+         22x  "4 - Nelivrat, intarziere mai mare de o zi" | 22 with cost, avg=2000.00
+          4x  "8 - Inchis intern" | 4 with cost, avg=2000.50
+
+================================================================================
+GROUP: Speedy (Shipments from me)
+Files: 11
+================================================================================
+
+--- Shipments from me (10).csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 1
+  Status columns: []
+  Cost columns: []
+  Tracking columns: []
+  Reference columns: []
+  First 30 headers: ['ÿþ\t\x00s\x00t\x00a\x00t\x00u\x00s\x00\t\x00"\x00r\x00e\x00t\x00u\x00r\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00"\x00\t\x00i\x00n\x00s\x00t\x00r\x00u\x00c\x00t\x00i\x00o\x00n\x00s\x00\t\x00p\x00a\x00y\x00m\x00e\x00n\x00t\x00\t\x00I\x00n\x00v\x00e\x00n\x00t\x00o\x00r\x00y\x00\t\x00\x16!\t\x00"\x00D\x00i\x00g\x00i\x00t\x00a\x00l\x00 \x00s\x00t\x00a\x00t\x00e\x00m\x00e\x00n\x00t\x00"\x00\t\x00c\x00r\x00e\x00a\x00t\x00e\x00d\x00\t\x00r\x00e\x00c\x00e\x00i\x00v\x00e\x00d\x00\t\x00"\x00D\x00a\x00y\x00s\x00 \x00k\x00e\x00p\x00t\x00"\x00\t\x00S\x00e\x00n\x00d\x00e\x00r\x00\t\x00"\x00c\x00o\x00n\x00t\x00a\x00c\x00t\x00 \x00p\x00e\x00r\x00s\x00o\x00n\x00"\x00\t\x00"\x00s\x00e\x00n\x00d\x00e\x00r\x00\'\x00s\x00 \x00p\x00h\x00o\x00n\x00e\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00\t\x00c\x00o\x00u\x00n\x00t\x00r\x00y\x00\t\x00r\x00e\x00g\x00i\x00o\x00n\x00\t\x00c\x00o\x00d\x00e\x00\t\x00c\x00i\x00t\x00y\x00\t\x00a\x00d\x00d\x00r\x00e\x00s\x00s\x00\t\x00o\x00f\x00f\x00i\x00c\x00e\x00\t\x00c\x00o\x00n\x00s\x00i\x00g\x00n\x00e\x00e\x00\t\x00"\x00c\x00o\x00n\x00t\x00a\x00c\x00t\x00 \x00p\x00e\x00r\x00s\x00o\x00n\x00"\x00\t\x00c\x00o\x00u\x00n\x00t\x00r\x00y\x00\t\x00r\x00e\x00g\x00i\x00o\x00n\x00\t\x00c\x00o\x00d\x00e\x00\t\x00c\x00i\x00t\x00y\x00\t\x00a\x00d\x00d\x00r\x00e\x00s\x00s\x00\t\x00t\x00e\x00l\x00e\x00p\x00h\x00o\x00n\x00e\x00\t\x00o\x00f\x00f\x00i\x00c\x00e\x00\t\x00"\x00r\x00e\x00g\x00i\x00o\x00n\x00a\x00l\x00 \x00c\x00e\x00n\x00t\x00e\x00r\x00 \x00o\x00f\x00f\x00i\x00c\x00e\x00"\x00\t\x00"\x00r\x00e\x00g\x00i\x00o\x00n\x00a\x00l\x00 \x00c\x00e\x00n\x00t\x00e\x00r\x00 \x00c\x00o\x00d\x00e\x00"\x00\t\x00t\x00i\x00m\x00e\x00\t\x00e\x00m\x00p\x00l\x00o\x00y\x00e\x00e\x00\t\x00"\x00s\x00h\x00i\x00p\x00m\x00e\x00n\x00t\x00 \x00r\x00e\x00c\x00e\x00i\x00v\x00e\x00d\x00 \x00b\x00y\x00"\x00\t\x00s\x00e\x00r\x00v\x00i\x00c\x00e\x00s\x00\t\x00o\x00r\x00d\x00e\x00r\x00s\x00\t\x00"\x00S\x00M\x00S\x00 \x00n\x00o\x00t\x00i\x00f\x00i\x00c\x00a\x00t\x00i\x00o\x00n\x00"\x00\t\x00"\x00c\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00 \x00a\x00m\x00o\x00u\x00n\x00t\x00"\x00\t\x00"\x00C\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00D\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00 \x00A\x00g\x00r\x00e\x00e\x00m\x00e\x00n\x00t\x00"\x00\t\x00"\x00t\x00y\x00p\x00e\x00 \x00c\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00"\x00\t\x00p\x00a\x00y\x00e\x00r\x00\t\x00w\x00e\x00i\x00g\x00h\x00t\x00\t\x00i\x00n\x00v\x00o\x00i\x00c\x00e\x00\t\x00v\x00o\x00l\x00u\x00m\x00e\x00\t\x00"\x00t\x00a\x00r\x00i\x00f\x00f\x00 \x00c\x00o\x00d\x00e\x00"\x00\t\x00U\x00n\x00i\x00t\x00s\x00\t\x00d\x00e\x00s\x00c\x00r\x00i\x00p\x00t\x00i\x00o\x00n\x00\t\x00p\x00r\x00i\x00c\x00e\x00\t\x00"\x00\x1d\x045\x04C\x04A\x04?\x045\x04H\x04=\x040\x04 \x004\x04>\x04A\x04B\x040\x042\x04:\x040\x04"\x00\t\x00"\x00o\x00r\x00d\x00e\x00r\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00\t\x00"\x00p\x00a\x00r\x00t\x00n\x00e\x00r\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00']
+  Rows sampled: 995
+
+--- Shipments from me (11).csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 1
+  Status columns: []
+  Cost columns: []
+  Tracking columns: []
+  Reference columns: []
+  First 30 headers: ['ÿþ\t\x00s\x00t\x00a\x00t\x00u\x00s\x00\t\x00"\x00r\x00e\x00t\x00u\x00r\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00"\x00\t\x00i\x00n\x00s\x00t\x00r\x00u\x00c\x00t\x00i\x00o\x00n\x00s\x00\t\x00p\x00a\x00y\x00m\x00e\x00n\x00t\x00\t\x00I\x00n\x00v\x00e\x00n\x00t\x00o\x00r\x00y\x00\t\x00\x16!\t\x00"\x00D\x00i\x00g\x00i\x00t\x00a\x00l\x00 \x00s\x00t\x00a\x00t\x00e\x00m\x00e\x00n\x00t\x00"\x00\t\x00c\x00r\x00e\x00a\x00t\x00e\x00d\x00\t\x00r\x00e\x00c\x00e\x00i\x00v\x00e\x00d\x00\t\x00"\x00D\x00a\x00y\x00s\x00 \x00k\x00e\x00p\x00t\x00"\x00\t\x00S\x00e\x00n\x00d\x00e\x00r\x00\t\x00"\x00c\x00o\x00n\x00t\x00a\x00c\x00t\x00 \x00p\x00e\x00r\x00s\x00o\x00n\x00"\x00\t\x00"\x00s\x00e\x00n\x00d\x00e\x00r\x00\'\x00s\x00 \x00p\x00h\x00o\x00n\x00e\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00\t\x00c\x00o\x00u\x00n\x00t\x00r\x00y\x00\t\x00r\x00e\x00g\x00i\x00o\x00n\x00\t\x00c\x00o\x00d\x00e\x00\t\x00c\x00i\x00t\x00y\x00\t\x00a\x00d\x00d\x00r\x00e\x00s\x00s\x00\t\x00o\x00f\x00f\x00i\x00c\x00e\x00\t\x00c\x00o\x00n\x00s\x00i\x00g\x00n\x00e\x00e\x00\t\x00"\x00c\x00o\x00n\x00t\x00a\x00c\x00t\x00 \x00p\x00e\x00r\x00s\x00o\x00n\x00"\x00\t\x00c\x00o\x00u\x00n\x00t\x00r\x00y\x00\t\x00r\x00e\x00g\x00i\x00o\x00n\x00\t\x00c\x00o\x00d\x00e\x00\t\x00c\x00i\x00t\x00y\x00\t\x00a\x00d\x00d\x00r\x00e\x00s\x00s\x00\t\x00t\x00e\x00l\x00e\x00p\x00h\x00o\x00n\x00e\x00\t\x00o\x00f\x00f\x00i\x00c\x00e\x00\t\x00"\x00r\x00e\x00g\x00i\x00o\x00n\x00a\x00l\x00 \x00c\x00e\x00n\x00t\x00e\x00r\x00 \x00o\x00f\x00f\x00i\x00c\x00e\x00"\x00\t\x00"\x00r\x00e\x00g\x00i\x00o\x00n\x00a\x00l\x00 \x00c\x00e\x00n\x00t\x00e\x00r\x00 \x00c\x00o\x00d\x00e\x00"\x00\t\x00t\x00i\x00m\x00e\x00\t\x00e\x00m\x00p\x00l\x00o\x00y\x00e\x00e\x00\t\x00"\x00s\x00h\x00i\x00p\x00m\x00e\x00n\x00t\x00 \x00r\x00e\x00c\x00e\x00i\x00v\x00e\x00d\x00 \x00b\x00y\x00"\x00\t\x00s\x00e\x00r\x00v\x00i\x00c\x00e\x00s\x00\t\x00o\x00r\x00d\x00e\x00r\x00s\x00\t\x00"\x00S\x00M\x00S\x00 \x00n\x00o\x00t\x00i\x00f\x00i\x00c\x00a\x00t\x00i\x00o\x00n\x00"\x00\t\x00"\x00c\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00 \x00a\x00m\x00o\x00u\x00n\x00t\x00"\x00\t\x00"\x00C\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00D\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00 \x00A\x00g\x00r\x00e\x00e\x00m\x00e\x00n\x00t\x00"\x00\t\x00"\x00t\x00y\x00p\x00e\x00 \x00c\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00"\x00\t\x00p\x00a\x00y\x00e\x00r\x00\t\x00w\x00e\x00i\x00g\x00h\x00t\x00\t\x00i\x00n\x00v\x00o\x00i\x00c\x00e\x00\t\x00v\x00o\x00l\x00u\x00m\x00e\x00\t\x00"\x00t\x00a\x00r\x00i\x00f\x00f\x00 \x00c\x00o\x00d\x00e\x00"\x00\t\x00U\x00n\x00i\x00t\x00s\x00\t\x00d\x00e\x00s\x00c\x00r\x00i\x00p\x00t\x00i\x00o\x00n\x00\t\x00p\x00r\x00i\x00c\x00e\x00\t\x00"\x00\x1d\x045\x04C\x04A\x04?\x045\x04H\x04=\x040\x04 \x004\x04>\x04A\x04B\x040\x042\x04:\x040\x04"\x00\t\x00"\x00o\x00r\x00d\x00e\x00r\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00\t\x00"\x00p\x00a\x00r\x00t\x00n\x00e\x00r\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00']
+  Rows sampled: 555
+
+--- Shipments from me (12).csv ---
+  Encoding: utf-8-sig, Delimiter: ','
+  Total columns: 1
+  Status columns: []
+  Cost columns: []
+  Tracking columns: []
+  Reference columns: []
+  First 30 headers: ['ÿþ\t\x00s\x00t\x00a\x00t\x00u\x00s\x00\t\x00"\x00r\x00e\x00t\x00u\x00r\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00"\x00\t\x00i\x00n\x00s\x00t\x00r\x00u\x00c\x00t\x00i\x00o\x00n\x00s\x00\t\x00p\x00a\x00y\x00m\x00e\x00n\x00t\x00\t\x00I\x00n\x00v\x00e\x00n\x00t\x00o\x00r\x00y\x00\t\x00\x16!\t\x00"\x00D\x00i\x00g\x00i\x00t\x00a\x00l\x00 \x00s\x00t\x00a\x00t\x00e\x00m\x00e\x00n\x00t\x00"\x00\t\x00c\x00r\x00e\x00a\x00t\x00e\x00d\x00\t\x00r\x00e\x00c\x00e\x00i\x00v\x00e\x00d\x00\t\x00"\x00D\x00a\x00y\x00s\x00 \x00k\x00e\x00p\x00t\x00"\x00\t\x00S\x00e\x00n\x00d\x00e\x00r\x00\t\x00"\x00c\x00o\x00n\x00t\x00a\x00c\x00t\x00 \x00p\x00e\x00r\x00s\x00o\x00n\x00"\x00\t\x00"\x00s\x00e\x00n\x00d\x00e\x00r\x00\'\x00s\x00 \x00p\x00h\x00o\x00n\x00e\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00\t\x00c\x00o\x00u\x00n\x00t\x00r\x00y\x00\t\x00r\x00e\x00g\x00i\x00o\x00n\x00\t\x00c\x00o\x00d\x00e\x00\t\x00c\x00i\x00t\x00y\x00\t\x00a\x00d\x00d\x00r\x00e\x00s\x00s\x00\t\x00o\x00f\x00f\x00i\x00c\x00e\x00\t\x00c\x00o\x00n\x00s\x00i\x00g\x00n\x00e\x00e\x00\t\x00"\x00c\x00o\x00n\x00t\x00a\x00c\x00t\x00 \x00p\x00e\x00r\x00s\x00o\x00n\x00"\x00\t\x00c\x00o\x00u\x00n\x00t\x00r\x00y\x00\t\x00r\x00e\x00g\x00i\x00o\x00n\x00\t\x00c\x00o\x00d\x00e\x00\t\x00c\x00i\x00t\x00y\x00\t\x00a\x00d\x00d\x00r\x00e\x00s\x00s\x00\t\x00t\x00e\x00l\x00e\x00p\x00h\x00o\x00n\x00e\x00\t\x00o\x00f\x00f\x00i\x00c\x00e\x00\t\x00"\x00r\x00e\x00g\x00i\x00o\x00n\x00a\x00l\x00 \x00c\x00e\x00n\x00t\x00e\x00r\x00 \x00o\x00f\x00f\x00i\x00c\x00e\x00"\x00\t\x00"\x00r\x00e\x00g\x00i\x00o\x00n\x00a\x00l\x00 \x00c\x00e\x00n\x00t\x00e\x00r\x00 \x00c\x00o\x00d\x00e\x00"\x00\t\x00t\x00i\x00m\x00e\x00\t\x00e\x00m\x00p\x00l\x00o\x00y\x00e\x00e\x00\t\x00"\x00s\x00h\x00i\x00p\x00m\x00e\x00n\x00t\x00 \x00r\x00e\x00c\x00e\x00i\x00v\x00e\x00d\x00 \x00b\x00y\x00"\x00\t\x00s\x00e\x00r\x00v\x00i\x00c\x00e\x00s\x00\t\x00o\x00r\x00d\x00e\x00r\x00s\x00\t\x00"\x00S\x00M\x00S\x00 \x00n\x00o\x00t\x00i\x00f\x00i\x00c\x00a\x00t\x00i\x00o\x00n\x00"\x00\t\x00"\x00c\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00 \x00a\x00m\x00o\x00u\x00n\x00t\x00"\x00\t\x00"\x00C\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00D\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00 \x00A\x00g\x00r\x00e\x00e\x00m\x00e\x00n\x00t\x00"\x00\t\x00"\x00t\x00y\x00p\x00e\x00 \x00c\x00a\x00s\x00h\x00 \x00o\x00n\x00 \x00d\x00e\x00l\x00i\x00v\x00e\x00r\x00y\x00"\x00\t\x00p\x00a\x00y\x00e\x00r\x00\t\x00w\x00e\x00i\x00g\x00h\x00t\x00\t\x00i\x00n\x00v\x00o\x00i\x00c\x00e\x00\t\x00v\x00o\x00l\x00u\x00m\x00e\x00\t\x00"\x00t\x00a\x00r\x00i\x00f\x00f\x00 \x00c\x00o\x00d\x00e\x00"\x00\t\x00U\x00n\x00i\x00t\x00s\x00\t\x00d\x00e\x00s\x00c\x00r\x00i\x00p\x00t\x00i\x00o\x00n\x00\t\x00p\x00r\x00i\x00c\x00e\x00\t\x00"\x00\x1d\x045\x04C\x04A\x04?\x045\x04H\x04=\x040\x04 \x004\x04>\x04A\x04B\x040\x042\x04:\x040\x04"\x00\t\x00"\x00o\x00r\x00d\x00e\x00r\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00\t\x00"\x00p\x00a\x00r\x00t\x00n\x00e\x00r\x00 \x00n\x00u\x00m\x00b\x00e\x00r\x00"\x00']
+  Rows sampled: 539
