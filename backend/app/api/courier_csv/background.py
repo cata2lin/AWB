@@ -47,9 +47,11 @@ async def process_csv_background(import_id: int, file_path: str,
                                   cost_tva_idx: Optional[int] = None,
                                   cost_currency_idx: Optional[int] = None,
                                   content_idx: Optional[int] = None,
+                                  status_idx: Optional[int] = None,
                                   order_ref_transform: Optional[Callable] = None,
                                   awb_type_transform: Optional[Callable] = None,
                                   courier_key: Optional[str] = None,
+                                  delete_file_after: bool = True,
                                   ):
     """
     Background task that processes the CSV file in streaming fashion.
@@ -93,6 +95,7 @@ async def process_csv_background(import_id: int, file_path: str,
                             cost_tva_idx=cost_tva_idx,
                             cost_currency_idx=cost_currency_idx,
                             content_idx=content_idx,
+                            status_idx=status_idx,
                             order_ref_transform=order_ref_transform,
                             awb_type_transform=awb_type_transform,
                             courier_key=courier_key,
@@ -163,10 +166,11 @@ async def process_csv_background(import_id: int, file_path: str,
                 pass
 
         finally:
-            try:
-                os.unlink(file_path)
-            except OSError:
-                pass
+            if delete_file_after:
+                try:
+                    os.unlink(file_path)
+                except OSError:
+                    pass
 
 
 async def _flush_awb_batch(db: AsyncSession, awb_batch: Dict[str, dict],
@@ -347,6 +351,8 @@ def _apply_data_to_order_awb(order_awb: OrderAwb, data: dict, courier_key: Optio
         order_awb.original_awb = data['original_awb']
     if 'awb_type' in data:
         order_awb.awb_type = data['awb_type']
+    if 'csv_status' in data:
+        order_awb.csv_status = data['csv_status']
     order_awb.data_source = 'csv_import'
 
 

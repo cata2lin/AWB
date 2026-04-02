@@ -23,4 +23,7 @@ class CourierCsvImport(Base):
     status: Mapped[str] = mapped_column(String(50), default="completed")  # completed, failed
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
+    # Persistent CSV archive for re-import capability
+    saved_file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

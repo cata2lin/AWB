@@ -1,4 +1,4 @@
-/** Courier CSV API — import, status polling, history, and estimation. */
+/** Courier CSV API — import, status polling, history, estimation, and re-import. */
 import api from './client'
 
 export const courierCsvApi = {
@@ -27,6 +27,11 @@ export const courierCsvApi = {
     },
     triggerEstimation: async () => {
         const { data } = await api.post('/courier-csv/estimate-missing')
+        return data
+    },
+    /** Re-import a previously archived CSV with current parsing logic */
+    reimportCsv: async (importId) => {
+        const { data } = await api.post(`/courier-csv/reimport/${importId}`)
         return data
     },
     /** Available courier presets */

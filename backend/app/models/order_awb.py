@@ -56,6 +56,9 @@ class OrderAwb(Base):
     # For return AWBs: the original outbound AWB number (DPD "Expediere primara")
     original_awb: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     
+    # CSV debug: last status from courier CSV (e.g. "9 - Returnat", "Livrat")
+    csv_status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    
     data_source: Mapped[str] = mapped_column(String(50), default="frisbo_sync")  # frisbo_sync | csv_import | manual
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

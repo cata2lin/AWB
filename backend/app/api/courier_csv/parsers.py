@@ -40,6 +40,7 @@ COLUMN_MAPPINGS = {
     'cost_tva': ['total vat', 'total_vat', 'tva', 'vat'],
     'cost_currency': ['total|valuta', 'valuta', 'currency', 'moneda de schimb', 'moneda_de_schimb'],
     'content': ['continut', 'content', 'description', 'descriere'],
+    'status': ['status', 'state name', 'stare', 'stare curenta'],
 }
 
 
@@ -128,11 +129,14 @@ COURIER_PRESETS = {
             'cost_currency': None,
             'original_awb': None,
             'content': 'Observatii',  # Notes may contain order ref
+            'status': 'Status',      # "Expedierea a fost înregistrată."
         },
         'awb_transform': None,
         'cost_transform': None,
         'order_ref_transform': None,
         'awb_type_transform': None,
+        # Fingerprint: unique headers that identify this as Sameday export
+        'fingerprint': ['AWB', 'Tip expediere', 'Nr. trimiteri'],
     },
     'packeta': {
         'encoding': 'utf-8-sig',
@@ -151,6 +155,7 @@ COURIER_PRESETS = {
             'cost_currency': 'Moneda de schimb',  # RO currency column
             'original_awb': None,
             'content': None,
+            'status': 'Status',              # "Așteptăm predarea coletului"
         },
         'awb_transform': _packeta_awb_transform,
         'cost_transform': None,
@@ -160,6 +165,10 @@ COURIER_PRESETS = {
         'extra_columns': {
             'sender': 'Expeditor',   # RO; Brand name (bonhaus.pl, bonhaus.cz, etc.)
         },
+        # Fingerprint: unique headers that identify this as Packeta
+        # Supports both RO ('Cod de bare', 'Numărul de trimitere') and EN ('Barcode', 'Submission number')
+        'fingerprint': ['Cod de bare', 'Numărul de trimitere'],
+        'fingerprint_alt': ['Barcode', 'Submission number'],
     },
     'speedy': {
         'encoding': 'utf-16',
@@ -177,12 +186,15 @@ COURIER_PRESETS = {
             'cost_currency': None,
             'original_awb': None,
             'content': 'description',   # col 46 — contains order ref (BONBG19552 / ...)
+            'status': 'status',          # col 1 — numeric code
         },
         'awb_transform': None,
         'cost_transform': _speedy_cost_transform,
         'order_ref_transform': None,  # Will use _speedy_order_ref_from_description as fallback
         'awb_type_transform': None,
         'awb_column_index': 6,  # The № column is always at index 6
+        # Fingerprint: unique headers that identify this as Speedy
+        'fingerprint': ['№', 'Digital statement'],
     },
     'dpd': {
         'encoding': 'utf-8-sig',
@@ -200,11 +212,14 @@ COURIER_PRESETS = {
             'cost_tva': 'Total VAT',               # VAT amount
             'cost_currency': 'Total|Valuta',       # Currency (RON)
             'content': 'Continut',                 # Fallback for order ref
+            'status': 'State Name',                # "9 - Returnat", "4 - Livrat"
         },
         'awb_transform': None,
         'cost_transform': None,
         'order_ref_transform': None,
         'awb_type_transform': _dpd_awb_type_transform,
+        # Fingerprint: unique headers that identify this as DPD
+        'fingerprint': ['Expediere', 'Tarifar|Id'],
     },
 }
 
@@ -250,6 +265,33 @@ def detect_csv_params(text_sample: str):
     return delimiter, headers
 
 
+def detect_courier_from_headers(headers: list, delimiter: str = ',',
+                                  encoding: str = 'utf-8-sig') -> Optional[str]:
+    """
+    Auto-detect courier type by matching CSV headers against preset fingerprints.
+    
+    Returns the preset key ('dpd', 'sameday', 'packeta', 'speedy') or None.
+    Matching is done by checking if ALL fingerprint headers exist in the CSV headers.
+    """
+    headers_lower = [h.strip().lower() for h in headers]
+    
+    # Check each preset's fingerprint (and optional alternate fingerprint)
+    for preset_key, preset in COURIER_PRESETS.items():
+        for fp_key in ('fingerprint', 'fingerprint_alt'):
+            fingerprint = preset.get(fp_key, [])
+            if not fingerprint:
+                continue
+            
+            # All fingerprint headers must be present (case-insensitive)
+            if all(
+                any(fp.lower() == hl for hl in headers_lower)
+                for fp in fingerprint
+            ):
+                return preset_key
+    
+    return None
+
+
 def parse_row_data(row: list, awb_idx: int, pkg_idx, wgt_idx, cost_idx,
                    awb_transform: Optional[Callable] = None,
                    cost_transform: Optional[Callable] = None,
@@ -261,6 +303,7 @@ def parse_row_data(row: list, awb_idx: int, pkg_idx, wgt_idx, cost_idx,
                    cost_tva_idx: Optional[int] = None,
                    cost_currency_idx: Optional[int] = None,
                    content_idx: Optional[int] = None,
+                   status_idx: Optional[int] = None,
                    # Transform functions
                    order_ref_transform: Optional[Callable] = None,
                    awb_type_transform: Optional[Callable] = None,
@@ -388,5 +431,11 @@ def parse_row_data(row: list, awb_idx: int, pkg_idx, wgt_idx, cost_idx,
         curr = row[cost_currency_idx].strip()
         if curr:
             data['currency'] = curr.upper()
+
+    # CSV status (for debug/audit — last delivery status from courier)
+    if status_idx is not None and len(row) > status_idx:
+        status_val = row[status_idx].strip()
+        if status_val:
+            data['csv_status'] = status_val[:255]
 
     return awb, data

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useStores, useUpdateStore, useSyncStatus } from '../hooks/useApi'
 import { profitabilityConfigApi, businessCostsApi, courierCsvApi } from '../services/api'
-import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, Save, Check, Plus, Trash2, Copy, ChevronLeft, ChevronRight, Edit2, X, FileUp, Loader, Truck, Zap } from 'lucide-react'
+import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, Save, Check, Plus, Trash2, Copy, ChevronLeft, ChevronRight, Edit2, X, FileUp, Loader, Truck, Zap, RotateCcw } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 export default function Settings() {
@@ -34,7 +34,7 @@ export default function Settings() {
     const [cloneSource, setCloneSource] = useState('')
 
     // --- CSV Import State ---
-    const [csvCourier, setCsvCourier] = useState('dpd')
+    const [csvCourier, setCsvCourier] = useState('auto')
     const [csvFile, setCsvFile] = useState(null)
     const [csvUploading, setCsvUploading] = useState(false)
     const [csvUploadPct, setCsvUploadPct] = useState(0)
@@ -42,6 +42,7 @@ export default function Settings() {
     const [csvImportStatus, setCsvImportStatus] = useState(null)
     const [csvHistory, setCsvHistory] = useState([])
     const [csvEstimating, setCsvEstimating] = useState(false)
+    const [csvReimporting, setCsvReimporting] = useState(null) // import_id being reimported
 
     // Load profitability config
     useEffect(() => {
@@ -786,6 +787,7 @@ export default function Settings() {
                             onChange={e => setCsvCourier(e.target.value)}
                             className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-sm text-zinc-900 dark:text-white"
                         >
+                            <option value="auto">🔍 Auto-detect</option>
                             <option value="dpd">DPD</option>
                             <option value="sameday">Sameday</option>
                             <option value="packeta">Packeta</option>
@@ -873,7 +875,12 @@ export default function Settings() {
                             </div>
                         )}
                         {csvImportStatus.error_message && <div className="mt-1 text-xs">{csvImportStatus.error_message}</div>}
-                        {csvImportStatus.preset_used && <div className="mt-1 text-xs">Preset: {csvImportStatus.preset_used}</div>}
+                        {csvImportStatus.preset_used && (
+                            <div className="mt-1 text-xs">
+                                Curier: <span className="font-semibold uppercase">{csvImportStatus.preset_used}</span>
+                                {csvImportStatus.auto_detected && <span className="ml-1 text-green-600 dark:text-green-400">(detectat automat)</span>}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -891,6 +898,7 @@ export default function Settings() {
                                         <th className="pb-1 pr-3">Rânduri</th>
                                         <th className="pb-1 pr-3">Potrivite</th>
                                         <th className="pb-1">Status</th>
+                                        <th className="pb-1 text-right">Acțiuni</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -906,6 +914,43 @@ export default function Settings() {
                                                     imp.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
                                                         'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                                                     }`}>{imp.status}</span>
+                                            </td>
+                                            <td className="py-1 text-right">
+                                                {imp.has_saved_file && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (!confirm(`Re-importă '${imp.filename}' cu logica actuală de procesare?`)) return
+                                                            setCsvReimporting(imp.id)
+                                                            try {
+                                                                const res = await courierCsvApi.reimportCsv(imp.id)
+                                                                setCsvImportId(res.import_id)
+                                                                setCsvImportStatus({ status: 'processing' })
+                                                                // Poll for completion
+                                                                const poll = setInterval(async () => {
+                                                                    try {
+                                                                        const s = await courierCsvApi.getImportStatus(res.import_id)
+                                                                        setCsvImportStatus(s)
+                                                                        if (s.status !== 'processing') {
+                                                                            clearInterval(poll)
+                                                                            setCsvReimporting(null)
+                                                                            const h = await courierCsvApi.getImportHistory(10)
+                                                                            setCsvHistory(h.imports || [])
+                                                                        }
+                                                                    } catch { clearInterval(poll); setCsvReimporting(null) }
+                                                                }, 2000)
+                                                            } catch (err) {
+                                                                alert('Re-import eșuat: ' + err.message)
+                                                                setCsvReimporting(null)
+                                                            }
+                                                        }}
+                                                        disabled={csvReimporting === imp.id}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800/40 transition-colors disabled:opacity-50"
+                                                        title="Re-importă cu logica curentă"
+                                                    >
+                                                        <RotateCcw className={`w-3 h-3 ${csvReimporting === imp.id ? 'animate-spin' : ''}`} />
+                                                        {csvReimporting === imp.id ? 'Se procesează...' : 'Re-import'}
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
