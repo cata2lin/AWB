@@ -3,6 +3,7 @@ Orders API endpoints.
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast, String
 from sqlalchemy.orm import selectinload
@@ -13,6 +14,78 @@ from app.models.order_awb import OrderAwb
 from app.schemas import OrderResponse, OrderFilters, DashboardStats
 
 router = APIRouter()
+
+
+def _build_order_conditions(
+    store_uids, is_printed, has_awb, has_tracking, min_items, max_items,
+    search, fulfillment_status, shipment_status, aggregated_status,
+    courier_names, has_shipping_cost, stale_courier, date_from, date_to
+):
+    """Build reusable filter conditions for order queries."""
+    from datetime import datetime, timedelta
+
+    conditions = []
+    if store_uids:
+        conditions.append(Order.store_uid.in_(store_uids))
+    if is_printed is not None:
+        conditions.append(Order.is_printed == is_printed)
+    if has_awb is True:
+        conditions.append(Order.awb_pdf_url.isnot(None))
+    elif has_awb is False:
+        conditions.append(Order.awb_pdf_url.is_(None))
+    if has_tracking is True:
+        conditions.append(Order.tracking_number.isnot(None))
+    elif has_tracking is False:
+        conditions.append(Order.tracking_number.is_(None))
+    if min_items is not None:
+        conditions.append(Order.item_count >= min_items)
+    if max_items is not None:
+        conditions.append(Order.item_count <= max_items)
+    if search:
+        search_term = f"%{search}%"
+        conditions.append(
+            (Order.order_number.ilike(search_term)) |
+            (Order.customer_name.ilike(search_term)) |
+            (Order.tracking_number.ilike(search_term)) |
+            (cast(Order.line_items, String).ilike(search_term))
+        )
+    if fulfillment_status:
+        conditions.append(Order.fulfillment_status.in_(fulfillment_status))
+    if shipment_status:
+        conditions.append(Order.shipment_status.in_(shipment_status))
+    if aggregated_status:
+        conditions.append(Order.aggregated_status.in_(aggregated_status))
+    if courier_names:
+        conditions.append(Order.courier_name.in_(courier_names))
+    if stale_courier is True:
+        stale_cutoff = datetime.utcnow() - timedelta(hours=72)
+        conditions.append(Order.waiting_for_courier_since.isnot(None))
+        conditions.append(Order.waiting_for_courier_since <= stale_cutoff)
+    elif stale_courier is False:
+        stale_cutoff = datetime.utcnow() - timedelta(hours=72)
+        conditions.append(
+            (Order.waiting_for_courier_since.is_(None)) |
+            (Order.waiting_for_courier_since > stale_cutoff)
+        )
+    if has_shipping_cost is True:
+        conditions.append(Order.transport_cost.isnot(None))
+        conditions.append(Order.transport_cost > 0)
+    elif has_shipping_cost is False:
+        conditions.append((Order.transport_cost.is_(None)) | (Order.transport_cost == 0))
+    if date_from:
+        try:
+            from_date = datetime.strptime(date_from, "%Y-%m-%d")
+            conditions.append(Order.frisbo_created_at >= from_date)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            to_date = datetime.strptime(date_to, "%Y-%m-%d")
+            to_date = to_date.replace(hour=23, minute=59, second=59)
+            conditions.append(Order.frisbo_created_at <= to_date)
+        except ValueError:
+            pass
+    return conditions
 
 
 @router.get("", response_model=List[OrderResponse])
@@ -579,6 +652,177 @@ async def mark_all_orders_printed(db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     return {"message": f"Marked {result.rowcount} orders as printed"}
+
+
+@router.get("/export")
+async def export_orders_excel(
+    store_uids: Optional[List[str]] = Query(None),
+    is_printed: Optional[bool] = None,
+    has_awb: Optional[bool] = None,
+    has_tracking: Optional[bool] = None,
+    min_items: Optional[int] = None,
+    max_items: Optional[int] = None,
+    search: Optional[str] = None,
+    fulfillment_status: Optional[List[str]] = Query(None),
+    shipment_status: Optional[List[str]] = Query(None),
+    aggregated_status: Optional[List[str]] = Query(None),
+    courier_names: Optional[List[str]] = Query(None),
+    has_shipping_cost: Optional[bool] = Query(None),
+    stale_courier: Optional[bool] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    sort_field: Optional[str] = Query("frisbo_created_at"),
+    sort_direction: Optional[str] = Query("desc"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Export filtered orders as an Excel (.xlsx) file.
+
+    Applies the same filters as the main orders endpoint but returns ALL
+    matching rows (no pagination) as a downloadable spreadsheet.
+    """
+    import io
+    from datetime import datetime
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # ── Build query with same filters ──
+    query = select(Order).options(selectinload(Order.store))
+    conditions = _build_order_conditions(
+        store_uids, is_printed, has_awb, has_tracking, min_items, max_items,
+        search, fulfillment_status, shipment_status, aggregated_status,
+        courier_names, has_shipping_cost, stale_courier, date_from, date_to
+    )
+    if conditions:
+        query = query.where(and_(*conditions))
+
+    # Sorting
+    sort_column_map = {
+        "frisbo_created_at": Order.frisbo_created_at,
+        "order_number": Order.order_number,
+        "customer_name": Order.customer_name,
+        "item_count": Order.item_count,
+        "tracking_number": Order.tracking_number,
+        "courier_name": Order.courier_name,
+        "transport_cost": Order.transport_cost,
+        "total_price": Order.total_price,
+        "fulfilled_at": Order.fulfilled_at,
+        "store_name": Store.name,
+    }
+    sort_col = sort_column_map.get(sort_field, Order.frisbo_created_at)
+    if sort_field == "store_name":
+        query = query.join(Store, Order.store_uid == Store.uid, isouter=True)
+    if sort_direction == "asc":
+        query = query.order_by(sort_col.asc().nulls_last())
+    else:
+        query = query.order_by(sort_col.desc().nulls_last())
+
+    result = await db.execute(query)
+    orders = result.scalars().all()
+
+    # ── Build Excel workbook ──
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Orders"
+
+    # Column definitions matching the Orders table view
+    headers = [
+        "Order #",
+        "Customer",
+        "Store",
+        "Items",
+        "Total",
+        "Currency",
+        "Fulfillment Status",
+        "Shipment Status",
+        "Workflow Status",
+        "Courier",
+        "Tracking #",
+        "Transport Cost (RON)",
+        "Cost Source",
+        "Created Date",
+        "Fulfilled Date",
+        "Printed",
+    ]
+
+    # Styling
+    header_font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        bottom=Side(style="thin", color="D4D4D8")
+    )
+    date_format = "YYYY-MM-DD HH:MM"
+
+    # Write headers
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+
+    # Write data rows
+    for row_idx, order in enumerate(orders, 2):
+        store_name = order.store.name if order.store else ""
+        line_items_text = ""
+        if order.line_items:
+            items = []
+            for li in order.line_items:
+                sku = li.get("inventory_item", {}).get("sku", "N/A") if isinstance(li, dict) else "N/A"
+                qty = li.get("quantity", 1) if isinstance(li, dict) else 1
+                items.append(f"{sku} x{qty}")
+            line_items_text = ", ".join(items)
+
+        row_data = [
+            order.order_number or "",
+            order.customer_name or "",
+            store_name,
+            order.item_count or 0,
+            float(order.total_price) if order.total_price is not None else None,
+            order.currency or "RON",
+            (order.fulfillment_status or "").replace("_", " ").title(),
+            (order.shipment_status or "").replace("_", " ").title(),
+            (order.aggregated_status or "").replace("_", " ").title(),
+            order.courier_name or "",
+            order.tracking_number or "",
+            float(order.transport_cost) if order.transport_cost is not None else None,
+            order.shipping_data_source or "",
+            order.frisbo_created_at,
+            order.fulfilled_at,
+            "Yes" if order.is_printed else "No",
+        ]
+
+        for col_idx, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+            # Format date columns
+            if col_idx in (14, 15) and value is not None:
+                cell.number_format = date_format
+
+    # Auto-fit column widths (approximate)
+    col_widths = [14, 22, 18, 8, 12, 10, 18, 18, 18, 16, 22, 18, 14, 18, 18, 10]
+    for col_idx, width in enumerate(col_widths, 1):
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
+
+    # Freeze header row
+    ws.freeze_panes = "A2"
+
+    # Auto-filter
+    ws.auto_filter.ref = f"A1:{ws.cell(row=1, column=len(headers)).column_letter}{len(orders) + 1}"
+
+    # ── Stream response ──
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    # Build descriptive filename
+    now = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = f"orders_export_{now}.xlsx"
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 @router.get("/{order_uid}", response_model=OrderResponse)

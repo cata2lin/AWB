@@ -63,6 +63,9 @@ export default function Orders() {
     // Per-order print/regenerate loading state
     const [printingOrder, setPrintingOrder] = useState(null)  // { uid, action: 'print'|'regen' }
 
+    // Export state
+    const [isExporting, setIsExporting] = useState(false)
+
     // Data state
     const [orders, setOrders] = useState([])
     const [isLoading, setIsLoading] = useState(true)
@@ -246,6 +249,43 @@ export default function Orders() {
         itemCountFilter !== 'all' || printedFilter !== 'all' ||
         awbFilter !== 'all' || trackingFilter !== 'all' || shippingCostFilter !== 'all' || createdDateFrom || createdDateTo
 
+    /** Build the current filter params object (shared between fetch and export). */
+    const buildFilterParams = () => {
+        const params = {
+            sort_field: sortField,
+            sort_direction: sortDirection,
+        }
+        if (debouncedSearch) params.search = debouncedSearch
+        if (selectedStores.length > 0) params.store_uids = selectedStores
+        if (printedFilter !== 'all') params.is_printed = printedFilter === 'printed'
+        if (itemCountFilter === '1') { params.min_items = 1; params.max_items = 1 }
+        else if (itemCountFilter === '2-3') { params.min_items = 2; params.max_items = 3 }
+        else if (itemCountFilter === '4+') { params.min_items = 4 }
+        if (selectedFulfillment.length > 0) params.fulfillment_status = selectedFulfillment
+        if (selectedShipment.length > 0) params.shipment_status = selectedShipment
+        if (selectedWorkflow.length > 0) params.aggregated_status = selectedWorkflow
+        if (selectedCouriers.length > 0) params.courier_names = selectedCouriers
+        if (effectiveDateFrom) params.date_from = effectiveDateFrom
+        if (effectiveDateTo) params.date_to = effectiveDateTo
+        if (awbFilter !== 'all') params.has_awb = awbFilter === 'has_awb'
+        if (trackingFilter !== 'all') params.has_tracking = trackingFilter === 'has_tracking'
+        if (shippingCostFilter !== 'all') params.has_shipping_cost = shippingCostFilter === 'has_cost'
+        return params
+    }
+
+    /** Export currently filtered orders as Excel. */
+    const handleExport = async () => {
+        setIsExporting(true)
+        try {
+            await ordersApi.exportOrders(buildFilterParams())
+        } catch (err) {
+            console.error('Export failed:', err)
+            alert('Export failed. Check console for details.')
+        } finally {
+            setIsExporting(false)
+        }
+    }
+
     const totalPages = Math.ceil(totalCount / pageSize)
     const startItem = page * pageSize + 1
     const endItem = Math.min((page + 1) * pageSize, totalCount)
@@ -425,6 +465,19 @@ export default function Orders() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleExport}
+                        disabled={isExporting || isLoading}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-emerald-300 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={`Export ${totalCount.toLocaleString()} filtered orders as Excel`}
+                    >
+                        {isExporting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                            <Download className="w-4 h-4" />
+                        )}
+                        {isExporting ? 'Exporting...' : 'Export'}
+                    </button>
                     <button
                         onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${showAdvancedFilters

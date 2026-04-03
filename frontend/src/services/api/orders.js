@@ -6,6 +6,34 @@ export const ordersApi = {
         const { data } = await api.get('/orders', { params })
         return data
     },
+    /**
+     * Export filtered orders as an Excel file download.
+     * Accepts the same filter params as getOrders (minus skip/limit).
+     */
+    exportOrders: async (params = {}) => {
+        const exportParams = { ...params }
+        delete exportParams.skip
+        delete exportParams.limit
+        const response = await api.get('/orders/export', {
+            params: exportParams,
+            responseType: 'blob',
+        })
+        // Trigger browser download
+        const blob = new Blob([response.data], {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        })
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        // Extract filename from Content-Disposition header or use default
+        const disposition = response.headers['content-disposition']
+        const filenameMatch = disposition?.match(/filename="?([^"]+)"?/)
+        link.download = filenameMatch ? filenameMatch[1] : 'orders_export.xlsx'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+    },
     getOrderCount: async (params = {}) => {
         const { data } = await api.get('/orders/count', { params })
         return data
