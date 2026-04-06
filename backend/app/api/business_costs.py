@@ -20,6 +20,7 @@ from sqlalchemy import select, and_, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso
 from app.models.business_cost import BusinessCost
 
 logger = logging.getLogger(__name__)
@@ -95,8 +96,8 @@ def cost_to_dict(cost: BusinessCost) -> dict:
         "has_tva": cost.has_tva if cost.has_tva is not None else True,
         "pnl_section": cost.pnl_section or "fixed",
         "display_order": cost.display_order or 0,
-        "created_at": cost.created_at.isoformat() if cost.created_at else None,
-        "updated_at": cost.updated_at.isoformat() if cost.updated_at else None,
+        "created_at": to_bucharest_iso(cost.created_at),
+        "updated_at": to_bucharest_iso(cost.updated_at),
     }
 
 

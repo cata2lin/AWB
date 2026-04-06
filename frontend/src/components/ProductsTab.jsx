@@ -156,6 +156,8 @@ export default function ProductsTab({ stores = [] }) {
                         return {
                             ...p,
                             primary_uid: listingUid,
+                            title_1: chosen.title_1 || p.title_1,
+                            title_2: chosen.title_2 || p.title_2,
                             stock_available: chosen.stock_available,
                             stock_committed: chosen.stock_committed,
                             stock_incoming: chosen.stock_incoming,

@@ -8,6 +8,7 @@ from sqlalchemy import select, func, case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import date_str_to_utc_start, date_str_to_utc_end
 from app.models import Order, Store
 
 router = APIRouter()
@@ -35,8 +36,8 @@ async def get_deliverability_stats(
     if store_uid_list:
         conditions.append(Order.store_uid.in_(store_uid_list))
     if date_from and date_to:
-        conditions.append(Order.frisbo_created_at >= datetime.strptime(date_from, '%Y-%m-%d'))
-        conditions.append(Order.frisbo_created_at <= datetime.strptime(date_to, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+        conditions.append(Order.frisbo_created_at >= date_str_to_utc_start(date_from))
+        conditions.append(Order.frisbo_created_at <= date_str_to_utc_end(date_to))
     elif days:
         cutoff = datetime.utcnow() - timedelta(days=days)
         conditions.append(Order.frisbo_created_at >= cutoff)

@@ -10,6 +10,7 @@ from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso, to_bucharest_date, romania_today
 from app.models import Order, Store, SkuCost
 from app.api.profitability_config import get_or_create_config
 
@@ -93,7 +94,7 @@ async def get_order_profitability(
     non_ron_currencies = {(o.currency or 'RON').upper() for o in orders if (o.currency or 'RON').upper() != 'RON'}
     rate_cache = {}
     if non_ron_currencies:
-        order_dates = [o.frisbo_created_at.date() if o.frisbo_created_at else date.today() for o in orders]
+        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in orders]
         min_date = min(order_dates)
         max_date = max(order_dates)
         rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
@@ -102,7 +103,7 @@ async def get_order_profitability(
     order_data = []
     for order in orders:
         order_currency = (order.currency or 'RON').upper()
-        order_date = order.frisbo_created_at.date() if order.frisbo_created_at else date.today()
+        order_date = to_bucharest_date(order.frisbo_created_at) or romania_today()
         
         # Original currency values
         revenue_orig = order.total_price or 0
@@ -237,7 +238,7 @@ async def get_order_profitability(
             'customer_name': order.customer_name,
             'store_uid': order.store_uid,
             'store_name': store_names.get(order.store_uid, 'Unknown'),
-            'created_at': order.frisbo_created_at.isoformat() if order.frisbo_created_at else None,
+            'created_at': to_bucharest_iso(order.frisbo_created_at),
             'status': status_val,
             # Price fields (in RON after conversion)
             'subtotal_price': round(subtotal, 2),

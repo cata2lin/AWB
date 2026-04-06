@@ -122,19 +122,21 @@ def _merge_group(group, group_key, store_names, sku_cost_map):
                 all_store_uids.append(uid)
                 seen.add(uid)
 
-    # Best image (first listing that has one)
-    images = []
-    for p in group:
-        if p.images:
-            images = p.images
-            break
+    # Best image — primary first, then fallback to first listing with images
+    images = primary.images or []
+    if not images:
+        for p in group:
+            if p.images:
+                images = p.images
+                break
 
-    # Best title
+    # Best title — primary first, then fallback to first listing with a title
     title_1, title_2 = primary.title_1, primary.title_2
-    for p in group:
-        if p.title_1:
-            title_1, title_2 = p.title_1, p.title_2
-            break
+    if not title_1:
+        for p in group:
+            if p.title_1:
+                title_1, title_2 = p.title_1, p.title_2
+                break
 
     # Cost from SKU costs table
     cost = None

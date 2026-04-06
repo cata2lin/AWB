@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso, date_str_to_utc_start, date_str_to_utc_end
 from app.models import Order, Rule, PrintBatch, PrintBatchItem
 from app.schemas import (
     PrintPreviewRequest, PrintPreviewResponse, PrintGroupPreview,
@@ -716,14 +717,14 @@ async def get_batch_history(
     # Date range filter
     if date_from:
         try:
-            dt_from = datetime.strptime(date_from, "%Y-%m-%d")
+            dt_from = date_str_to_utc_start(date_from)
             query = query.where(PrintBatch.created_at >= dt_from)
             count_query = count_query.where(PrintBatch.created_at >= dt_from)
         except ValueError:
             pass
     if date_to:
         try:
-            dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            dt_to = date_str_to_utc_end(date_to)
             query = query.where(PrintBatch.created_at <= dt_to)
             count_query = count_query.where(PrintBatch.created_at <= dt_to)
         except ValueError:
@@ -777,7 +778,7 @@ async def get_batch_history(
                 "file_size": b.file_size,
                 "status": b.status,
                 "error_message": b.error_message,
-                "created_at": b.created_at.isoformat() if b.created_at else None,
+                "created_at": to_bucharest_iso(b.created_at),
             }
             for b in batches
         ],
@@ -816,7 +817,7 @@ async def get_batch_details(batch_id: int, db: AsyncSession = Depends(get_db)):
             "file_size": batch.file_size,
             "status": batch.status,
             "error_message": batch.error_message,
-            "created_at": batch.created_at.isoformat() if batch.created_at else None,
+            "created_at": to_bucharest_iso(batch.created_at),
         },
         "items": [
             {

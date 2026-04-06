@@ -16,10 +16,12 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
     Search, RefreshCw, Download, ArrowUpDown, Package, AlertTriangle,
     Clock, TrendingUp, X, ShoppingCart, ChevronLeft, ChevronRight, Info,
-    ChevronDown, Check, Store
+    ChevronDown, Check, Store, ClipboardList, Hash, BarChart3
 } from 'lucide-react'
 import { analyticsApi } from '../services/api'
 import { exportPurchaseOrdersToExcel } from '../utils/purchaseOrdersExport'
+import POManagerPanel from './POManagerPanel'
+import BarcodeManagerPanel from './BarcodeManagerPanel'
 
 const formatNumber = (n) => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const formatCurrency = (n) => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON`
@@ -111,6 +113,7 @@ function StoreFilterDropdown({ allStores, selectedStores, onChange }) {
 }
 
 export default function PurchaseOrdersTab() {
+    const [subTab, setSubTab] = useState('analytics') // analytics | orders | barcodes
     // Raw data from backend (fetched once per period change)
     const [rawData, setRawData] = useState(null)
     const [loading, setLoading] = useState(false)
@@ -246,6 +249,27 @@ export default function PurchaseOrdersTab() {
 
     return (
         <div className="space-y-6">
+            {/* Sub-tab navigation */}
+            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-700/50 rounded-xl p-1.5">
+                {[
+                    { key: 'analytics', label: 'Analiză Restock', icon: BarChart3 },
+                    { key: 'orders', label: 'Purchase Orders', icon: ClipboardList },
+                    { key: 'barcodes', label: 'Barcode Manager', icon: Hash },
+                ].map(t => (
+                    <button key={t.key} onClick={() => setSubTab(t.key)}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${subTab === t.key
+                            ? 'bg-white dark:bg-zinc-600 text-zinc-900 dark:text-white shadow-sm'
+                            : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                        }`}>
+                        <t.icon className="w-4 h-4" /> {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {subTab === 'orders' && <POManagerPanel analyticsProducts={rawData?.products || []} onRefresh={fetchData} />}
+            {subTab === 'barcodes' && <BarcodeManagerPanel />}
+
+            {subTab === 'analytics' && (<>
             {/* Lead time info banner */}
             <div className="flex items-start gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl border border-indigo-200 dark:border-indigo-500/20">
                 <Info className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
@@ -370,9 +394,9 @@ export default function PurchaseOrdersTab() {
                     </div>
                 )}
 
-                <div className="overflow-x-auto relative">
+                <div className="overflow-x-auto overflow-y-auto max-h-[75vh] relative">
                     <table className="w-full text-sm">
-                        <thead>
+                        <thead className="sticky top-0 z-10">
                             <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80">
                                 <th className="px-3 py-3 font-medium w-8">#</th>
                                 <th className="px-3 py-3 font-medium cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => toggleSort('product_name')}>
@@ -386,6 +410,9 @@ export default function PurchaseOrdersTab() {
                                 </th>
                                 <th className="px-3 py-3 font-medium text-right">Committed</th>
                                 <th className="px-3 py-3 font-medium text-right">Incoming</th>
+                                <th className="px-3 py-3 font-medium text-right cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => toggleSort('po_incoming')}>
+                                    PO Incoming <SortIcon col="po_incoming" />
+                                </th>
                                 <th className="px-3 py-3 font-medium text-right cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => toggleSort('units_sold')}>
                                     Sold <SortIcon col="units_sold" />
                                 </th>
@@ -431,10 +458,10 @@ export default function PurchaseOrdersTab() {
                                         <td className="px-3 py-2.5 max-w-[250px]">
                                             <div className="flex items-center gap-2">
                                                 {imgSrc ? (
-                                                    <img src={imgSrc} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 border border-zinc-200 dark:border-zinc-600" />
+                                                    <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-zinc-200 dark:border-zinc-600" />
                                                 ) : (
-                                                    <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0">
-                                                        <Package className="w-4 h-4 text-zinc-400" />
+                                                    <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0">
+                                                        <Package className="w-5 h-5 text-zinc-400" />
                                                     </div>
                                                 )}
                                                 <div className="min-w-0">
@@ -459,6 +486,9 @@ export default function PurchaseOrdersTab() {
                                         </td>
                                         <td className="px-3 py-2.5 text-right text-zinc-500 dark:text-zinc-400 text-xs">
                                             {p.stock_incoming || 0}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right text-xs">
+                                            {(p.po_incoming || 0) > 0 ? <span className="font-medium text-blue-600 dark:text-blue-400">+{formatNumber(p.po_incoming)}</span> : <span className="text-zinc-400">0</span>}
                                         </td>
                                         <td className="px-3 py-2.5 text-right text-xs text-zinc-600 dark:text-zinc-300">
                                             {formatNumber(p.units_sold)}
@@ -555,6 +585,7 @@ export default function PurchaseOrdersTab() {
                     </div>
                 )}
             </div>
+            </>)}
         </div>
     )
 }

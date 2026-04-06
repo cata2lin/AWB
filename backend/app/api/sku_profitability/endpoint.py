@@ -15,6 +15,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import date_str_to_utc_start, date_str_to_utc_end, to_bucharest_date, romania_today
 from app.models import Order, Store, SkuCost
 from app.models.sku_marketing_cost import SkuMarketingCost
 from app.api.profitability_config import get_or_create_config
@@ -50,8 +51,8 @@ async def get_sku_profitability(
     if store_uid_list:
         conditions.append(Order.store_uid.in_(store_uid_list))
     if date_from and date_to:
-        conditions.append(Order.frisbo_created_at >= datetime.strptime(date_from, '%Y-%m-%d'))
-        conditions.append(Order.frisbo_created_at <= datetime.strptime(date_to, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+        conditions.append(Order.frisbo_created_at >= date_str_to_utc_start(date_from))
+        conditions.append(Order.frisbo_created_at <= date_str_to_utc_end(date_to))
     elif days:
         cutoff = datetime.utcnow() - timedelta(days=days)
         conditions.append(Order.frisbo_created_at >= cutoff)
@@ -61,12 +62,13 @@ async def get_sku_profitability(
         mkt_date_from = date_from[:7]  # YYYY-MM
         mkt_date_to = date_to[:7]
     elif days:
-        now = datetime.utcnow()
+        now = romania_today()
         mkt_date_to = now.strftime('%Y-%m')
-        mkt_date_from = (now - timedelta(days=days)).strftime('%Y-%m')
+        mkt_date_from = (datetime.combine(now, datetime.min.time()) - timedelta(days=days)).strftime('%Y-%m')
     else:
-        mkt_date_to = datetime.utcnow().strftime('%Y-%m')
-        mkt_date_from = (datetime.utcnow() - timedelta(days=30)).strftime('%Y-%m')
+        now = romania_today()
+        mkt_date_to = now.strftime('%Y-%m')
+        mkt_date_from = (datetime.combine(now, datetime.min.time()) - timedelta(days=30)).strftime('%Y-%m')
 
     # --- Fetch data ---
     query = select(Order)
@@ -107,7 +109,7 @@ async def get_sku_profitability(
     non_ron_currencies = {(o.currency or 'RON').upper() for o in orders if (o.currency or 'RON').upper() != 'RON'}
     rate_cache = {}
     if non_ron_currencies:
-        order_dates = [o.frisbo_created_at.date() if o.frisbo_created_at else date.today() for o in orders]
+        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in orders]
         if order_dates:
             min_date = min(order_dates)
             max_date = max(order_dates)
@@ -171,7 +173,7 @@ async def get_sku_profitability(
 
     for order in orders:
         order_currency = (order.currency or 'RON').upper()
-        order_date = order.frisbo_created_at.date() if order.frisbo_created_at else date.today()
+        order_date = to_bucharest_date(order.frisbo_created_at) or romania_today()
 
         # Revenue in RON
         revenue_orig = order.total_price or 0

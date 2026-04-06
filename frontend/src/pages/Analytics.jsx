@@ -31,6 +31,7 @@ import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarket
 import ProductsTab from '../components/ProductsTab'
 import PrintHistoryTab from '../components/PrintHistoryTab'
 import PurchaseOrdersTab from '../components/PurchaseOrdersTab'
+import MultiSelectFilter from '../components/MultiSelectFilter'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -138,7 +139,7 @@ export default function Analytics() {
     const [velocityDays, setVelocityDays] = useState(30)
     const [velocityDateFrom, setVelocityDateFrom] = useState('')
     const [velocityDateTo, setVelocityDateTo] = useState('')
-    const [velocityStore, setVelocityStore] = useState('')
+    const [velocityStores, setVelocityStores] = useState([])
     const [velocityMinUnits, setVelocityMinUnits] = useState(1)
     const [velocitySearch, setVelocitySearch] = useState('')
     const [velocitySort, setVelocitySort] = useState({ col: 'velocity', dir: 'desc' })
@@ -798,7 +799,7 @@ export default function Analytics() {
                             </div>
 
                             {/* Per-Store Table */}
-                            <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden shadow-sm">
+                            <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-clip shadow-sm">
                                 <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between">
                                     <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2 tracking-tight">
                                         <Store className="w-5 h-5 text-indigo-500" />
@@ -826,7 +827,7 @@ export default function Analytics() {
                                 </div>
                                 <div className="overflow-auto max-h-[75vh]">
                                     <table className="w-full">
-                                        <thead className="bg-zinc-50 dark:bg-zinc-900/50 sticky top-0 z-10">
+                                        <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                             <tr>
                                                 {[
                                                     { field: 'store_name', label: 'Magazin', align: 'left', show: true },
@@ -1596,7 +1597,7 @@ export default function Analytics() {
 
 
                             {/* Order Profitability Table */}
-                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-clip">
                                 <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                                     <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
                                         <Package className="w-5 h-5 text-green-600" />
@@ -1650,7 +1651,7 @@ export default function Analytics() {
                                     <>
                                         <div className="overflow-auto max-h-[75vh]">
                                             <table className="w-full">
-                                                <thead className="bg-zinc-50 dark:bg-zinc-900/50 sticky top-0 z-10">
+                                                <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                     <tr>
                                                         <th className="text-left px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Order</th>
                                                         <th className="text-left px-3 py-2 text-xs font-medium text-zinc-500 dark:text-white uppercase">Date</th>
@@ -1831,7 +1832,7 @@ export default function Analytics() {
                                                                             <div className="mt-3">
                                                                                 <div className="text-xs font-medium text-zinc-500 dark:text-white uppercase mb-2">Line Items</div>
                                                                                 <table className="w-full text-sm">
-                                                                                    <thead>
+                                                                                    <thead className="bg-zinc-50 dark:bg-zinc-900">
                                                                                         <tr className="text-xs text-zinc-500 dark:text-white">
                                                                                             <th className="text-left py-1">SKU</th>
                                                                                             <th className="text-left py-1">Title</th>
@@ -2667,7 +2668,7 @@ export default function Analytics() {
 
                                     <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
                                         <table className="w-full">
-                                            <thead className="bg-zinc-50 dark:bg-zinc-900/50 sticky top-0">
+                                            <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                 <tr>
                                                     {bulkEditMode && (
                                                         <th className="w-10 px-3 py-3">
@@ -2839,7 +2840,7 @@ export default function Analytics() {
 
                         const SortHeader = ({ col, label, tip }) => (
                             <th
-                                className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none"
+                                className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none bg-zinc-50 dark:bg-zinc-900"
                                 onClick={() => setSkuRiskSort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
                                 title={tip || ''}
                             >
@@ -2919,16 +2920,16 @@ export default function Analytics() {
                                 {skuRiskData && !skuRiskLoading && (
                                     <>
                                         {/* Section B: Worst SKUs Table */}
-                                        <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                                        <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-clip">
                                             <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
                                                 <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                     <AlertTriangle className="w-4 h-4 text-red-500" />
                                                     SKU-uri problematice — Ranked by Risk Score
                                                 </h3>
                                             </div>
-                                            <div className="overflow-x-auto">
+                                            <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
                                                 <table className="w-full">
-                                                    <thead className="bg-zinc-50 dark:bg-zinc-900/50">
+                                                    <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                         <tr>
                                                             <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8">#</th>
                                                             <SortHeader col="sku" label="SKU" />
@@ -3028,7 +3029,7 @@ export default function Analytics() {
 
                                         {/* Section C: Shipping Anomaly Orders */}
                                         {anomalyPage.length > 0 && (
-                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-clip">
                                                 <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                         <Truck className="w-4 h-4 text-amber-500" />
@@ -3038,9 +3039,9 @@ export default function Analytics() {
                                                         Pagina {skuRiskAnomalyPage + 1} / {anomalyTotalPages}
                                                     </div>
                                                 </div>
-                                                <div className="overflow-x-auto">
+                                                <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
                                                     <table className="w-full">
-                                                        <thead className="bg-zinc-50 dark:bg-zinc-900/50">
+                                                        <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                             <tr>
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Comandă</th>
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Magazin</th>
@@ -3156,7 +3157,7 @@ export default function Analytics() {
                                 } else {
                                     params.days = velocityDays
                                 }
-                                if (velocityStore) params.store_uids = velocityStore
+                                if (velocityStores.length > 0) params.store_uids = velocityStores.join(',')
                                 const data = await analyticsApi.getSalesVelocity(params)
                                 setVelocityData(data)
                             } catch (e) { console.error('Sales Velocity fetch error:', e) }
@@ -3182,7 +3183,7 @@ export default function Analytics() {
 
                         const VSort = ({ col, label, tip }) => (
                             <th
-                                className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none whitespace-nowrap"
+                                className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none whitespace-nowrap bg-zinc-50 dark:bg-zinc-900"
                                 onClick={() => setVelocitySort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
                                 title={tip || ''}
                             >
@@ -3280,12 +3281,16 @@ export default function Analytics() {
                                                 className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Magazin</label>
-                                            <select value={velocityStore} onChange={e => setVelocityStore(e.target.value)}
-                                                className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
-                                                <option value="">Toate</option>
-                                                {stores.map(s => <option key={s.uid} value={s.uid}>{s.name}</option>)}
-                                            </select>
+                                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Magazine</label>
+                                            <MultiSelectFilter
+                                                label="Magazine"
+                                                options={stores.map(s => ({ value: s.uid, label: s.name }))}
+                                                selected={velocityStores}
+                                                onChange={setVelocityStores}
+                                                icon={Store}
+                                                searchable={stores.length > 5}
+                                                allLabel="Toate"
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Min. unități</label>
@@ -3352,7 +3357,7 @@ export default function Analytics() {
 
                                         {/* Sub-view: PRODUCT TABLE */}
                                         {velocityView === 'table' && (
-                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-clip">
                                                 <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                         <TrendingUp className="w-4 h-4 text-emerald-500" />
@@ -3367,12 +3372,13 @@ export default function Analytics() {
                                                         />
                                                     </div>
                                                 </div>
-                                                <div className="overflow-x-auto">
+                                                <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
                                                     <table className="w-full">
-                                                        <thead className="bg-zinc-50 dark:bg-zinc-900/50">
+                                                        <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                             <tr>
-                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8">#</th>
+                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8 bg-zinc-50 dark:bg-zinc-900">#</th>
                                                                 <VSort col="sku" label="SKU" />
+                                                                <VSort col="store_name" label="Magazin" tip="Magazinul de origine" />
                                                                 <VSort col="units_sold" label="Unități" tip="Total unități livrate" />
                                                                 <VSort col="revenue" label="Revenue" tip="Venit total RON" />
                                                                 <VSort col="margin" label="Marjă" tip="Revenue − COGS" />
@@ -3381,23 +3387,29 @@ export default function Analytics() {
                                                                 <VSort col="velocity" label="Viteză (u/zi)" tip="Unități vândute pe zi" />
                                                                 <VSort col="velocity_change_pct" label="Trend" tip="Schimbare față de perioada anterioară" />
                                                                 <VSort col="days_since_last_sale" label="Zile fără" tip="Zile de la ultima vânzare" />
+                                                                <VSort col="stock_available" label="Stoc" tip="Stoc disponibil curent" />
+                                                                <VSort col="inventory_value" label="Val. Inventar" tip="Stoc × Cost/buc" />
                                                                 <VSort col="revenue_share" label="Share %" tip="% din revenue total" />
-                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Sparkline</th>
+                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900">Sparkline</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                                             {sortedProducts.length === 0 && (
-                                                                <tr><td colSpan={12} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
+                                                                <tr><td colSpan={15} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
                                                             )}
-                                                            {sortedProducts.slice(0, 200).map((p, i) => (
-                                                                <Fragment key={p.sku}>
-                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === p.sku ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''}`}
-                                                                        onClick={() => setVelocityExpanded(velocityExpanded === p.sku ? null : p.sku)}>
+                                                            {sortedProducts.map((p, i) => {
+                                                                const rowKey = `${p.sku}::${p.store_uid || ''}`
+                                                                return (
+                                                                <Fragment key={rowKey}>
+                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === rowKey ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''}`}
+                                                                        onClick={() => setVelocityExpanded(velocityExpanded === rowKey ? null : rowKey)}>
                                                                         <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
                                                                         <td className="px-3 py-2">
                                                                             <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
-                                                                            {p.product_name && <div className="text-xs text-zinc-500 truncate max-w-[200px]">{p.product_name}</div>}
-                                                                            {p.stores_count > 1 && <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{p.stores_count} magazine</span>}
+                                                                            {p.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.product_name}</div>}
+                                                                        </td>
+                                                                        <td className="px-3 py-2">
+                                                                            <span className="text-xs px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full whitespace-nowrap">{p.store_name || '—'}</span>
                                                                         </td>
                                                                         <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{p.revenue.toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
@@ -3416,32 +3428,23 @@ export default function Analytics() {
                                                                         <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
                                                                             {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
                                                                         </td>
-                                                                        <td className="px-3 py-2 text-xs text-zinc-500">{p.revenue_share}%</td>
+                                                                        <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>
+                                                                        <td className="px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400">{p.inventory_value > 0 ? `${p.inventory_value.toLocaleString()} RON` : '—'}</td>
+                                                                        <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
                                                                         <td className="px-3 py-2"><Sparkline data={p.daily_series} /></td>
                                                                     </tr>
                                                                     {/* Expanded detail */}
-                                                                    {velocityExpanded === p.sku && (
+                                                                    {velocityExpanded === rowKey && (
                                                                         <tr className="bg-zinc-50 dark:bg-zinc-900/40">
-                                                                            <td colSpan={12} className="px-4 py-4">
-                                                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                                                    <div>
-                                                                                        <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2 flex items-center gap-1"><Store className="w-3 h-3" /> Per Magazine</h5>
-                                                                                        <div className="space-y-1">
-                                                                                            {p.by_store.map(bs => (
-                                                                                                <div key={bs.store_uid} className="flex justify-between text-xs bg-white dark:bg-zinc-800 rounded-lg px-2 py-1 border border-zinc-200 dark:border-zinc-700">
-                                                                                                    <span className="text-zinc-700 dark:text-zinc-300">{bs.store_name}</span>
-                                                                                                    <span className="text-zinc-600 dark:text-zinc-300">{bs.units} u | {bs.revenue.toLocaleString()} RON | {bs.orders} cmd.</span>
-                                                                                                </div>
-                                                                                            ))}
-                                                                                        </div>
-                                                                                    </div>
+                                                                            <td colSpan={15} className="px-4 py-4">
+                                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                                     <div>
                                                                                         <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
                                                                                         <div className="space-y-1 text-xs">
                                                                                             {p.by_country.map(bc => (
                                                                                                 <div key={bc.country} className="flex justify-between">
                                                                                                     <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || '🏳️'} {bc.country}</span>
-                                                                                                    <span className="font-medium text-zinc-900 dark:text-white">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
+                                                                                                    <span className="font-medium text-zinc-700 dark:text-zinc-200">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
                                                                                                 </div>
                                                                                             ))}
                                                                                             {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
@@ -3450,10 +3453,10 @@ export default function Analytics() {
                                                                                     <div>
                                                                                         <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
                                                                                         <div className="space-y-1 text-xs">
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-900 dark:text-white">{p.avg_qty_per_order}</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-900 dark:text-white">{p.cogs.toLocaleString()} RON</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-900 dark:text-white">{p.delivery_rate}%</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-900 dark:text-white">{p.prev_velocity} u/zi</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.cogs.toLocaleString()} RON</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.delivery_rate}%</span></div>
+                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.prev_velocity} u/zi</span></div>
                                                                                             <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>
                                                                                         </div>
                                                                                     </div>
@@ -3462,15 +3465,12 @@ export default function Analytics() {
                                                                         </tr>
                                                                     )}
                                                                 </Fragment>
-                                                            ))}
+                                                                )
+                                                            })}
                                                         </tbody>
                                                     </table>
                                                 </div>
-                                                {sortedProducts.length > 200 && (
-                                                    <div className="px-4 py-2 text-xs text-zinc-400 text-center border-t border-zinc-200 dark:border-zinc-700">
-                                                        Se afișează primele 200 din {sortedProducts.length} SKU-uri. Folosește filtrul pentru a restrânge lista.
-                                                    </div>
-                                                )}
+
                                             </div>
                                         )}
 
@@ -3636,7 +3636,7 @@ export default function Analytics() {
                                                                                 <div className="text-xs font-semibold text-zinc-400 uppercase mb-2">Toate produsele din {sc.store_name} ({storeProducts.length})</div>
                                                                                 <div className="max-h-[350px] overflow-y-auto">
                                                                                     <table className="w-full text-xs">
-                                                                                        <thead>
+                                                                                        <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                                                             <tr className="text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
                                                                                                 <th className="py-1 text-left">SKU</th>
                                                                                                 <th className="py-1 text-right">Unități</th>
@@ -3966,11 +3966,11 @@ export default function Analytics() {
                                         </div>
 
                                         {/* Main Product Table */}
-                                        <div className="bg-white dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden">
+                                        <div className="bg-white dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-clip">
                                             <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
                                                 <table className="w-full text-sm">
-                                                    <thead className="sticky top-0 z-10">
-                                                        <tr className="bg-zinc-50 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-700">
+                                                    <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
+                                                        <tr className="border-b border-zinc-200 dark:border-zinc-700">
                                                             <th className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs w-8"></th>
                                                             <th onClick={() => toggleSort('sku')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
                                                                 SKU {sortIcon('sku')}
@@ -4076,8 +4076,8 @@ export default function Analytics() {
                                                                                         <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">📊 Per Magazin</h4>
                                                                                         <div className="overflow-x-auto">
                                                                                             <table className="w-full text-xs">
-                                                                                                <thead>
-                                                                                                    <tr className="bg-zinc-100 dark:bg-zinc-800">
+                                                                                                <thead className="bg-zinc-100 dark:bg-zinc-800">
+                                                                                                    <tr>
                                                                                                         <th className="text-left px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Magazin</th>
                                                                                                         <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Unități</th>
                                                                                                         <th className="text-right px-3 py-2 text-zinc-600 dark:text-zinc-300 font-semibold">Venituri</th>

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso
 from app.models import SyncLog
 from app.schemas import SyncStatusResponse, SyncTriggerResponse
 from app.services.sync_service import sync_orders
@@ -185,8 +186,8 @@ async def get_sync_history(
     return [
         {
             "id": log.id,
-            "started_at": log.started_at,
-            "completed_at": log.completed_at,
+            "started_at": to_bucharest_iso(log.started_at),
+            "completed_at": to_bucharest_iso(log.completed_at),
             "status": log.status,
             "sync_type": getattr(log, "sync_type", "45_day") or "45_day",
             "orders_fetched": log.orders_fetched,

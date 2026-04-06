@@ -20,6 +20,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import date_str_to_utc_start, date_str_to_utc_end, to_bucharest_date, romania_today
 from app.models import Order, Store, SkuCost
 from app.models.business_cost import BusinessCost
 from app.api.profitability_config import get_or_create_config
@@ -102,8 +103,8 @@ async def get_overall_profitability(
     if store_uid_list:
         conditions.append(Order.store_uid.in_(store_uid_list))
     if date_from and date_to:
-        conditions.append(Order.frisbo_created_at >= datetime.strptime(date_from, '%Y-%m-%d'))
-        conditions.append(Order.frisbo_created_at <= datetime.strptime(date_to, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+        conditions.append(Order.frisbo_created_at >= date_str_to_utc_start(date_from))
+        conditions.append(Order.frisbo_created_at <= date_str_to_utc_end(date_to))
     elif days:
         cutoff = datetime.utcnow() - timedelta(days=days)
         conditions.append(Order.frisbo_created_at >= cutoff)
@@ -128,7 +129,7 @@ async def get_overall_profitability(
     non_ron_currencies = {(o.currency or 'RON').upper() for o in orders if (o.currency or 'RON').upper() != 'RON'}
     rate_cache = {}
     if non_ron_currencies:
-        order_dates = [o.frisbo_created_at.date() if o.frisbo_created_at else date.today() for o in orders]
+        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in orders]
         min_date = min(order_dates)
         max_date = max(order_dates)
         rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
@@ -188,7 +189,7 @@ async def get_overall_profitability(
     
     for order in orders:
         order_currency = (order.currency or 'RON').upper()
-        order_date = order.frisbo_created_at.date() if order.frisbo_created_at else date.today()
+        order_date = to_bucharest_date(order.frisbo_created_at) or romania_today()
         
         # Revenue in original currency
         revenue_orig = order.total_price or 0
@@ -476,10 +477,10 @@ async def get_overall_profitability(
             mkt_date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
             mkt_date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
         elif days:
-            mkt_date_to = datetime.utcnow().date()
+            mkt_date_to = romania_today()
             mkt_date_from = mkt_date_to - timedelta(days=days)
         else:
-            mkt_date_to = datetime.utcnow().date()
+            mkt_date_to = romania_today()
             mkt_date_from = mkt_date_to - timedelta(days=30)
         
         marketing_costs = await get_marketing_costs(mkt_date_from, mkt_date_to, db=db)
@@ -495,8 +496,8 @@ async def get_overall_profitability(
         dt = datetime.strptime(date_from, '%Y-%m-%d')
         month_key = f"{dt.year}-{dt.month:02d}"
     else:
-        now = datetime.utcnow()
-        month_key = f"{now.year}-{now.month:02d}"
+        today_ro = romania_today()
+        month_key = f"{today_ro.year}-{today_ro.month:02d}"
     
     biz_costs_result = await db.execute(
         select(BusinessCost).where(BusinessCost.month == month_key)

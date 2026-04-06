@@ -11,11 +11,13 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso, to_bucharest_date, to_bucharest, date_str_to_utc_start, date_str_to_utc_end
 from app.models import Order, Store, SkuCost
+from app.models.product import Product
 from app.api.sku_risk.computations import compute_final_outcome
 
 logger = logging.getLogger(__name__)
@@ -54,8 +56,8 @@ async def get_sales_velocity(
     # ── 1. Date range ─────────────────────────────────────────────────────
     if date_from and date_to:
         try:
-            dt_from = datetime.fromisoformat(date_from)
-            dt_to = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59)
+            dt_from = date_str_to_utc_start(date_from)
+            dt_to = date_str_to_utc_end(date_to)
         except ValueError:
             dt_from = datetime.utcnow() - timedelta(days=days)
             dt_to = datetime.utcnow()
@@ -83,21 +85,65 @@ async def get_sales_velocity(
     result = await db.execute(query)
     all_orders = result.scalars().all()
 
-    # ── 3. Load stores + SKU costs ────────────────────────────────────────
+    # ── 3. Load stores + SKU costs + stock ──────────────────────────────────
     stores_result = await db.execute(select(Store))
     stores_map: Dict[str, str] = {s.uid: s.name for s in stores_result.scalars().all()}
 
     sku_costs_result = await db.execute(select(SkuCost))
     sku_cost_map: Dict[str, float] = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
 
+    # ── Build store groups based on shared product listings ──────────────
+    # If a product listing covers stores [A, B], orders from A or B for that SKU
+    # should be grouped together. If store C has a separate listing for the same
+    # SKU, it gets its own row.
+    stock_query = await db.execute(
+        select(Product)
+        .where(Product.sku.isnot(None), Product.sku != '', Product.exclude_from_stock == False)
+    )
+    all_products = stock_query.scalars().all()
+
+    # Maps (sku, store_uid) → group_key  and  group_key → stock
+    sku_store_to_group: Dict[str, str] = {}   # "sku::store_uid" → group_key
+    group_stock_map: Dict[str, int] = {}       # group_key → total stock
+    group_stores_map: Dict[str, set] = {}      # group_key → set of store_uids
+    group_names_map: Dict[str, str] = {}       # group_key → display name
+
+    for prod in all_products:
+        if not prod.sku:
+            continue
+        s_uids = prod.store_uids or []
+        if isinstance(s_uids, str):
+            try:
+                import json as _json
+                s_uids = _json.loads(s_uids)
+            except Exception:
+                s_uids = []
+        if not s_uids:
+            s_uids = []
+
+        # The group key is the sorted store_uids signature for this product
+        group_key = f"{prod.sku}::{'|'.join(sorted(s_uids))}" if s_uids else f"{prod.sku}::"
+        group_stock_map[group_key] = group_stock_map.get(group_key, 0) + (prod.stock_available or 0)
+
+        if group_key not in group_stores_map:
+            group_stores_map[group_key] = set()
+        for s_uid in s_uids:
+            sku_store_to_group[f"{prod.sku}::{s_uid}"] = group_key
+            group_stores_map[group_key].add(s_uid)
+
+        # Build display name: join store names
+        if group_key not in group_names_map and s_uids:
+            names = [stores_map.get(u, u) for u in sorted(s_uids)]
+            group_names_map[group_key] = " + ".join(names)
+
     # ── 4. Process orders into current vs previous period ─────────────────
-    # Per-SKU aggregation structures
+    # Per-group aggregation structures
     sku_current: Dict[str, dict] = defaultdict(lambda: {
-        "sku": "", "product_name": "", "stores": set(),
+        "sku": "", "group_key": "", "store_names": "", "product_name": "",
+        "store_uids_in_group": set(),
         "units_sold": 0, "revenue": 0.0, "orders": 0,
         "delivered_units": 0, "total_units": 0,
         "last_sale_date": None, "daily_units": defaultdict(float),
-        "by_store": defaultdict(lambda: {"store_name": "", "units": 0, "revenue": 0.0, "orders": 0}),
         "by_country": defaultdict(lambda: {"units": 0, "revenue": 0.0}),
     })
     sku_previous: Dict[str, dict] = defaultdict(lambda: {"units_sold": 0, "revenue": 0.0, "orders": 0})
@@ -157,14 +203,20 @@ async def get_sales_velocity(
             product_name = inv.get("title_1", "") or ""
 
             if is_current:
-                agg = sku_current[sku]
+                # Look up group for this (sku, store_uid) pair
+                store_lookup = f"{sku}::{order.store_uid or ''}"
+                composite_key = sku_store_to_group.get(store_lookup, store_lookup)
+                agg = sku_current[composite_key]
                 agg["sku"] = sku
+                agg["group_key"] = composite_key
+                agg["store_uids_in_group"].add(order.store_uid or "")
+                # Build display name from all stores in this group
+                agg["store_names"] = group_names_map.get(composite_key, stores_map.get(order.store_uid, order.store_uid or ""))
                 if not agg["product_name"] and product_name:
                     agg["product_name"] = product_name
 
                 agg["total_units"] += qty
                 agg["orders"] += 1
-                agg["stores"].add(order.store_uid)
 
                 if is_delivered:
                     agg["units_sold"] += qty
@@ -176,15 +228,8 @@ async def get_sales_velocity(
                         agg["last_sale_date"] = order_date
 
                     # Daily series
-                    day_key = order_date.strftime("%Y-%m-%d") if order_date else "unknown"
+                    day_key = str(to_bucharest_date(order_date)) if order_date else "unknown"
                     agg["daily_units"][day_key] += qty
-
-                    # By store
-                    sb = agg["by_store"][order.store_uid]
-                    sb["store_name"] = stores_map.get(order.store_uid, order.store_uid)
-                    sb["units"] += qty
-                    sb["revenue"] += line_rev
-                    sb["orders"] += 1
 
                     # By country
                     if order_country:
@@ -203,10 +248,12 @@ async def get_sales_velocity(
                     sa["active_skus"].add(sku)
 
                 if is_delivered:
-                    daily_totals[order_date.strftime("%Y-%m-%d") if order_date else "unknown"]["orders"] += 0  # counted once below
+                    daily_totals[str(to_bucharest_date(order_date)) if order_date else "unknown"]["orders"] += 0  # counted once below
 
             elif is_prev and is_delivered:
-                prev = sku_previous[sku]
+                prev_lookup = f"{sku}::{order.store_uid or ''}"
+                prev_key = sku_store_to_group.get(prev_lookup, prev_lookup)
+                prev = sku_previous[prev_key]
                 prev["units_sold"] += qty
                 prev["revenue"] += line_rev
                 prev["orders"] += 1
@@ -215,7 +262,7 @@ async def get_sales_velocity(
         if is_current:
             total_orders_current += 1
             if is_delivered:
-                day_key = order_date.strftime("%Y-%m-%d") if order_date else "unknown"
+                day_key = str(to_bucharest_date(order_date)) if order_date else "unknown"
                 daily_totals[day_key]["orders"] = daily_totals[day_key].get("orders", 0)
                 # orders counted at order level, not line-item; handle dedup below
 
@@ -227,7 +274,7 @@ async def get_sales_velocity(
                 order.aggregated_status, order.shipment_status, order.fulfillment_status,
             )
             if final_outcome in DELIVERED_OUTCOMES:
-                dk = order.frisbo_created_at.strftime("%Y-%m-%d")
+                dk = str(to_bucharest_date(order.frisbo_created_at))
                 daily_order_count[dk] += 1
     for dk, cnt in daily_order_count.items():
         daily_totals[dk]["orders"] = cnt
@@ -262,7 +309,10 @@ async def get_sales_velocity(
     total_units = sum(a["units_sold"] for a in sku_current.values())
 
     products = []
-    for sku, agg in sku_current.items():
+    for comp_key, agg in sku_current.items():
+        sku = agg["sku"]
+        store_names = agg.get("store_names", "")
+        store_uids_in_group = agg.get("store_uids_in_group", set())
         units = agg["units_sold"]
         if units < min_units:
             continue
@@ -275,7 +325,7 @@ async def get_sales_velocity(
         velocity = _safe_div(units, period_days)
 
         # Previous period comparison
-        prev = sku_previous.get(sku, {"units_sold": 0})
+        prev = sku_previous.get(comp_key, {"units_sold": 0})
         prev_units = prev["units_sold"]
         prev_velocity = _safe_div(prev_units, period_days)
         velocity_change = _safe_div(velocity - prev_velocity, prev_velocity) * 100 if prev_velocity > 0 else (100.0 if velocity > 0 else 0.0)
@@ -294,19 +344,11 @@ async def get_sales_velocity(
         delivery_rate = _safe_div(agg["delivered_units"], agg["total_units"]) * 100
         revenue_share = _safe_div(revenue, total_revenue) * 100
 
-        # Daily series for sparkline (last N days, fill gaps with 0)
+        # Daily series for sparkline — use Romanian dates for labels
         daily_series = []
         for i in range(period_days):
-            d = (dt_from + timedelta(days=i)).strftime("%Y-%m-%d")
+            d = str(to_bucharest(dt_from + timedelta(days=i)).date())
             daily_series.append({"date": d, "units": agg["daily_units"].get(d, 0)})
-
-        # By store
-        by_store = [
-            {"store_uid": uid, "store_name": sb["store_name"], "units": int(sb["units"]),
-             "revenue": round(sb["revenue"], 2), "orders": sb["orders"]}
-            for uid, sb in agg["by_store"].items()
-        ]
-        by_store.sort(key=lambda x: x["units"], reverse=True)
 
         # By country
         by_country = [
@@ -315,10 +357,15 @@ async def get_sales_velocity(
         ]
         by_country.sort(key=lambda x: x["units"], reverse=True)
 
+        stock = group_stock_map.get(comp_key, 0)
+        inv_value = round(unit_cost * stock, 2)
+
         products.append({
             "sku": sku,
+            "store_uid": "|".join(sorted(store_uids_in_group)),
+            "store_name": store_names,
             "product_name": agg["product_name"],
-            "stores_count": len(agg["stores"]),
+            "stores_count": len(store_uids_in_group),
             "units_sold": int(units),
             "revenue": round(revenue, 2),
             "cogs": round(cogs, 2),
@@ -334,8 +381,10 @@ async def get_sales_velocity(
             "delivery_rate": round(delivery_rate, 1),
             "revenue_share": round(revenue_share, 2),
             "daily_series": daily_series,
-            "by_store": by_store,
             "by_country": by_country[:10],
+            "stock_available": stock,
+            "unit_cost": round(unit_cost, 2),
+            "inventory_value": inv_value,
         })
 
     products.sort(key=lambda p: p["velocity"], reverse=True)
@@ -358,7 +407,7 @@ async def get_sales_velocity(
     # ── 7. Daily trends (sorted) ──────────────────────────────────────────
     trends_list = []
     for i in range(period_days):
-        d = (dt_from + timedelta(days=i)).strftime("%Y-%m-%d")
+        d = str(to_bucharest(dt_from + timedelta(days=i)).date())
         dt = daily_totals.get(d, {"units": 0, "revenue": 0.0, "orders": 0})
         trends_list.append({
             "date": d,
@@ -453,8 +502,8 @@ async def get_sales_velocity(
         "store_comparison": store_comparison,
         "alerts": alerts,
         "meta": {
-            "date_from": dt_from.isoformat(),
-            "date_to": dt_to.isoformat(),
+            "date_from": to_bucharest_iso(dt_from),
+            "date_to": to_bucharest_iso(dt_to),
             "period_days": period_days,
             "total_orders": total_orders_all,
             "filters": {

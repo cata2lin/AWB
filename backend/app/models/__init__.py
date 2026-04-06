@@ -14,6 +14,9 @@ from app.models.sku_marketing_cost import SkuMarketingCost
 from app.models.user import User
 from app.models.user_activity import UserActivity
 from app.models.product import Product
+from app.models.purchase_order import PurchaseOrder
+from app.models.purchase_order_item import PurchaseOrderItem
+from app.models.generated_barcode import GeneratedBarcode
 
 __all__ = [
     "Store", "Order", "OrderAwb", "Rule", "RulePreset",
@@ -23,5 +26,7 @@ __all__ = [
     "MarketingDailyCost", "SkuMarketingCost",
     "User", "UserActivity",
     "Product",
+    "PurchaseOrder", "PurchaseOrderItem", "GeneratedBarcode",
 ]
+
 

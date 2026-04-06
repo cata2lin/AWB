@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timezone import romania_today
+
 from app.api.analytics.summary import get_analytics, get_quick_summary
 from app.api.analytics.geographic import get_geographic_stats
 from app.api.analytics.deliverability import get_deliverability_stats
@@ -42,12 +44,12 @@ async def sync_marketing_costs_endpoint(
     if date_from:
         d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
     else:
-        d_from = datetime.utcnow().date().replace(day=1)
+        d_from = romania_today().replace(day=1)
     
     if date_to:
         d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
     else:
-        d_to = datetime.utcnow().date()
+        d_to = romania_today()
     
     result = await sync_marketing_costs(db, d_from, d_to)
     return {"status": "ok", **result}

@@ -9,6 +9,7 @@ from sqlalchemy import select, func, and_, cast, String
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.timezone import date_str_to_utc_start, date_str_to_utc_end, romania_today_start_utc, to_bucharest_iso
 from app.models import Order, Store
 from app.models.order_awb import OrderAwb
 from app.schemas import OrderResponse, OrderFilters, DashboardStats
@@ -74,14 +75,13 @@ def _build_order_conditions(
         conditions.append((Order.transport_cost.is_(None)) | (Order.transport_cost == 0))
     if date_from:
         try:
-            from_date = datetime.strptime(date_from, "%Y-%m-%d")
+            from_date = date_str_to_utc_start(date_from)
             conditions.append(Order.frisbo_created_at >= from_date)
         except ValueError:
             pass
     if date_to:
         try:
-            to_date = datetime.strptime(date_to, "%Y-%m-%d")
-            to_date = to_date.replace(hour=23, minute=59, second=59)
+            to_date = date_str_to_utc_end(date_to)
             conditions.append(Order.frisbo_created_at <= to_date)
         except ValueError:
             pass
@@ -187,15 +187,14 @@ async def get_orders(
     
     if date_from:
         try:
-            from_date = datetime.strptime(date_from, "%Y-%m-%d")
+            from_date = date_str_to_utc_start(date_from)
             conditions.append(Order.frisbo_created_at >= from_date)
         except ValueError:
             pass
     
     if date_to:
         try:
-            to_date = datetime.strptime(date_to, "%Y-%m-%d")
-            to_date = to_date.replace(hour=23, minute=59, second=59)
+            to_date = date_str_to_utc_end(date_to)
             conditions.append(Order.frisbo_created_at <= to_date)
         except ValueError:
             pass
@@ -423,14 +422,13 @@ async def get_order_count(
         )
     if date_from:
         try:
-            from_date = datetime.strptime(date_from, "%Y-%m-%d")
+            from_date = date_str_to_utc_start(date_from)
             conditions.append(Order.frisbo_created_at >= from_date)
         except ValueError:
             pass
     if date_to:
         try:
-            to_date = datetime.strptime(date_to, "%Y-%m-%d")
-            to_date = to_date.replace(hour=23, minute=59, second=59)
+            to_date = date_str_to_utc_end(date_to)
             conditions.append(Order.frisbo_created_at <= to_date)
         except ValueError:
             pass
@@ -507,14 +505,13 @@ async def get_order_totals(
         conditions.append((Order.transport_cost.is_(None)) | (Order.transport_cost == 0))
     if date_from:
         try:
-            from_date = datetime.strptime(date_from, "%Y-%m-%d")
+            from_date = date_str_to_utc_start(date_from)
             conditions.append(Order.frisbo_created_at >= from_date)
         except ValueError:
             pass
     if date_to:
         try:
-            to_date = datetime.strptime(date_to, "%Y-%m-%d")
-            to_date = to_date.replace(hour=23, minute=59, second=59)
+            to_date = date_str_to_utc_end(date_to)
             conditions.append(Order.frisbo_created_at <= to_date)
         except ValueError:
             pass
@@ -579,7 +576,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Get dashboard statistics."""
     from datetime import datetime, timedelta
     
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = romania_today_start_utc()
     
     # Total orders
     total_result = await db.execute(select(func.count(Order.id)))
@@ -890,7 +887,7 @@ async def get_order_awbs(order_uid: str, db: AsyncSession = Depends(get_db)):
                 "csv_status": awb.csv_status,
                 "shipment_status": awb.shipment_status,
                 "is_billable": is_billable_status(awb.csv_status),
-                "created_at": awb.created_at.isoformat() if awb.created_at else None,
+                "created_at": to_bucharest_iso(awb.created_at),
             }
             for awb in awbs
         ]

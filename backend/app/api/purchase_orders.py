@@ -19,11 +19,12 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models import Order, Store, SkuCost
+from app.core.timezone import to_bucharest_iso
+from app.models import Order, Store, SkuCost, PurchaseOrder, PurchaseOrderItem
 from app.models.product import Product
 from app.api.sku_risk.computations import compute_final_outcome
 
@@ -264,6 +265,18 @@ async def get_purchase_orders(
             sku_sales[sku]["revenue"] += price * qty
             sku_sales[sku]["orders"] += 1
 
+    # ── 4b. Load incoming PO stock (from confirmed / in_transit POs) ──────
+    po_incoming_result = await db.execute(
+        select(
+            PurchaseOrderItem.sku,
+            func.sum(PurchaseOrderItem.quantity - PurchaseOrderItem.received_qty),
+        )
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.purchase_order_id)
+        .where(PurchaseOrder.status.in_(["confirmed", "in_transit"]))
+        .group_by(PurchaseOrderItem.sku)
+    )
+    po_incoming_map = {row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()}
+
     period_days = max((dt_to - dt_from).days, 1)
 
     # ── 5. Build product rows from grouped products ───────────────────────
@@ -283,14 +296,17 @@ async def get_purchase_orders(
 
         lead_time = 0 if merged["is_self_produced"] else DEFAULT_LEAD_TIME
 
-        # Days of stock calculation
+        po_incoming = po_incoming_map.get(sku, 0)
+        effective_stock = merged["stock_available"] + po_incoming
+
+        # Days of stock calculation (uses effective stock = current + PO incoming)
         if velocity > 0:
-            days_of_stock = round(merged["stock_available"] / velocity, 1)
+            days_of_stock = round(effective_stock / velocity, 1)
         else:
-            days_of_stock = 9999 if merged["stock_available"] > 0 else 0
+            days_of_stock = 9999 if effective_stock > 0 else 0
 
         reorder_point = round(velocity * lead_time, 0)
-        suggested_qty = max(0, round(velocity * (lead_time + BUFFER_DAYS) - merged["stock_available"], 0))
+        suggested_qty = max(0, round(velocity * (lead_time + BUFFER_DAYS) - effective_stock, 0))
 
         urgency = _classify_urgency(days_of_stock, lead_time, velocity)
 
@@ -306,6 +322,8 @@ async def get_purchase_orders(
             "stock_available": merged["stock_available"],
             "stock_committed": merged["stock_committed"],
             "stock_incoming": merged["stock_incoming"],
+            "po_incoming": po_incoming,
+            "effective_stock": effective_stock,
             "units_sold": int(units_sold),
             "velocity": round(velocity, 2),
             "days_of_stock": days_of_stock if days_of_stock != 9999 else None,
@@ -373,8 +391,8 @@ async def get_purchase_orders(
         "products": products_out,
         "meta": {
             "period_days": period_days,
-            "date_from": dt_from.isoformat(),
-            "date_to": dt_to.isoformat(),
+            "date_from": to_bucharest_iso(dt_from),
+            "date_to": to_bucharest_iso(dt_to),
             "default_lead_time": DEFAULT_LEAD_TIME,
             "self_produced_stores": list(SELF_PRODUCED_STORES),
         },

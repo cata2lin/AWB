@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.core.timezone import to_bucharest_iso
 from app.models.user import User
 
 router = APIRouter()
@@ -78,7 +79,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "display_name": current_user.display_name or current_user.username,
         "role": current_user.role,
         "is_active": current_user.is_active,
-        "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+        "last_login": to_bucharest_iso(current_user.last_login),
     }
 
 
@@ -101,8 +102,8 @@ async def list_users(
                 "display_name": u.display_name or u.username,
                 "role": u.role,
                 "is_active": u.is_active,
-                "created_at": u.created_at.isoformat() if u.created_at else None,
-                "last_login": u.last_login.isoformat() if u.last_login else None,
+                "created_at": to_bucharest_iso(u.created_at),
+                "last_login": to_bucharest_iso(u.last_login),
             }
             for u in users
         ]

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso, romania_now, romania_today_start_utc
 from app.models import SyncLog, Order, Store, OrderAwb
 from app.services.scheduler import scheduler
 
@@ -30,7 +31,7 @@ class BufferedLogHandler(logging.Handler):
     def emit(self, record):
         try:
             entry = {
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": to_bucharest_iso(datetime.utcnow()),
                 "level": record.levelname,
                 "logger": record.name,
                 "message": self.format(record),
@@ -119,7 +120,7 @@ async def get_system_info(db: AsyncSession = Depends(get_db)):
         job_info = {
             "id": job.id,
             "name": job.name,
-            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            "next_run": to_bucharest_iso(job.next_run_time),
             "trigger": str(job.trigger),
         }
         scheduler_jobs.append(job_info)
@@ -129,7 +130,7 @@ async def get_system_info(db: AsyncSession = Depends(get_db)):
     return {
         "uptime": uptime_str,
         "uptime_seconds": int(uptime_seconds),
-        "started_at": datetime.utcfromtimestamp(_app_start_time).isoformat() + "Z",
+        "started_at": to_bucharest_iso(datetime.utcfromtimestamp(_app_start_time)),
         "database": {
             "orders": order_count,
             "stores": store_count,
@@ -137,12 +138,12 @@ async def get_system_info(db: AsyncSession = Depends(get_db)):
         },
         "sync": {
             "status": "running" if running_sync else "idle",
-            "running_since": running_sync.started_at.isoformat() + "Z" if running_sync and running_sync.started_at else None,
-            "last_completed": last_sync.completed_at.isoformat() + "Z" if last_sync and last_sync.completed_at else None,
+            "running_since": to_bucharest_iso(running_sync.started_at) if running_sync else None,
+            "last_completed": to_bucharest_iso(last_sync.completed_at) if last_sync else None,
             "last_fetched": last_sync.orders_fetched if last_sync else 0,
             "last_new": last_sync.orders_new if last_sync else 0,
             "last_updated": last_sync.orders_updated if last_sync else 0,
-            "next_scheduled": next_run.isoformat() if next_run else None,
+            "next_scheduled": to_bucharest_iso(next_run),
         },
         "scheduler": {
             "running": scheduler.running,
@@ -173,8 +174,8 @@ async def get_sync_history_detailed(
             {
                 "id": log.id,
                 "status": log.status,
-                "started_at": log.started_at.isoformat() + "Z" if log.started_at else None,
-                "completed_at": log.completed_at.isoformat() + "Z" if log.completed_at else None,
+                "started_at": to_bucharest_iso(log.started_at),
+                "completed_at": to_bucharest_iso(log.completed_at),
                 "duration_seconds": int((log.completed_at - log.started_at).total_seconds()) if log.completed_at and log.started_at else None,
                 "orders_fetched": log.orders_fetched,
                 "orders_new": log.orders_new,
@@ -195,7 +196,7 @@ async def get_user_activity(db: AsyncSession = Depends(get_db)):
     now = datetime.utcnow()
     five_min_ago = now - timedelta(minutes=5)
     twenty_four_h_ago = now - timedelta(hours=24)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = romania_today_start_utc()
     
     # Get all users
     users_result = await db.execute(select(User).order_by(User.created_at))
@@ -257,8 +258,8 @@ async def get_user_activity(db: AsyncSession = Depends(get_db)):
             "role": user.role,
             "is_active": user.is_active,
             "is_online": is_online,
-            "last_activity": last_activity.isoformat() + "Z" if last_activity else None,
-            "last_login": user.last_login.isoformat() + "Z" if user.last_login else None,
+            "last_activity": to_bucharest_iso(last_activity),
+            "last_login": to_bucharest_iso(user.last_login),
             "requests_today": today_count,
             "requests_24h": day_count,
             "requests_total": total_count,

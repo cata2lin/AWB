@@ -1,0 +1,5 @@
+order_number:      EST142529
+frisbo_created_at: 2026-04-06 06:40:19
+synced_at:         2026-04-06 07:04:51.141013
+fulfilled_at:      2026-04-06 06:47:45
+type:              <class 'datetime.datetime'>

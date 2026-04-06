@@ -44,6 +44,58 @@ export const analyticsApi = {
     },
 }
 
+/** Purchase Order management — CRUD operations. */
+export const purchaseOrdersMgmtApi = {
+    list: async (params = {}) => {
+        const { data } = await api.get('/purchase-orders-mgmt/list', { params })
+        return data
+    },
+    get: async (id) => {
+        const { data } = await api.get(`/purchase-orders-mgmt/${id}`)
+        return data
+    },
+    create: async (body) => {
+        const { data } = await api.post('/purchase-orders-mgmt/create', body)
+        return data
+    },
+    update: async (id, body) => {
+        const { data } = await api.put(`/purchase-orders-mgmt/${id}`, body)
+        return data
+    },
+    updateItems: async (id, items) => {
+        const { data } = await api.put(`/purchase-orders-mgmt/${id}/items`, items)
+        return data
+    },
+    receive: async (id, items) => {
+        const { data } = await api.put(`/purchase-orders-mgmt/${id}/receive`, items)
+        return data
+    },
+    delete: async (id) => {
+        const { data } = await api.delete(`/purchase-orders-mgmt/${id}`)
+        return data
+    },
+    getIncomingStock: async () => {
+        const { data } = await api.get('/purchase-orders-mgmt/incoming-stock')
+        return data
+    },
+}
+
+/** Barcode management — generation and registry. */
+export const barcodesApi = {
+    getMissing: async (params = {}) => {
+        const { data } = await api.get('/purchase-orders-mgmt/barcodes/missing', { params })
+        return data
+    },
+    generate: async (skus) => {
+        const { data } = await api.post('/purchase-orders-mgmt/barcodes/generate', { skus })
+        return data
+    },
+    getRegistry: async () => {
+        const { data } = await api.get('/purchase-orders-mgmt/barcodes/registry')
+        return data
+    },
+}
+
 export const skuMarketingCostsApi = {
     list: async (params = {}) => {
         const { data } = await api.get('/sku-marketing-costs', { params })

@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso, date_str_to_utc_start, date_str_to_utc_end
 from app.models import Order, Store, SkuCost
 from app.api.sku_risk.computations import (
     compute_final_outcome, safe_div, normalize_min_max,
@@ -57,8 +58,8 @@ async def get_sku_risk(
     # ── 1. Build date filter ──────────────────────────────────────────────
     if date_from and date_to:
         try:
-            dt_from = datetime.fromisoformat(date_from)
-            dt_to = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59)
+            dt_from = date_str_to_utc_start(date_from)
+            dt_to = date_str_to_utc_end(date_to)
         except ValueError:
             dt_from = datetime.utcnow() - timedelta(days=days)
             dt_to = datetime.utcnow()
@@ -167,7 +168,7 @@ async def get_sku_risk(
             "order_number": order.order_number,
             "store_uid": order.store_uid,
             "store_name": stores_map.get(order.store_uid, order.store_uid),
-            "date": order.frisbo_created_at.isoformat() if order.frisbo_created_at else None,
+            "date": to_bucharest_iso(order.frisbo_created_at),
             "final_outcome": final_outcome,
             "order_total": order.total_price or 0,
             "shipping_charged": shipping_charged,
@@ -524,8 +525,8 @@ async def get_sku_risk(
             "shipping_coverage_pct": round(safe_div(orders_with_shipping, filtered_total) * 100, 1),
             "unique_skus": len(sku_results),
             "skus_passing_volume": len(scorable),
-            "date_from": dt_from.isoformat(),
-            "date_to": dt_to.isoformat(),
+            "date_from": to_bucharest_iso(dt_from),
+            "date_to": to_bucharest_iso(dt_to),
             "filters": {
                 "store_uids": store_uids,
                 "courier_name": courier_name,

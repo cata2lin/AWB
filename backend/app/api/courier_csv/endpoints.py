@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.timezone import to_bucharest_iso
 from app.models import CourierCsvImport
 from app.services.shipping_estimator import estimate_missing_shipping
 from app.api.courier_csv.parsers import (
@@ -375,7 +376,7 @@ async def get_import_status(import_id: int, db: AsyncSession = Depends(get_db)):
         "unmatched_rows": imp.unmatched_rows,
         "match_rate": round((imp.matched_rows / imp.total_rows * 100) if imp.total_rows > 0 else 0, 1),
         "error_message": imp.error_message,
-        "imported_at": imp.imported_at.isoformat() if imp.imported_at else None,
+        "imported_at": to_bucharest_iso(imp.imported_at),
         "has_saved_file": bool(imp.saved_file_path and os.path.exists(imp.saved_file_path)),
     }
 
@@ -405,7 +406,7 @@ async def get_import_history(
                 "match_rate": round((imp.matched_rows / imp.total_rows * 100) if imp.total_rows > 0 else 0, 1),
                 "status": imp.status,
                 "error_message": imp.error_message,
-                "imported_at": imp.imported_at.isoformat() if imp.imported_at else None,
+                "imported_at": to_bucharest_iso(imp.imported_at),
                 "has_saved_file": bool(imp.saved_file_path and os.path.exists(imp.saved_file_path)),
             }
             for imp in imports

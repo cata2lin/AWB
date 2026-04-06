@@ -7,6 +7,7 @@ from sqlalchemy import select, func, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import to_bucharest_iso, romania_now, romania_today, romania_today_start_utc, to_bucharest
 from app.models import PrintBatch, PrintBatchItem, Order, Store
 
 router = APIRouter()
@@ -39,10 +40,10 @@ async def get_analytics(
     )
     total_printed = printed_count_result.scalar() or 0
     
-    # Orders by day (for chart)
-    daily_query = await db.execute(
+    # Orders by day (for chart) — group in application using Romanian dates
+    daily_raw_query = await db.execute(
         select(
-            func.date(PrintBatch.created_at).label("date"),
+            PrintBatch.created_at,
             func.count(PrintBatchItem.id).label("count")
         )
         .join(PrintBatchItem, PrintBatch.id == PrintBatchItem.batch_id)
@@ -50,18 +51,25 @@ async def get_analytics(
             PrintBatch.created_at >= start_date,
             PrintBatch.status == "completed"
         )
-        .group_by(func.date(PrintBatch.created_at))
-        .order_by(func.date(PrintBatch.created_at))
+        .group_by(PrintBatch.created_at)
     )
+    # Bucket by Romanian local date
+    from collections import defaultdict
+    daily_buckets = defaultdict(int)
+    for row in daily_raw_query.all():
+        ro_date = to_bucharest(row.created_at).date() if row.created_at else None
+        if ro_date:
+            daily_buckets[str(ro_date)] += row.count
     daily_data = [
-        {"date": str(row.date), "printed": row.count}
-        for row in daily_query.all()
+        {"date": d, "printed": c}
+        for d, c in sorted(daily_buckets.items())
     ]
     
-    # Fill in missing days with zeros
+    # Fill in missing days with zeros (Romanian dates)
+    from app.core.timezone import to_bucharest_date
     date_set = {d["date"] for d in daily_data}
-    current = start_date.date()
-    end = datetime.utcnow().date()
+    current = to_bucharest(start_date).date()
+    end = romania_today()
     filled_daily = []
     while current <= end:
         date_str = str(current)
@@ -73,8 +81,9 @@ async def get_analytics(
         })
         current += timedelta(days=1)
     
-    # Orders by hour (for today)
-    today = datetime.utcnow().date()
+    # Orders by hour (for today) — use Romanian today UTC boundaries
+    today_start_utc = romania_today_start_utc()
+    tomorrow_start_utc = today_start_utc + timedelta(days=1)
     hourly_query = await db.execute(
         select(
             extract("hour", PrintBatch.created_at).label("hour"),
@@ -82,12 +91,20 @@ async def get_analytics(
         )
         .join(PrintBatchItem, PrintBatch.id == PrintBatchItem.batch_id)
         .where(
-            func.date(PrintBatch.created_at) == today,
+            PrintBatch.created_at >= today_start_utc,
+            PrintBatch.created_at < tomorrow_start_utc,
             PrintBatch.status == "completed"
         )
         .group_by(extract("hour", PrintBatch.created_at))
     )
-    hourly_data_raw = {int(row.hour): row.count for row in hourly_query.all()}
+    # Convert UTC hours to Romanian hours for display
+    hourly_data_raw_utc = {int(row.hour): row.count for row in hourly_query.all()}
+    # Shift UTC hours to Romanian hours (current offset)
+    ro_offset = int(romania_now().utcoffset().total_seconds() // 3600)
+    hourly_data_raw = {}
+    for utc_h, count in hourly_data_raw_utc.items():
+        ro_h = (utc_h + ro_offset) % 24
+        hourly_data_raw[ro_h] = hourly_data_raw.get(ro_h, 0) + count
     hourly_data = [
         {"hour": f"{h:02d}:00", "count": hourly_data_raw.get(h, 0)}
         for h in range(24)
@@ -115,7 +132,7 @@ async def get_analytics(
         sessions.append({
             "id": batch.id,
             "batch_number": batch.batch_number,
-            "created_at": batch.created_at.isoformat() if batch.created_at else None,
+            "created_at": to_bucharest_iso(batch.created_at),
             "order_count": order_count,
             "status": batch.status
         })
@@ -123,10 +140,11 @@ async def get_analytics(
     # Calculate KPIs
     avg_per_day = round(total_printed / max(days, 1), 1) if total_printed > 0 else 0
     
-    # Batches today
+    # Batches today (Romanian today)
     batches_today_result = await db.execute(
         select(func.count(PrintBatch.id)).where(
-            func.date(PrintBatch.created_at) == today,
+            PrintBatch.created_at >= today_start_utc,
+            PrintBatch.created_at < tomorrow_start_utc,
             PrintBatch.status == "completed"
         )
     )
@@ -175,14 +193,17 @@ async def get_analytics(
 async def get_quick_summary(db: AsyncSession = Depends(get_db)):
     """Quick summary for dashboard cards."""
     
-    today = datetime.utcnow().date()
+    # Romanian today boundaries for "printed today" count
+    today_start_utc = romania_today_start_utc()
+    tomorrow_start_utc = today_start_utc + timedelta(days=1)
     
     # Orders printed today
     today_result = await db.execute(
         select(func.count(PrintBatchItem.id))
         .join(PrintBatch)
         .where(
-            func.date(PrintBatch.created_at) == today,
+            PrintBatch.created_at >= today_start_utc,
+            PrintBatch.created_at < tomorrow_start_utc,
             PrintBatch.status == "completed"
         )
     )

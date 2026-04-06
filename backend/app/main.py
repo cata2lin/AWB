@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products, purchase_orders
+from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products, purchase_orders, purchase_order_mgmt
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.services.scheduler import scheduler
@@ -19,14 +19,14 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # Sync BNR exchange rates on startup
-    try:
-        async with AsyncSessionLocal() as db:
-            await exchange_rates.sync_bnr_rates(db)
-            await db.commit()
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"BNR rate sync on startup failed: {e}")
+    # Sync BNR exchange rates on startup — DISABLED (using production DB, live server handles this)
+    # try:
+    #     async with AsyncSessionLocal() as db:
+    #         await exchange_rates.sync_bnr_rates(db)
+    #         await db.commit()
+    # except Exception as e:
+    #     import logging
+    #     logging.getLogger(__name__).warning(f"BNR rate sync on startup failed: {e}")
     
     # Auto-create default admin user if no users exist
     try:
@@ -72,13 +72,13 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger(__name__).warning(f"Stale sync cleanup failed: {e}")
     
-    # Start background scheduler
-    scheduler.start()
+    # Start background scheduler — DISABLED (using production DB, live server handles syncs)
+    # scheduler.start()
     
     yield
     
-    # Shutdown
-    scheduler.shutdown()
+    # Shutdown — scheduler disabled
+    # scheduler.shutdown()
 
 
 app = FastAPI(
@@ -128,6 +128,7 @@ app.include_router(sku_marketing_costs.router, prefix="/api", tags=["sku-marketi
 app.include_router(system.router, prefix="/api/system", tags=["system"])
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(purchase_orders.router, prefix="/api", tags=["purchase-orders"])
+app.include_router(purchase_order_mgmt.router, prefix="/api", tags=["purchase-orders-management"])
 
 
 @app.get("/api/health")

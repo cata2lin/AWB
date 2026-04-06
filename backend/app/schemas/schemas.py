@@ -1,14 +1,44 @@
 """
 Pydantic schemas for API request/response validation.
+
+All datetime fields are automatically converted from UTC to Europe/Bucharest
+when serialized to JSON (via the RomanianTimeModel base class).
 """
 from datetime import datetime
 from typing import Optional, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
+
+from app.core.timezone import to_bucharest_iso
+
+
+class RomanianTimeModel(BaseModel):
+    """
+    Base model that auto-converts all datetime fields from UTC to Romanian time.
+    
+    Subclass this instead of BaseModel for any response schema with datetime fields.
+    Uses model_serializer to post-process the serialized dict.
+    """
+    
+    @model_serializer(mode="wrap")
+    def serialize_with_romanian_time(self, handler):
+        """Wrap default serialization and convert all datetime values.
+        
+        Note: In Pydantic v2 JSON mode, handler() already converts datetime
+        to strings, so isinstance(value, datetime) would never match.
+        We read the original model attribute to detect datetime fields.
+        """
+        data = handler(self)
+        if isinstance(data, dict):
+            for key in data:
+                field_value = getattr(self, key, None)
+                if isinstance(field_value, datetime):
+                    data[key] = to_bucharest_iso(field_value)
+        return data
 
 
 # ==================== Store Schemas ====================
 
-class StoreBase(BaseModel):
+class StoreBase(RomanianTimeModel):
     name: str
     color_code: str = "#6366f1"
     shopify_domain: Optional[str] = None
@@ -47,7 +77,7 @@ class LineItemSchema(BaseModel):
     price: Optional[float] = None
 
 
-class OrderBase(BaseModel):
+class OrderBase(RomanianTimeModel):
     uid: str
     order_number: str
     store_uid: str
@@ -120,7 +150,7 @@ class RuleGroupConfig(BaseModel):
     description: Optional[str] = None
 
 
-class RuleBase(BaseModel):
+class RuleBase(RomanianTimeModel):
     name: str
     priority: int = 0
     is_active: bool = True
@@ -181,7 +211,7 @@ class PrintBatchCreate(BaseModel):
     groups: List[PrintGroupPreview]
 
 
-class PrintBatchResponse(BaseModel):
+class PrintBatchResponse(RomanianTimeModel):
     id: int
     batch_number: str
     file_path: str
@@ -196,7 +226,7 @@ class PrintBatchResponse(BaseModel):
 
 # ==================== Sync Schemas ====================
 
-class SyncStatusResponse(BaseModel):
+class SyncStatusResponse(RomanianTimeModel):
     status: str
     last_sync: Optional[datetime] = None
     orders_fetched: int = 0
@@ -238,7 +268,7 @@ class RulePresetCreate(BaseModel):
     description: Optional[str] = None
 
 
-class RulePresetResponse(BaseModel):
+class RulePresetResponse(RomanianTimeModel):
     """Preset response with metadata."""
     id: int
     name: str
