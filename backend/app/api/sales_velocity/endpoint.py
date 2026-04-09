@@ -419,7 +419,8 @@ async def get_sales_velocity(
     # ── 8. Store comparison ───────────────────────────────────────────────
     store_comparison = []
     for store_uid, sa in store_agg.items():
-        store_skus = [p for p in products if any(bs["store_uid"] == store_uid for bs in p["by_store"])]
+        # Products now have store_uid as pipe-separated UIDs (e.g. "uid1|uid2")
+        store_skus = [p for p in products if store_uid in (p.get("store_uid") or "").split("|")]
         store_skus.sort(key=lambda x: x["velocity"], reverse=True)
         top5 = [{"sku": s["sku"], "velocity": s["velocity"], "units_sold": s["units_sold"]} for s in store_skus[:5]]
 
