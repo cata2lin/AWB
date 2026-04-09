@@ -117,15 +117,18 @@ async def get_system_info(db: AsyncSession = Depends(get_db)):
     next_run = None
     scheduler_jobs = []
     for job in jobs:
+        # APScheduler v3 uses next_run_time, v4 uses next_fire_time
+        job_next = getattr(job, 'next_run_time', None) or getattr(job, 'next_fire_time', None)
+        job_trigger = getattr(job, 'trigger', None)
         job_info = {
-            "id": job.id,
-            "name": job.name,
-            "next_run": to_bucharest_iso(job.next_run_time),
-            "trigger": str(job.trigger),
+            "id": getattr(job, 'id', str(job)),
+            "name": getattr(job, 'name', ''),
+            "next_run": to_bucharest_iso(job_next) if job_next else None,
+            "trigger": str(job_trigger) if job_trigger else "",
         }
         scheduler_jobs.append(job_info)
-        if job.next_run_time and (next_run is None or job.next_run_time < next_run):
-            next_run = job.next_run_time
+        if job_next and (next_run is None or job_next < next_run):
+            next_run = job_next
     
     return {
         "uptime": uptime_str,
