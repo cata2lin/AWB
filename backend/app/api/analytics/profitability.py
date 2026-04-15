@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.timezone import date_str_to_utc_start, date_str_to_utc_end, to_bucharest_date, romania_today
 from app.models import Order, Store, SkuCost
+from app.models.product import Product
 from app.models.business_cost import BusinessCost
 from app.api.profitability_config import get_or_create_config
 
@@ -120,6 +121,16 @@ async def get_overall_profitability(
     # Get all SKU costs as a lookup
     sku_costs_result = await db.execute(select(SkuCost))
     sku_costs_map = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
+    
+    # Exclude products marked as "do not take into account to stock" from COGS
+    excluded_result = await db.execute(
+        select(Product.sku).where(Product.exclude_from_stock == True, Product.sku.isnot(None))
+    )
+    excluded_skus = {row[0] for row in excluded_result.all()}
+    if excluded_skus:
+        for esku in excluded_skus:
+            sku_costs_map.pop(esku, None)
+        logger.info(f"P&L: excluded {len(excluded_skus)} SKUs from COGS (exclude_from_stock=True)")
     
     # Get store names
     stores_result = await db.execute(select(Store))
