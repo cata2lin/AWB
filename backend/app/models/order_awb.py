@@ -11,10 +11,13 @@ from app.core.database import Base
 # These are AWBs that were created but never actually shipped/used.
 #
 # Sameday/DPD numeric statuses:
-#   0 = "Fara comanda" (no order)
 #   1 = "Neridicat" (not picked up)
 #   7 = "Anulat" (cancelled)
 #   8 = "Inchis intern" (closed internally)
+#
+# NOTE: "0 - Fara comanda" is NOT non-billable. DPD Bulgaria uses this
+# status for shipments created via API (Frisbo) — they ARE shipped and
+# delivered, just not created through DPD's own ordering portal.
 #
 # Packeta text statuses:
 #   "Expedierea a fost înregistrată." (registered but not shipped)
@@ -27,12 +30,10 @@ from app.core.database import Base
 
 NON_BILLABLE_STATUS_PATTERNS = [
     # Exact numeric codes (Sameday/DPD Status column)
-    '0',
     '1',
     '7',
     '8',
     # Sameday/DPD State Name column
-    '0 - Fara comanda',
     '1 - Neridicat',
     '7 - Anulat',
     '8 - Inchis intern',
@@ -46,7 +47,6 @@ NON_BILLABLE_STATUS_SUBSTRINGS = [
     'anulat',            # "Expedierea a fost anulată" / "7 - Anulat"
     'cancelled',         # Packeta EN "Cancelled"
     'neridicat',         # "1 - Neridicat"
-    'fara comanda',      # "0 - Fara comanda"
     'inchis intern',     # "8 - Inchis intern"
     'înregistrată',      # "Expedierea a fost înregistrată."
     'așteptăm ridicarea',   # "Așteptăm ridicarea tuturor coletelor." (export_AWB RO)
