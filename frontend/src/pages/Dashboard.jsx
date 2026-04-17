@@ -142,6 +142,7 @@ export default function Dashboard() {
     const getSyncTypeBadge = (syncType) => {
         const config = {
             '45_day': { label: '45 Days', className: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' },
+            'incremental': { label: 'Incremental', className: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
             'full': { label: 'Full', className: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300' },
             'custom': { label: 'Custom', className: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300' },
             'product': { label: 'Products', className: 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300' },
@@ -241,6 +242,16 @@ export default function Dashboard() {
                                     <div>
                                         <div className="font-medium">Sync 45 Days</div>
                                         <div className="text-xs text-zinc-400">Last 45 days of orders</div>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => handleSync('incremental')}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 flex items-center gap-3 transition-colors"
+                                >
+                                    <Activity className="w-4 h-4 text-emerald-500" />
+                                    <div>
+                                        <div className="font-medium">Quick Refresh</div>
+                                        <div className="text-xs text-zinc-400">Only changed orders (fast)</div>
                                     </div>
                                 </button>
                                 <button

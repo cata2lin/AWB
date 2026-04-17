@@ -100,10 +100,10 @@ async def trigger_sync(
     if running_sync:
         if running_sync.started_at:
             age = datetime.utcnow() - running_sync.started_at
-            if age > timedelta(minutes=10):
+            if age > timedelta(minutes=60):
                 running_sync.status = "failed"
                 running_sync.completed_at = datetime.utcnow()
-                running_sync.error_message = "Sync timed out (exceeded 10 minutes)"
+                running_sync.error_message = "Sync timed out (exceeded 60 minutes)"
                 await db.commit()
             else:
                 return SyncTriggerResponse(
@@ -135,7 +135,7 @@ async def trigger_sync(
         date_to=req.date_to,
     )
     
-    type_labels = {"45_day": "45-day", "full": "Full", "custom": "Custom"}
+    type_labels = {"45_day": "45-day", "full": "Full", "custom": "Custom", "incremental": "Incremental"}
     label = type_labels.get(req.sync_type, req.sync_type)
     return SyncTriggerResponse(
         message=f"{label} sync triggered successfully",
@@ -193,6 +193,7 @@ async def get_sync_history(
             "orders_fetched": log.orders_fetched,
             "orders_new": log.orders_new,
             "orders_updated": log.orders_updated,
+            "orders_skipped": getattr(log, "orders_skipped", 0) or 0,
             "store_uids": getattr(log, "store_uids", None),
             "date_from": getattr(log, "date_from", None),
             "date_to": getattr(log, "date_to", None),

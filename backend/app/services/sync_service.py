@@ -3,13 +3,15 @@ Order synchronization service.
 
 Fetches orders from Frisbo and syncs them to local database.
 - Multi-org support: iterates through ALL organization tokens
-- Default sync: orders created in the last 45 days
-- Full sync: all orders
-- TRUE BATCH SAVING: saves every 100 orders as they are fetched (not at the end)
+- Incremental sync: uses updated_at_start for fast delta syncs (default)
+- Window sync: orders created in the last 45 days (periodic full refresh)
+- Full sync: all orders (manual only)
+- TRUE BATCH SAVING: saves every 100 orders as they are fetched
+- PER-ORDER ERROR ISOLATION: one bad order doesn't kill the batch
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, AsyncGenerator, List, Dict
+from typing import Optional, List
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,9 +23,24 @@ from app.services.frisbo.parser import parse_order
 
 logger = logging.getLogger(__name__)
 
-# Default: sync orders created in the last 45 days
-DEFAULT_SYNC_DAYS = 45
-BATCH_SIZE = 100  # Save to database every N orders
+# Configuration
+DEFAULT_SYNC_DAYS = 45          # Window sync: orders created in the last N days
+INCREMENTAL_OVERLAP_MIN = 10    # Overlap buffer for incremental sync (handles clock drift)
+BATCH_SIZE = 100                # Save to database every N orders
+
+
+async def get_last_successful_sync_time() -> Optional[datetime]:
+    """Get the completed_at timestamp of the last successful order sync."""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(SyncLog.completed_at)
+            .where(SyncLog.status == "completed")
+            .where(SyncLog.sync_type.in_(["45_day", "incremental", "full", "custom"]))
+            .order_by(SyncLog.completed_at.desc())
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        return row
 
 
 async def sync_orders(
@@ -40,13 +57,11 @@ async def sync_orders(
     Iterates through every org token in FRISBO_ORG_TOKENS.
     For each org, does streaming batch fetch + save (100 orders at a time).
     
-    Args:
-        sync_id: ID of the SyncLog entry to update
-        full_sync: If True, fetch ALL orders. If False, fetch only last 45 days.
-        sync_type: "45_day", "full", "custom"
-        store_uids: Optional list of store UIDs to filter (only sync matching orgs)
-        date_from: Optional ISO start date for custom sync
-        date_to: Optional ISO end date for custom sync
+    Sync types:
+        - "incremental": Uses updated_at_start from last sync (fast, seconds)
+        - "45_day": Window sync — created_at within last 45 days (medium)
+        - "full": All orders (slow, minutes)
+        - "custom": User-specified date range
     """
     org_tokens = settings.get_org_tokens()
     if not org_tokens:
@@ -88,28 +103,50 @@ async def sync_orders(
                     pass
             await db.commit()
             
-            # Determine date range for sync
+            # ── Determine API filters based on sync type ──
             created_at_start = None
             created_at_end = None
-            if sync_type == "custom" and date_from:
+            updated_at_start = None
+            
+            if sync_type == "incremental":
+                # INCREMENTAL: fetch only orders changed since last sync
+                last_sync_time = await get_last_successful_sync_time()
+                if last_sync_time:
+                    # Add overlap buffer for clock drift between Frisbo and our server
+                    incremental_since = last_sync_time - timedelta(minutes=INCREMENTAL_OVERLAP_MIN)
+                    updated_at_start = incremental_since.isoformat()
+                    sync_log.incremental_since = incremental_since
+                    logger.info(f"📦 INCREMENTAL SYNC: Orders updated since {updated_at_start}")
+                else:
+                    # No previous sync → fall back to 45-day window
+                    logger.info("📦 INCREMENTAL SYNC: No previous sync found, falling back to 45-day window")
+                    cutoff_date = datetime.utcnow() - timedelta(days=DEFAULT_SYNC_DAYS)
+                    created_at_start = cutoff_date.isoformat()
+                    sync_log.sync_type = "45_day"
+                    
+            elif sync_type == "custom" and date_from:
                 # Custom sync: use user-provided dates
                 created_at_start = date_from
                 created_at_end = date_to
                 logger.info(f"📦 CUSTOM SYNC: Orders from {date_from} to {date_to or 'now'}")
                 if store_uids:
                     logger.info(f"📦 CUSTOM SYNC: Filtering stores: {store_uids}")
+                    
             elif not full_sync:
-                # Smart sync: only orders from the last 45 days
+                # 45-day window sync
                 cutoff_date = datetime.utcnow() - timedelta(days=DEFAULT_SYNC_DAYS)
                 created_at_start = cutoff_date.isoformat()
-                logger.info(f"📦 SMART SYNC: Fetching orders created since {created_at_start} (last {DEFAULT_SYNC_DAYS} days)")
+                logger.info(f"📦 WINDOW SYNC: Fetching orders created since {created_at_start} (last {DEFAULT_SYNC_DAYS} days)")
             else:
                 logger.info(f"📦 FULL SYNC: Fetching all orders")
+            
+            await db.commit()
             
             # Global counters across all orgs
             total_fetched = 0
             new_count = 0
             updated_count = 0
+            skipped_count = 0
             
             # --- Iterate through ALL organizations ---
             for org_idx, org in enumerate(org_tokens):
@@ -136,7 +173,8 @@ async def sync_orders(
                             limit=BATCH_SIZE,
                             store_uids=store_uids,
                             created_at_start=created_at_start,
-                            created_at_end=created_at_end
+                            created_at_end=created_at_end,
+                            updated_at_start=updated_at_start,
                         )
                     except Exception as e:
                         logger.error(f"📦 API error for org '{org_name}' at skip={skip}: {e}")
@@ -162,152 +200,178 @@ async def sync_orders(
                     org_fetched += batch_fetched
                     total_fetched += batch_fetched
                     
-                    # Process and save this batch immediately
+                    # Process and save this batch with PER-ORDER error isolation
+                    batch_skipped = 0
                     for raw_order in orders_batch:
                         if not isinstance(raw_order, dict):
                             continue
                         
-                        parsed = parse_order(raw_order)
-                        
-                        # Ensure store exists
-                        await ensure_store_exists(db, parsed["store_uid"])
-                        
-                        # Check if order exists
-                        existing_result = await db.execute(
-                            select(Order).where(Order.uid == parsed["uid"])
-                        )
-                        existing = existing_result.scalar_one_or_none()
-                        
-                        if existing:
-                            # Update existing order — statuses, tracking, pricing, AND line items
-                            existing.tracking_number = parsed.get("tracking_number") or existing.tracking_number
-                            existing.awb_pdf_url = parsed.get("awb_pdf_url") or existing.awb_pdf_url
-                            existing.courier_name = parsed.get("courier_name") or existing.courier_name
-                            existing.shipment_uid = parsed.get("shipment_uid") or existing.shipment_uid
-                            existing.fulfillment_status = parsed["fulfillment_status"]
-                            existing.shipment_status = parsed.get("shipment_status")
-                            existing.aggregated_status = parsed.get("aggregated_status")
-                            # Auto-clear stale courier alert when status moves past 'waiting_for_courier'
-                            new_agg = parsed.get("aggregated_status")
-                            if (existing.waiting_for_courier_since and
-                                    new_agg and new_agg != "waiting_for_courier"):
-                                existing.waiting_for_courier_since = None
-                            existing.fulfilled_at = parsed.get("fulfilled_at") or existing.fulfilled_at
-                            # Update pricing
-                            existing.total_price = parsed.get("total_price") or existing.total_price
-                            existing.subtotal_price = parsed.get("subtotal_price") or existing.subtotal_price
-                            existing.total_discounts = parsed.get("total_discounts") or existing.total_discounts
-                            existing.currency = parsed.get("currency") or existing.currency
-                            existing.payment_gateway = parsed.get("payment_gateway") or existing.payment_gateway
-                            # Update line items (captures added/removed items in Frisbo)
-                            if parsed.get("line_items") is not None:
-                                existing.line_items = parsed["line_items"]
-                                existing.item_count = parsed["item_count"]
-                                existing.unique_sku_count = parsed["unique_sku_count"]
-                            existing.synced_at = datetime.utcnow()
-                            updated_count += 1
-                            order_obj = existing
-                        else:
-                            # Create new order
-                            order_obj = Order(
-                                uid=parsed["uid"],
-                                order_number=parsed["order_number"],
-                                store_uid=parsed["store_uid"],
-                                customer_name=parsed["customer_name"],
-                                customer_email=parsed.get("customer_email"),
-                                shipping_address=parsed.get("shipping_address"),
-                                line_items=parsed["line_items"],
-                                item_count=parsed["item_count"],
-                                unique_sku_count=parsed["unique_sku_count"],
-                                tracking_number=parsed.get("tracking_number"),
-                                courier_name=parsed.get("courier_name"),
-                                awb_pdf_url=parsed.get("awb_pdf_url"),
-                                shipment_uid=parsed.get("shipment_uid"),
-                                fulfillment_status=parsed["fulfillment_status"],
-                                financial_status=parsed.get("financial_status", "pending"),
-                                shipment_status=parsed.get("shipment_status"),
-                                aggregated_status=parsed.get("aggregated_status"),
-                                frisbo_created_at=parsed.get("frisbo_created_at"),
-                                fulfilled_at=parsed.get("fulfilled_at"),
-                                # Pricing
-                                total_price=parsed.get("total_price"),
-                                subtotal_price=parsed.get("subtotal_price"),
-                                total_discounts=parsed.get("total_discounts"),
-                                currency=parsed.get("currency", "RON"),
-                                payment_gateway=parsed.get("payment_gateway"),
-                                synced_at=datetime.utcnow()
-                            )
-                            db.add(order_obj)
-                            new_count += 1
-                        
-                        # --- Upsert order_awbs for multi-AWB support ---
-                        all_awbs = parsed.get("all_awbs", [])
-                        if all_awbs:
-                            await db.flush()  # Ensure order_obj.id is set
-                            # Get existing AWBs for this order
-                            existing_awbs_result = await db.execute(
-                                select(OrderAwb).where(OrderAwb.order_id == order_obj.id)
-                            )
-                            existing_awbs = {oa.tracking_number: oa for oa in existing_awbs_result.scalars().all()}
+                        try:
+                            parsed = parse_order(raw_order)
                             
-                            for awb_data in all_awbs:
-                                tn = awb_data["tracking_number"]
-                                if tn in existing_awbs:
-                                    # Update existing AWB (preserve csv_import costs, update shipment data)
-                                    existing_awb = existing_awbs[tn]
-                                    existing_awb.courier_name = awb_data.get("courier_name") or existing_awb.courier_name
-                                    existing_awb.awb_type = awb_data.get("awb_type") or existing_awb.awb_type
-                                    # Update Frisbo shipment data (these change over time)
-                                    existing_awb.shipment_uid = awb_data.get("shipment_uid") or existing_awb.shipment_uid
-                                    existing_awb.awb_pdf_url = awb_data.get("awb_pdf_url") or existing_awb.awb_pdf_url
-                                    existing_awb.awb_pdf_format = awb_data.get("awb_pdf_format") or existing_awb.awb_pdf_format
-                                    existing_awb.shipment_status = awb_data.get("shipment_status") or existing_awb.shipment_status
-                                    existing_awb.shipment_status_date = awb_data.get("shipment_status_date") or existing_awb.shipment_status_date
-                                    existing_awb.shipment_events = awb_data.get("shipment_events") or existing_awb.shipment_events
-                                    existing_awb.is_return_label = awb_data.get("is_return_label") if awb_data.get("is_return_label") is not None else existing_awb.is_return_label
-                                    existing_awb.is_redirect_label = awb_data.get("is_redirect_label") if awb_data.get("is_redirect_label") is not None else existing_awb.is_redirect_label
-                                    existing_awb.paid_by = awb_data.get("paid_by") or existing_awb.paid_by
-                                    existing_awb.cod_value = awb_data.get("cod_value") if awb_data.get("cod_value") is not None else existing_awb.cod_value
-                                    existing_awb.cod_currency = awb_data.get("cod_currency") or existing_awb.cod_currency
-                                    existing_awb.shipment_created_at = awb_data.get("shipment_created_at") or existing_awb.shipment_created_at
-                                else:
-                                    # Create new AWB record with full shipment data
-                                    new_awb = OrderAwb(
-                                        order_id=order_obj.id,
-                                        tracking_number=tn,
-                                        courier_name=awb_data.get("courier_name"),
-                                        awb_type=awb_data.get("awb_type", "outbound"),
-                                        shipment_uid=awb_data.get("shipment_uid"),
-                                        awb_pdf_url=awb_data.get("awb_pdf_url"),
-                                        awb_pdf_format=awb_data.get("awb_pdf_format"),
-                                        shipment_status=awb_data.get("shipment_status"),
-                                        shipment_status_date=awb_data.get("shipment_status_date"),
-                                        is_return_label=awb_data.get("is_return_label", False),
-                                        is_redirect_label=awb_data.get("is_redirect_label", False),
-                                        paid_by=awb_data.get("paid_by"),
-                                        cod_value=awb_data.get("cod_value"),
-                                        cod_currency=awb_data.get("cod_currency"),
-                                        shipment_created_at=awb_data.get("shipment_created_at"),
-                                        shipment_events=awb_data.get("shipment_events"),
-                                        data_source="frisbo_sync",
-                                        created_at=datetime.utcnow(),
-                                    )
-                                    db.add(new_awb)
+                            # Ensure store exists
+                            await ensure_store_exists(db, parsed["store_uid"])
+                            
+                            # Check if order exists
+                            existing_result = await db.execute(
+                                select(Order).where(Order.uid == parsed["uid"])
+                            )
+                            existing = existing_result.scalar_one_or_none()
+                            
+                            if existing:
+                                # Update existing order — statuses, tracking, pricing, AND line items
+                                existing.tracking_number = parsed.get("tracking_number") or existing.tracking_number
+                                existing.awb_pdf_url = parsed.get("awb_pdf_url") or existing.awb_pdf_url
+                                existing.courier_name = parsed.get("courier_name") or existing.courier_name
+                                existing.shipment_uid = parsed.get("shipment_uid") or existing.shipment_uid
+                                existing.fulfillment_status = parsed["fulfillment_status"]
+                                existing.shipment_status = parsed.get("shipment_status") or existing.shipment_status
+                                existing.aggregated_status = parsed.get("aggregated_status") or existing.aggregated_status
+                                # Auto-clear stale courier alert when status moves past 'waiting_for_courier'
+                                new_agg = parsed.get("aggregated_status")
+                                if (existing.waiting_for_courier_since and
+                                        new_agg and new_agg != "waiting_for_courier"):
+                                    existing.waiting_for_courier_since = None
+                                existing.fulfilled_at = parsed.get("fulfilled_at") or existing.fulfilled_at
+                                # Update pricing
+                                existing.total_price = parsed.get("total_price") or existing.total_price
+                                existing.subtotal_price = parsed.get("subtotal_price") or existing.subtotal_price
+                                existing.total_discounts = parsed.get("total_discounts") or existing.total_discounts
+                                existing.currency = parsed.get("currency") or existing.currency
+                                existing.payment_gateway = parsed.get("payment_gateway") or existing.payment_gateway
+                                # Update line items (captures added/removed items in Frisbo)
+                                if parsed.get("line_items") is not None:
+                                    existing.line_items = parsed["line_items"]
+                                    existing.item_count = parsed["item_count"]
+                                    existing.unique_sku_count = parsed["unique_sku_count"]
+                                existing.synced_at = datetime.utcnow()
+                                updated_count += 1
+                                order_obj = existing
+                            else:
+                                # Create new order
+                                order_obj = Order(
+                                    uid=parsed["uid"],
+                                    order_number=parsed["order_number"],
+                                    store_uid=parsed["store_uid"],
+                                    customer_name=parsed["customer_name"],
+                                    customer_email=parsed.get("customer_email"),
+                                    shipping_address=parsed.get("shipping_address"),
+                                    line_items=parsed["line_items"],
+                                    item_count=parsed["item_count"],
+                                    unique_sku_count=parsed["unique_sku_count"],
+                                    tracking_number=parsed.get("tracking_number"),
+                                    courier_name=parsed.get("courier_name"),
+                                    awb_pdf_url=parsed.get("awb_pdf_url"),
+                                    shipment_uid=parsed.get("shipment_uid"),
+                                    fulfillment_status=parsed["fulfillment_status"],
+                                    financial_status=parsed.get("financial_status", "pending"),
+                                    shipment_status=parsed.get("shipment_status"),
+                                    aggregated_status=parsed.get("aggregated_status"),
+                                    frisbo_created_at=parsed.get("frisbo_created_at"),
+                                    fulfilled_at=parsed.get("fulfilled_at"),
+                                    # Pricing
+                                    total_price=parsed.get("total_price"),
+                                    subtotal_price=parsed.get("subtotal_price"),
+                                    total_discounts=parsed.get("total_discounts"),
+                                    currency=parsed.get("currency", "RON"),
+                                    payment_gateway=parsed.get("payment_gateway"),
+                                    synced_at=datetime.utcnow()
+                                )
+                                db.add(order_obj)
+                                new_count += 1
+                            
+                            # --- Upsert order_awbs for multi-AWB support ---
+                            all_awbs = parsed.get("all_awbs", [])
+                            if all_awbs:
+                                await db.flush()  # Ensure order_obj.id is set
+                                # Get existing AWBs for this order
+                                existing_awbs_result = await db.execute(
+                                    select(OrderAwb).where(OrderAwb.order_id == order_obj.id)
+                                )
+                                existing_awbs = {oa.tracking_number: oa for oa in existing_awbs_result.scalars().all()}
+                                
+                                for awb_data in all_awbs:
+                                    tn = awb_data["tracking_number"]
+                                    if tn in existing_awbs:
+                                        # Update existing AWB (preserve csv_import costs, update shipment data)
+                                        existing_awb = existing_awbs[tn]
+                                        existing_awb.courier_name = awb_data.get("courier_name") or existing_awb.courier_name
+                                        existing_awb.awb_type = awb_data.get("awb_type") or existing_awb.awb_type
+                                        # Update Frisbo shipment data (these change over time)
+                                        existing_awb.shipment_uid = awb_data.get("shipment_uid") or existing_awb.shipment_uid
+                                        existing_awb.awb_pdf_url = awb_data.get("awb_pdf_url") or existing_awb.awb_pdf_url
+                                        existing_awb.awb_pdf_format = awb_data.get("awb_pdf_format") or existing_awb.awb_pdf_format
+                                        existing_awb.shipment_status = awb_data.get("shipment_status") or existing_awb.shipment_status
+                                        existing_awb.shipment_status_date = awb_data.get("shipment_status_date") or existing_awb.shipment_status_date
+                                        existing_awb.shipment_events = awb_data.get("shipment_events") or existing_awb.shipment_events
+                                        existing_awb.is_return_label = awb_data.get("is_return_label") if awb_data.get("is_return_label") is not None else existing_awb.is_return_label
+                                        existing_awb.is_redirect_label = awb_data.get("is_redirect_label") if awb_data.get("is_redirect_label") is not None else existing_awb.is_redirect_label
+                                        existing_awb.paid_by = awb_data.get("paid_by") or existing_awb.paid_by
+                                        existing_awb.cod_value = awb_data.get("cod_value") if awb_data.get("cod_value") is not None else existing_awb.cod_value
+                                        existing_awb.cod_currency = awb_data.get("cod_currency") or existing_awb.cod_currency
+                                        existing_awb.shipment_created_at = awb_data.get("shipment_created_at") or existing_awb.shipment_created_at
+                                    else:
+                                        # Create new AWB record with full shipment data
+                                        new_awb = OrderAwb(
+                                            order_id=order_obj.id,
+                                            tracking_number=tn,
+                                            courier_name=awb_data.get("courier_name"),
+                                            awb_type=awb_data.get("awb_type", "outbound"),
+                                            shipment_uid=awb_data.get("shipment_uid"),
+                                            awb_pdf_url=awb_data.get("awb_pdf_url"),
+                                            awb_pdf_format=awb_data.get("awb_pdf_format"),
+                                            shipment_status=awb_data.get("shipment_status"),
+                                            shipment_status_date=awb_data.get("shipment_status_date"),
+                                            is_return_label=awb_data.get("is_return_label", False),
+                                            is_redirect_label=awb_data.get("is_redirect_label", False),
+                                            paid_by=awb_data.get("paid_by"),
+                                            cod_value=awb_data.get("cod_value"),
+                                            cod_currency=awb_data.get("cod_currency"),
+                                            shipment_created_at=awb_data.get("shipment_created_at"),
+                                            shipment_events=awb_data.get("shipment_events"),
+                                            data_source="frisbo_sync",
+                                            created_at=datetime.utcnow(),
+                                        )
+                                        db.add(new_awb)
+                        
+                        except Exception as order_err:
+                            # PER-ORDER error isolation: log and skip this order
+                            order_uid = raw_order.get("uid", "unknown")
+                            logger.warning(f"📦 [{org_name}] SKIPPED order {order_uid}: {order_err}")
+                            batch_skipped += 1
+                            skipped_count += 1
+                            # Expunge any pending dirty state from this failed order
+                            try:
+                                await db.rollback()
+                                # Re-attach sync_log after rollback
+                                sync_log = await db.merge(sync_log)
+                            except Exception:
+                                pass
+                            continue
                     
                     # COMMIT THIS BATCH TO DATABASE IMMEDIATELY
                     try:
                         sync_log.orders_fetched = total_fetched
                         sync_log.orders_new = new_count
                         sync_log.orders_updated = updated_count
+                        sync_log.orders_skipped = skipped_count
                         await db.commit()
                     except Exception as batch_err:
-                        # Batch commit failed (e.g. column truncation) — rollback and skip
+                        # Batch commit failed — rollback and try to continue
                         logger.error(f"📦 [{org_name}] BATCH COMMIT FAILED at skip={skip}: {batch_err}")
                         await db.rollback()
+                        # Re-attach sync_log after rollback
+                        try:
+                            sync_log = await db.merge(sync_log)
+                        except Exception:
+                            pass
                         skip += BATCH_SIZE
                         continue
                     
-                    logger.info(f"📦 [{org_name}] BATCH SAVED: {org_fetched} org / {total_fetched} total (new: {new_count}, updated: {updated_count})")
+                    if batch_skipped > 0:
+                        logger.warning(f"📦 [{org_name}] BATCH SAVED ({batch_skipped} orders skipped): {org_fetched} org / {total_fetched} total")
+                    else:
+                        logger.info(f"📦 [{org_name}] BATCH SAVED: {org_fetched} org / {total_fetched} total (new: {new_count}, updated: {updated_count})")
                     
                     # Check if we got fewer orders than requested (end of data)
                     if batch_fetched < BATCH_SIZE:
@@ -322,11 +386,12 @@ async def sync_orders(
             sync_log.orders_fetched = total_fetched
             sync_log.orders_new = new_count
             sync_log.orders_updated = updated_count
+            sync_log.orders_skipped = skipped_count
             sync_log.status = "completed"
             sync_log.completed_at = datetime.utcnow()
             await db.commit()
             
-            logger.info(f"📦 SYNC COMPLETED: {total_fetched} fetched across {len(org_tokens)} orgs, {new_count} new, {updated_count} updated")
+            logger.info(f"📦 SYNC COMPLETED ({sync_type}): {total_fetched} fetched, {new_count} new, {updated_count} updated, {skipped_count} skipped")
             
         except Exception as e:
             logger.error(f"📦 SYNC FAILED: {e}")

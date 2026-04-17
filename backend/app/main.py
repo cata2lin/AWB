@@ -19,14 +19,14 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # Sync BNR exchange rates on startup — DISABLED (using production DB, live server handles this)
-    # try:
-    #     async with AsyncSessionLocal() as db:
-    #         await exchange_rates.sync_bnr_rates(db)
-    #         await db.commit()
-    # except Exception as e:
-    #     import logging
-    #     logging.getLogger(__name__).warning(f"BNR rate sync on startup failed: {e}")
+    # Sync BNR exchange rates on startup
+    try:
+        async with AsyncSessionLocal() as db:
+            await exchange_rates.sync_bnr_rates(db)
+            await db.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"BNR rate sync on startup failed: {e}")
     
     # Auto-create default admin user if no users exist
     try:
@@ -72,13 +72,27 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger(__name__).warning(f"Stale sync cleanup failed: {e}")
     
-    # Start background scheduler — DISABLED (using production DB, live server handles syncs)
-    # scheduler.start()
+    # Start background scheduler for automatic syncs
+    scheduler.start()
+    import logging as _log
+    _log.getLogger(__name__).info("📅 Background scheduler started")
+    
+    # Trigger an incremental sync after 30s warm-up so statuses are fresh after restart
+    import asyncio
+    async def _startup_sync():
+        await asyncio.sleep(30)
+        try:
+            from app.services.sync_service import sync_orders
+            _log.getLogger(__name__).info("📦 Startup incremental sync triggered")
+            await sync_orders(sync_type="incremental")
+        except Exception as e:
+            _log.getLogger(__name__).warning(f"Startup sync failed (non-critical): {e}")
+    asyncio.create_task(_startup_sync())
     
     yield
     
-    # Shutdown — scheduler disabled
-    # scheduler.shutdown()
+    # Shutdown scheduler gracefully
+    scheduler.shutdown(wait=False)
 
 
 app = FastAPI(

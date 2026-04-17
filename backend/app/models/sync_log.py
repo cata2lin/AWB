@@ -20,6 +20,10 @@ class SyncLog(Base):
     orders_fetched: Mapped[int] = mapped_column(Integer, default=0)
     orders_new: Mapped[int] = mapped_column(Integer, default=0)
     orders_updated: Mapped[int] = mapped_column(Integer, default=0)
+    orders_skipped: Mapped[int] = mapped_column(Integer, default=0)  # Orders that failed individually
+    
+    # For incremental syncs: the updated_at_start filter that was used
+    incremental_since: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
     # Custom sync filters
     store_uids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # store UIDs filter (null = all)

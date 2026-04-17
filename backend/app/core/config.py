@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     frisbo_rate_limit: int = 20
     
     # Sync interval (minutes)
-    sync_interval_minutes: int = 30
+    sync_interval_minutes: int = 10
     
     # JWT Auth
     jwt_secret_key: str = "changeme"

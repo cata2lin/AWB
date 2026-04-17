@@ -1,0 +1,60 @@
+﻿Courier,CSV Status,AWB Count,Total Cost (RON),Billable (Paid by us),Classification
+DPD,5. Livrat 1,242215,2828080.18,Yes,✅ BILLABLE - counts toward transport cost
+DPD,9 - Returnat,42288,549109.67,Yes,✅ BILLABLE - counts toward transport cost
+DPD,6. Livrat 2,28087,349636.54,Yes,✅ BILLABLE - counts toward transport cost
+DPD,7 - Anulat,7344,0,No,❌ EXCLUDED - not counted
+DPD,1 - Neridicat,5537,69223.59,No,❌ EXCLUDED - not counted
+DPD,2 - In tranzit,828,9500.47,Yes,✅ BILLABLE - counts toward transport cost
+DPD,0 - Fara comanda,688,10433.53,Yes,✅ BILLABLE - counts toward transport cost
+DPD,"4 - Nelivrat, intarziere mai mare de o zi",491,5605.82,Yes,✅ BILLABLE - counts toward transport cost
+DPD,"3 - Nelivrat, intarziat o zi",165,2320.3,Yes,✅ BILLABLE - counts toward transport cost
+DPD,8 - Inchis intern,58,676.96,No,❌ EXCLUDED - not counted
+Econt,42991616,9484,154392.51,Yes,✅ BILLABLE - counts toward transport cost
+Econt,26214400,380,7082.28,Yes,✅ BILLABLE - counts toward transport cost
+Econt,34603008,42,900.52,Yes,✅ BILLABLE - counts toward transport cost
+Econt,9437184,41,916.23,Yes,✅ BILLABLE - counts toward transport cost
+Econt,17825792,37,691.11,Yes,✅ BILLABLE - counts toward transport cost
+Econt,7 - Anulat,23,0,No,❌ EXCLUDED - not counted
+Fan Courier,7 - Anulat,2,0,No,❌ EXCLUDED - not counted
+Packeta,The package has been delivered,21659,426516.58,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Returned to sender,3637,130687.62,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Coletul a fost livrat,2528,52038.68,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,We are waiting for the package handover,1118,0,No,❌ EXCLUDED - not counted
+Packeta,Handed over to carrier company,900,0,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Returnat expeditorului,418,14949.52,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,The package is ready for pickup,259,0,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Return (on the way back),243,1164.4,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,The package is on its way,95,35.6,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Cancelled,27,0,No,❌ EXCLUDED - not counted
+Packeta,Coletul este pe drum,3,0,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Retur (pe drum către expeditor),3,111.0,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Predat companiei de transport,3,0,Yes,✅ BILLABLE - counts toward transport cost
+Packeta,Anulat,3,0,No,❌ EXCLUDED - not counted
+Packeta,Finished,1,35.6,Yes,✅ BILLABLE - counts toward transport cost
+PACKETA,We are waiting for the package handover,26,0,No,❌ EXCLUDED - not counted
+PACKETA,Cancelled,4,0,No,❌ EXCLUDED - not counted
+PACKETA,The package has been delivered,2,40.6,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Rambursul a fost transferat.,585,7815.42,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Coletul a fost livrat cu succes.,258,2726.28,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Ți-am returnat coletul cu succes.,244,3126.4,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Rambursul a fost compensat conform soldului datorat.,111,1443.75,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Expedierea a fost anulată.,57,692.36,No,❌ EXCLUDED - not counted
+Sameday,9 - Returnat,15,175.47,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,5. Livrat 1,15,10.73,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,1 - Neridicat,13,158.75,No,❌ EXCLUDED - not counted
+Sameday,7 - Anulat,8,0,No,❌ EXCLUDED - not counted
+Sameday,Curierul urmează să efectueze livrarea în curând.,6,66.66,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Coletul a fost încărcat în punctul de livrare.,5,55.23,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,0 - Fara comanda,2,23.9,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Expedierea a fost înregistrată.,2,23.39,No,❌ EXCLUDED - not counted
+Sameday,"Rambursul nu a fost transferat, este blocat pentru compensarea soldului datorat.",2,34.1,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,6. Livrat 2,2,11.71,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,"Din păcate, coletul nu poate fi localizat. Revenim cu vești.",1,10.31,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,"Ridicarea nu a avut loc, coletul nu a fost predat de expeditor.",1,17.05,No,❌ EXCLUDED - not counted
+Sameday,Punctul de livrare este aglomerat.,1,10.35,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Coletul se află în depozitul central și urmează să fie procesat.,1,17.05,Yes,✅ BILLABLE - counts toward transport cost
+Sameday,Coletul se află în depozitul local și urmează a fi procesat în curând.,1,11.49,Yes,✅ BILLABLE - counts toward transport cost
+Unknown,42991616,60,904.0,Yes,✅ BILLABLE - counts toward transport cost
+Unknown,43253760,28,143.91,Yes,✅ BILLABLE - counts toward transport cost
+Unknown,5. Livrat 1,1,103.68,Yes,✅ BILLABLE - counts toward transport cost
+Unknown,9 - Returnat,1,21.42,Yes,✅ BILLABLE - counts toward transport cost
