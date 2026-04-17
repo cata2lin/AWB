@@ -52,9 +52,10 @@ def _build_order_conditions(
             (cast(Order.line_items, String).ilike(search_term))
         )
     if phone_search:
-        phone_term = f"%{phone_search}%"
+        phone_clean = phone_search.replace(" ", "")
+        phone_term = f"%{phone_clean}%"
         conditions.append(
-            cast(Order.shipping_address, String).ilike(phone_term)
+            func.replace(cast(Order.shipping_address, String), ' ', '').ilike(phone_term)
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
@@ -159,9 +160,10 @@ async def get_orders(
         )
     
     if phone_search:
-        phone_term = f"%{phone_search}%"
+        phone_clean = phone_search.replace(" ", "")
+        phone_term = f"%{phone_clean}%"
         conditions.append(
-            cast(Order.shipping_address, String).ilike(phone_term)
+            func.replace(cast(Order.shipping_address, String), ' ', '').ilike(phone_term)
         )
     
     # Status filters (support multi-select)
@@ -412,9 +414,10 @@ async def get_order_count(
             (cast(Order.line_items, String).ilike(search_term))
         )
     if phone_search:
-        phone_term = f"%{phone_search}%"
+        phone_clean = phone_search.replace(" ", "")
+        phone_term = f"%{phone_clean}%"
         conditions.append(
-            cast(Order.shipping_address, String).ilike(phone_term)
+            func.replace(cast(Order.shipping_address, String), ' ', '').ilike(phone_term)
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
@@ -511,9 +514,10 @@ async def get_order_totals(
             (cast(Order.line_items, String).ilike(search_term))
         )
     if phone_search:
-        phone_term = f"%{phone_search}%"
+        phone_clean = phone_search.replace(" ", "")
+        phone_term = f"%{phone_clean}%"
         conditions.append(
-            cast(Order.shipping_address, String).ilike(phone_term)
+            func.replace(cast(Order.shipping_address, String), ' ', '').ilike(phone_term)
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
