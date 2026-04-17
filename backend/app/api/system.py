@@ -21,7 +21,7 @@ router = APIRouter()
 
 # ═══════════════════ IN-MEMORY LOG BUFFER ═══════════════════
 # Ring buffer that captures the last N log messages from the application
-MAX_LOG_ENTRIES = 500
+MAX_LOG_ENTRIES = 1000
 _log_buffer: deque = deque(maxlen=MAX_LOG_ENTRIES)
 _app_start_time = time.time()
 
@@ -30,6 +30,12 @@ class BufferedLogHandler(logging.Handler):
     """Custom handler that stores log records in a ring buffer."""
     def emit(self, record):
         try:
+            # Skip uvicorn access logs (HTTP GET/POST spam)
+            if record.name == "uvicorn.access":
+                return
+            # Skip SQLAlchemy engine logs
+            if record.name.startswith("sqlalchemy."):
+                return
             entry = {
                 "timestamp": to_bucharest_iso(datetime.utcnow()),
                 "level": record.levelname,
@@ -42,14 +48,20 @@ class BufferedLogHandler(logging.Handler):
 
 
 def setup_log_capture():
-    """Attach the buffered handler to the root logger."""
+    """Attach the buffered handler to the root logger.
+    
+    Captures app, sync, and scheduler logs but NOT uvicorn access logs
+    (which are just HTTP request spam like 'GET /api/orders 200').
+    """
     handler = BufferedLogHandler()
     handler.setLevel(logging.INFO)
     handler.setFormatter(logging.Formatter("%(message)s"))
-    logging.getLogger().addHandler(handler)
-    # Also capture uvicorn access logs
-    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "app", "app.services"):
+    # Only capture meaningful loggers — NOT uvicorn.access
+    for name in ("app", "app.services", "app.api", "uvicorn.error", "apscheduler"):
         logging.getLogger(name).addHandler(handler)
+    # Also capture the root logger but filter out access noise
+    root = logging.getLogger()
+    root.addHandler(handler)
 
 
 # Auto-setup on import
@@ -177,12 +189,15 @@ async def get_sync_history_detailed(
             {
                 "id": log.id,
                 "status": log.status,
+                "sync_type": log.sync_type or "45_day",
                 "started_at": to_bucharest_iso(log.started_at),
                 "completed_at": to_bucharest_iso(log.completed_at),
                 "duration_seconds": int((log.completed_at - log.started_at).total_seconds()) if log.completed_at and log.started_at else None,
                 "orders_fetched": log.orders_fetched,
                 "orders_new": log.orders_new,
                 "orders_updated": log.orders_updated,
+                "orders_skipped": getattr(log, 'orders_skipped', 0) or 0,
+                "incremental_since": to_bucharest_iso(getattr(log, 'incremental_since', None)),
                 "error_message": log.error_message,
             }
             for log in logs

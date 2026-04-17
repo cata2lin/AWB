@@ -268,6 +268,26 @@ export default function Logs() {
                                 <span className="text-sm font-medium text-green-400">Application Logs</span>
                                 <div className="flex-1" />
                                 <div className="flex items-center gap-2">
+                                    {/* Quick filter presets */}
+                                    {[
+                                        { label: 'All', search: '', level: '' },
+                                        { label: '📦 Sync', search: '📦', level: '' },
+                                        { label: '⚠ Errors', search: '', level: 'ERROR' },
+                                        { label: '📅 Scheduler', search: 'scheduler', level: '' },
+                                    ].map(preset => (
+                                        <button
+                                            key={preset.label}
+                                            onClick={() => { setSearchQuery(preset.search); setLevelFilter(preset.level) }}
+                                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                                searchQuery === preset.search && levelFilter === preset.level
+                                                    ? 'bg-indigo-600 text-white'
+                                                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 border border-zinc-600'
+                                            }`}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
+                                    <div className="w-px h-5 bg-zinc-600 mx-1" />
                                     <div className="relative">
                                         <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
                                         <input
@@ -284,7 +304,6 @@ export default function Logs() {
                                         className="px-2 py-1.5 bg-zinc-900 border border-zinc-600 rounded-lg text-xs text-zinc-300"
                                     >
                                         <option value="">All Levels</option>
-                                        <option value="DEBUG">DEBUG</option>
                                         <option value="INFO">INFO</option>
                                         <option value="WARNING">WARNING</option>
                                         <option value="ERROR">ERROR</option>
@@ -307,8 +326,8 @@ export default function Logs() {
                                             <span className={`min-w-[55px] font-bold ${LEVEL_STYLES[log.level] || 'text-zinc-400'}`}>
                                                 {log.level}
                                             </span>
-                                            <span className="text-zinc-500 min-w-[120px] max-w-[180px] truncate" title={log.logger}>
-                                                {log.logger}
+                                            <span className="text-zinc-500 min-w-[100px] max-w-[150px] truncate" title={log.logger}>
+                                                {log.logger?.replace('app.services.', '').replace('app.api.', '').replace('app.', '') || 'system'}
                                             </span>
                                             <span className="text-zinc-200 break-all flex-1">
                                                 {log.message}
@@ -329,37 +348,99 @@ export default function Logs() {
                                 <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Sync History</h3>
                                 <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">{syncHistory.length} entries</span>
                             </div>
+
+                            {/* Summary cards */}
+                            {syncHistory.length > 0 && (() => {
+                                const recent = syncHistory.slice(0, 20)
+                                const completed = recent.filter(s => s.status === 'completed').length
+                                const failed = recent.filter(s => s.status === 'failed').length
+                                const totalFetched = recent.reduce((s, r) => s + (r.orders_fetched || 0), 0)
+                                const totalNew = recent.reduce((s, r) => s + (r.orders_new || 0), 0)
+                                const totalUpdated = recent.reduce((s, r) => s + (r.orders_updated || 0), 0)
+                                const avgDuration = recent.filter(s => s.duration_seconds).reduce((s, r) => s + r.duration_seconds, 0) / Math.max(recent.filter(s => s.duration_seconds).length, 1)
+                                return (
+                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 py-3 border-b border-zinc-100 dark:border-zinc-700/30 bg-zinc-50/50 dark:bg-zinc-900/30">
+                                        <div className="text-center">
+                                            <p className="text-lg font-bold text-green-500">{completed}</p>
+                                            <p className="text-[10px] text-zinc-500">Completed</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className={`text-lg font-bold ${failed > 0 ? 'text-red-500' : 'text-zinc-400'}`}>{failed}</p>
+                                            <p className="text-[10px] text-zinc-500">Failed</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-lg font-bold text-zinc-700 dark:text-zinc-200">{totalFetched.toLocaleString()}</p>
+                                            <p className="text-[10px] text-zinc-500">Fetched (last 20)</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-lg font-bold text-emerald-500">{totalNew}</p>
+                                            <p className="text-[10px] text-zinc-500">New Orders</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-lg font-bold text-blue-500">{totalUpdated.toLocaleString()}</p>
+                                            <p className="text-[10px] text-zinc-500">Updated</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-lg font-bold text-zinc-700 dark:text-zinc-200">{Math.round(avgDuration)}s</p>
+                                            <p className="text-[10px] text-zinc-500">Avg Duration</p>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50">
                                             <th className="px-4 py-2.5 font-medium">Status</th>
+                                            <th className="px-4 py-2.5 font-medium">Type</th>
                                             <th className="px-4 py-2.5 font-medium">Started</th>
-                                            <th className="px-4 py-2.5 font-medium">Completed</th>
                                             <th className="px-4 py-2.5 font-medium">Duration</th>
                                             <th className="px-4 py-2.5 font-medium text-right">Fetched</th>
                                             <th className="px-4 py-2.5 font-medium text-right">New</th>
                                             <th className="px-4 py-2.5 font-medium text-right">Updated</th>
+                                            <th className="px-4 py-2.5 font-medium text-right">Skipped</th>
                                             <th className="px-4 py-2.5 font-medium">Error</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                         {syncHistory.map(sync => (
-                                            <tr key={sync.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/20">
+                                            <tr key={sync.id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/20 ${sync.status === 'failed' ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
                                                 <td className="px-4 py-2.5">
                                                     <span className="inline-flex items-center gap-1.5">
                                                         {syncStatusIcon(sync.status)}
                                                         <span className={`text-xs font-medium ${syncStatusColor(sync.status)}`}>{sync.status}</span>
                                                     </span>
                                                 </td>
+                                                <td className="px-4 py-2.5">
+                                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                                        sync.sync_type === 'incremental'
+                                                            ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300'
+                                                            : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                    }`}>
+                                                        {sync.sync_type === 'incremental' ? '⚡ INCR' : '📦 FULL'}
+                                                    </span>
+                                                </td>
                                                 <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-300">{formatTime(sync.started_at)}</td>
-                                                <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-300">{formatTime(sync.completed_at)}</td>
                                                 <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-300 font-mono">{formatDuration(sync.duration_seconds)}</td>
                                                 <td className="px-4 py-2.5 text-xs text-right font-medium text-zinc-800 dark:text-zinc-200">{(sync.orders_fetched || 0).toLocaleString()}</td>
                                                 <td className="px-4 py-2.5 text-xs text-right font-medium text-green-600 dark:text-green-400">{sync.orders_new || 0}</td>
                                                 <td className="px-4 py-2.5 text-xs text-right font-medium text-blue-600 dark:text-blue-400">{sync.orders_updated || 0}</td>
-                                                <td className="px-4 py-2.5 text-xs text-red-500 dark:text-red-400 max-w-[200px] truncate" title={sync.error_message}>
-                                                    {sync.error_message || '-'}
+                                                <td className="px-4 py-2.5 text-xs text-right font-medium text-amber-600 dark:text-amber-400">{sync.orders_skipped || 0}</td>
+                                                <td className="px-4 py-2.5">
+                                                    {sync.error_message ? (
+                                                        <div className="group relative">
+                                                            <span className="inline-flex items-center gap-1 text-xs text-red-500 dark:text-red-400 cursor-help">
+                                                                <AlertTriangle className="w-3 h-3" />
+                                                                <span className="max-w-[120px] truncate">{sync.error_message}</span>
+                                                            </span>
+                                                            <div className="absolute z-50 hidden group-hover:block right-0 top-full mt-1 w-96 p-3 bg-zinc-900 border border-red-700/50 rounded-lg shadow-xl text-xs text-red-300 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                                                                {sync.error_message}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-zinc-400">—</span>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}

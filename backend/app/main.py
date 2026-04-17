@@ -11,6 +11,11 @@ from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.services.scheduler import scheduler
 
+# ── Suppress noisy loggers from polluting console/journalctl ──
+import logging
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # Hide "GET /api/... 200" spam
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("apscheduler.executors").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
