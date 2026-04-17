@@ -42,6 +42,7 @@ class StoreBase(RomanianTimeModel):
     name: str
     color_code: str = "#6366f1"
     shopify_domain: Optional[str] = None
+    frisbo_store_slug: Optional[str] = None
     is_active: bool = True
 
 
@@ -53,6 +54,7 @@ class StoreUpdate(BaseModel):
     name: Optional[str] = None
     color_code: Optional[str] = None
     shopify_domain: Optional[str] = None
+    frisbo_store_slug: Optional[str] = None
     is_active: Optional[bool] = None
 
 

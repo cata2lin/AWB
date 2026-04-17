@@ -16,6 +16,7 @@ class Store(Base):
     name: Mapped[str] = mapped_column(String(255))
     color_code: Mapped[str] = mapped_column(String(7), default="#6366f1")  # Hex color
     shopify_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # e.g. "store-name.myshopify.com"
+    frisbo_store_slug: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # e.g. "bmuwvv-jy"
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
