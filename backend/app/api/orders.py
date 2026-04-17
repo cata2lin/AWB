@@ -20,7 +20,8 @@ router = APIRouter()
 def _build_order_conditions(
     store_uids, is_printed, has_awb, has_tracking, min_items, max_items,
     search, fulfillment_status, shipment_status, aggregated_status,
-    courier_names, has_shipping_cost, stale_courier, date_from, date_to
+    courier_names, has_shipping_cost, stale_courier, date_from, date_to,
+    phone_search=None
 ):
     """Build reusable filter conditions for order queries."""
     from datetime import datetime, timedelta
@@ -49,6 +50,11 @@ def _build_order_conditions(
             (Order.customer_name.ilike(search_term)) |
             (Order.tracking_number.ilike(search_term)) |
             (cast(Order.line_items, String).ilike(search_term))
+        )
+    if phone_search:
+        phone_term = f"%{phone_search}%"
+        conditions.append(
+            cast(Order.shipping_address, String).ilike(phone_term)
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
@@ -97,6 +103,7 @@ async def get_orders(
     min_items: Optional[int] = None,
     max_items: Optional[int] = None,
     search: Optional[str] = None,
+    phone_search: Optional[str] = Query(None, description="Search by phone number in shipping address"),
     fulfillment_status: Optional[List[str]] = Query(None, description="Filter by fulfillment status (multi)"),
     shipment_status: Optional[List[str]] = Query(None, description="Filter by shipment status (multi)"),
     aggregated_status: Optional[List[str]] = Query(None, description="Filter by workflow/aggregated status (multi)"),
@@ -149,6 +156,12 @@ async def get_orders(
             (Order.customer_name.ilike(search_term)) |
             (Order.tracking_number.ilike(search_term)) |
             (cast(Order.line_items, String).ilike(search_term))
+        )
+    
+    if phone_search:
+        phone_term = f"%{phone_search}%"
+        conditions.append(
+            cast(Order.shipping_address, String).ilike(phone_term)
         )
     
     # Status filters (support multi-select)
@@ -357,6 +370,7 @@ async def get_order_count(
     min_items: Optional[int] = None,
     max_items: Optional[int] = None,
     search: Optional[str] = None,
+    phone_search: Optional[str] = Query(None, description="Search by phone number in shipping address"),
     fulfillment_status: Optional[List[str]] = Query(None),
     shipment_status: Optional[List[str]] = Query(None),
     aggregated_status: Optional[List[str]] = Query(None),
@@ -396,6 +410,11 @@ async def get_order_count(
             (Order.customer_name.ilike(search_term)) |
             (Order.tracking_number.ilike(search_term)) |
             (cast(Order.line_items, String).ilike(search_term))
+        )
+    if phone_search:
+        phone_term = f"%{phone_search}%"
+        conditions.append(
+            cast(Order.shipping_address, String).ilike(phone_term)
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
@@ -451,6 +470,7 @@ async def get_order_totals(
     min_items: Optional[int] = None,
     max_items: Optional[int] = None,
     search: Optional[str] = None,
+    phone_search: Optional[str] = Query(None, description="Search by phone number in shipping address"),
     fulfillment_status: Optional[List[str]] = Query(None),
     shipment_status: Optional[List[str]] = Query(None),
     aggregated_status: Optional[List[str]] = Query(None),
@@ -489,6 +509,11 @@ async def get_order_totals(
             (Order.customer_name.ilike(search_term)) |
             (Order.tracking_number.ilike(search_term)) |
             (cast(Order.line_items, String).ilike(search_term))
+        )
+    if phone_search:
+        phone_term = f"%{phone_search}%"
+        conditions.append(
+            cast(Order.shipping_address, String).ilike(phone_term)
         )
     if fulfillment_status:
         conditions.append(Order.fulfillment_status.in_(fulfillment_status))
@@ -660,6 +685,7 @@ async def export_orders_excel(
     min_items: Optional[int] = None,
     max_items: Optional[int] = None,
     search: Optional[str] = None,
+    phone_search: Optional[str] = Query(None, description="Search by phone number in shipping address"),
     fulfillment_status: Optional[List[str]] = Query(None),
     shipment_status: Optional[List[str]] = Query(None),
     aggregated_status: Optional[List[str]] = Query(None),
@@ -687,7 +713,8 @@ async def export_orders_excel(
     conditions = _build_order_conditions(
         store_uids, is_printed, has_awb, has_tracking, min_items, max_items,
         search, fulfillment_status, shipment_status, aggregated_status,
-        courier_names, has_shipping_cost, stale_courier, date_from, date_to
+        courier_names, has_shipping_cost, stale_courier, date_from, date_to,
+        phone_search=phone_search
     )
     if conditions:
         query = query.where(and_(*conditions))

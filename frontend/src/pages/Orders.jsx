@@ -5,7 +5,7 @@ import MultiSelectFilter from '../components/MultiSelectFilter'
 import {
     Search, ArrowUpDown, Package, AlertCircle, ChevronDown, ChevronLeft, ChevronRight,
     User, MapPin, Mail, Filter, X, Printer, FileText, Calendar, Tag, Truck, Store, Save, Lock,
-    DollarSign, RotateCcw, ExternalLink, Loader2, Download, RefreshCw
+    DollarSign, RotateCcw, ExternalLink, Loader2, Download, RefreshCw, Phone
 } from 'lucide-react'
 
 export default function Orders() {
@@ -38,6 +38,8 @@ export default function Orders() {
     // Simple filter states
     const [searchQuery, setSearchQuery] = useState('')
     const [debouncedSearch, setDebouncedSearch] = useState('')
+    const [phoneSearch, setPhoneSearch] = useState('')
+    const [debouncedPhoneSearch, setDebouncedPhoneSearch] = useState('')
     const [itemCountFilter, setItemCountFilter] = useState('all')
     const [printedFilter, setPrintedFilter] = useState('all')
     const [awbFilter, setAwbFilter] = useState('all')
@@ -104,6 +106,15 @@ export default function Orders() {
         return () => clearTimeout(timer)
     }, [searchQuery])
 
+    // Debounce phone search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedPhoneSearch(phoneSearch)
+            setPage(0)
+        }, 300)
+        return () => clearTimeout(timer)
+    }, [phoneSearch])
+
     // Compute effective date range — only changes when BOTH dates are set (or both empty)
     // This prevents double-reload when user navigates months in the date picker
     const effectiveDateFrom = (createdDateFrom && createdDateTo) ? createdDateFrom : (!createdDateFrom && !createdDateTo) ? '' : undefined
@@ -126,6 +137,7 @@ export default function Orders() {
                 }
 
                 if (debouncedSearch) params.search = debouncedSearch
+                if (debouncedPhoneSearch) params.phone_search = debouncedPhoneSearch
                 if (selectedStores.length > 0) params.store_uids = selectedStores
                 if (printedFilter !== 'all') params.is_printed = printedFilter === 'printed'
 
@@ -185,7 +197,7 @@ export default function Orders() {
         }
 
         fetchOrders()
-    }, [page, pageSize, debouncedSearch, selectedStores, printedFilter, itemCountFilter,
+    }, [page, pageSize, debouncedSearch, debouncedPhoneSearch, selectedStores, printedFilter, itemCountFilter,
         selectedFulfillment, selectedShipment, selectedWorkflow, selectedCouriers,
         effectiveDateFrom, effectiveDateTo, awbFilter, trackingFilter, shippingCostFilter, sortField, sortDirection])
 
@@ -228,6 +240,8 @@ export default function Orders() {
     const clearAllFilters = () => {
         setSearchQuery('')
         setDebouncedSearch('')
+        setPhoneSearch('')
+        setDebouncedPhoneSearch('')
         setSelectedStores([])
         setSelectedFulfillment([])
         setSelectedShipment([])
@@ -243,7 +257,7 @@ export default function Orders() {
         setPage(0)
     }
 
-    const hasActiveFilters = searchQuery || selectedStores.length > 0 ||
+    const hasActiveFilters = searchQuery || phoneSearch || selectedStores.length > 0 ||
         selectedFulfillment.length > 0 || selectedShipment.length > 0 ||
         selectedWorkflow.length > 0 || selectedCouriers.length > 0 ||
         itemCountFilter !== 'all' || printedFilter !== 'all' ||
@@ -256,6 +270,7 @@ export default function Orders() {
             sort_direction: sortDirection,
         }
         if (debouncedSearch) params.search = debouncedSearch
+        if (debouncedPhoneSearch) params.phone_search = debouncedPhoneSearch
         if (selectedStores.length > 0) params.store_uids = selectedStores
         if (printedFilter !== 'all') params.is_printed = printedFilter === 'printed'
         if (itemCountFilter === '1') { params.min_items = 1; params.max_items = 1 }
@@ -504,6 +519,18 @@ export default function Orders() {
                         placeholder="Search order #, tracking, customer, SKU..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder:text-zinc-400"
+                    />
+                </div>
+
+                {/* Phone Search */}
+                <div className="relative min-w-[180px] max-w-[220px]">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                        type="text"
+                        placeholder="Search phone..."
+                        value={phoneSearch}
+                        onChange={(e) => setPhoneSearch(e.target.value)}
                         className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder:text-zinc-400"
                     />
                 </div>
