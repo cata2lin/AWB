@@ -1,25 +1,21 @@
 """
-Migration script: Populate frisbo_store_slug for all known stores.
+Migration script: Add frisbo_store_slug column and populate Shopify slugs.
 
-Maps store names to their Frisbo dashboard slugs so the frontend
-can link directly to orders in the Frisbo admin panel.
+Creates the column if missing, then updates all stores with their slugs.
+Can be run directly — connects to the live database.
 
-Run once after deploying the frisbo_store_slug column:
     python migrate_store_slugs.py
 """
 import asyncio
 import logging
-from sqlalchemy import select, update
+from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
-from app.models.store import Store
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Mapping: store name (lowercase) → frisbo store slug ──
-# These are the /store/{slug}/ paths in the Frisbo dashboard
+# ── Mapping: store name (lowercase) → shopify admin slug ──
 STORE_SLUG_MAP = {
-    # Name-based lookup (case-insensitive)
     "nubra":            "bmuwvv-jy",
     "esteban":          "6f9e22-9d",
     "gt":               "ix5bxc-hr",
@@ -49,47 +45,66 @@ STORE_SLUG_MAP = {
     "bonghaus.pl":      "ux1x6n-n2",
 }
 
-# ── UID-based lookup (more reliable — UIDs are exact) ──
-STORE_UID_SLUG_MAP = {
-    # These map store_uid values directly to Frisbo slugs
-    # Will be populated from the DB if UIDs match patterns
-}
-
 
 async def migrate():
-    """Update all stores with their Frisbo slugs."""
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Store))
-        stores = result.scalars().all()
-        
+        # ── Step 1: Add column if it doesn't exist ──
+        logger.info("Step 1: Ensuring frisbo_store_slug column exists...")
+        await db.execute(text("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'stores' AND column_name = 'frisbo_store_slug'
+                ) THEN
+                    ALTER TABLE stores ADD COLUMN frisbo_store_slug VARCHAR(255);
+                    RAISE NOTICE 'Column frisbo_store_slug added';
+                ELSE
+                    RAISE NOTICE 'Column frisbo_store_slug already exists';
+                END IF;
+            END $$;
+        """))
+        await db.commit()
+        logger.info("  ✓ Column ready")
+
+        # ── Step 2: Fetch all stores ──
+        logger.info("Step 2: Fetching stores...")
+        result = await db.execute(text("SELECT id, uid, name, frisbo_store_slug FROM stores"))
+        stores = result.fetchall()
+        logger.info(f"  Found {len(stores)} stores")
+
+        # ── Step 3: Update each store ──
+        logger.info("Step 3: Updating slugs...")
         updated = 0
         skipped = 0
-        
-        for store in stores:
-            # Try name-based lookup (case-insensitive)
-            name_lower = (store.name or "").strip().lower()
+
+        for store_id, store_uid, store_name, current_slug in stores:
+            name_lower = (store_name or "").strip().lower()
             slug = STORE_SLUG_MAP.get(name_lower)
-            
+
+            # Try partial match if exact not found
             if not slug:
-                # Try partial match — store names might have extra text
                 for key, val in STORE_SLUG_MAP.items():
                     if key in name_lower or name_lower in key:
                         slug = val
                         break
-            
+
             if slug:
-                if store.frisbo_store_slug != slug:
-                    store.frisbo_store_slug = slug
+                if current_slug != slug:
+                    await db.execute(
+                        text("UPDATE stores SET frisbo_store_slug = :slug WHERE id = :id"),
+                        {"slug": slug, "id": store_id}
+                    )
                     updated += 1
-                    logger.info(f"  ✓ {store.name} (uid={store.uid}) → slug={slug}")
+                    logger.info(f"  ✓ {store_name} (uid={store_uid}) → slug={slug}")
                 else:
-                    logger.info(f"  = {store.name} already has slug={slug}")
+                    logger.info(f"  = {store_name} already has slug={slug}")
             else:
                 skipped += 1
-                logger.warning(f"  ✗ {store.name} (uid={store.uid}) — no slug mapping found")
-        
+                logger.warning(f"  ✗ {store_name} (uid={store_uid}) — no slug mapping found")
+
         await db.commit()
-        logger.info(f"\nDone: {updated} updated, {skipped} skipped (no mapping)")
+        logger.info(f"\nDone: {updated} updated, {skipped} skipped")
 
 
 if __name__ == "__main__":
