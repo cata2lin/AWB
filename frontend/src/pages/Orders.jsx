@@ -857,16 +857,30 @@ export default function Orders() {
                                                         <span className="font-medium text-zinc-900 dark:text-white">{order.order_number}</span>
                                                         {(() => {
                                                             const store = stores.find(s => s.uid === order.store_uid)
-                                                            const shopifySlug = store?.frisbo_store_slug || store?.shopify_domain
+                                                            const shopifySlug = store?.frisbo_store_slug || store?.shopify_domain?.replace('.myshopify.com', '')
+                                                            const myshopifyDomain = store?.shopify_domain?.includes('.myshopify.com')
+                                                                ? store.shopify_domain
+                                                                : shopifySlug ? `${shopifySlug}.myshopify.com` : null
                                                             if (!shopifySlug) return null
                                                             return (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); window.open(`https://admin.shopify.com/store/${shopifySlug}/orders?query=${encodeURIComponent(order.order_number)}`, '_blank') }}
-                                                                    className="p-0.5 rounded hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
-                                                                    title="Deschide în Shopify"
-                                                                >
-                                                                    <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
-                                                                </button>
+                                                                <>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); window.open(`https://admin.shopify.com/store/${shopifySlug}/orders?query=${encodeURIComponent(order.order_number)}`, '_blank') }}
+                                                                        className="p-0.5 rounded hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                                                                        title="Deschide în Shopify"
+                                                                    >
+                                                                        <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
+                                                                    </button>
+                                                                    {myshopifyDomain && (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); window.open(`https://xconnector.app/shop/${myshopifyDomain}?q=${encodeURIComponent(order.order_number)}&sortColumn=date&sortDirection=desc&pageSize=25&orderStatus=-1`, '_blank') }}
+                                                                            className="p-0.5 rounded hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-colors"
+                                                                            title="Deschide în Xconnector"
+                                                                        >
+                                                                            <Store className="w-3.5 h-3.5 text-orange-500" />
+                                                                        </button>
+                                                                    )}
+                                                                </>
                                                             )
                                                         })()}
                                                     </div>
