@@ -3322,21 +3322,23 @@ export default function Analytics() {
                                 {velocityData && !velocityLoading && (
                                     <>
                                         {/* Section B: KPI Cards */}
-                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
                                             {[
-                                                { label: 'Unități Vândute', value: velocityData.kpis.total_units.toLocaleString(), icon: <Package className="w-5 h-5" />, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-                                                { label: 'Revenue Total', value: `${velocityData.kpis.total_revenue.toLocaleString()} RON`, icon: <DollarSign className="w-5 h-5" />, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+                                                { label: 'Brut Unități', value: (velocityData.kpis.total_gross_units || 0).toLocaleString(), icon: <Package className="w-5 h-5" />, color: 'text-zinc-600 dark:text-zinc-300', bg: 'bg-zinc-50 dark:bg-zinc-800/60' },
+                                                { label: 'Net Unități', value: velocityData.kpis.total_units.toLocaleString(), icon: <Package className="w-5 h-5" />, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+                                                { label: 'Brut Revenue', value: `${(velocityData.kpis.total_gross_revenue || 0).toLocaleString()} RON`, icon: <DollarSign className="w-5 h-5" />, color: 'text-zinc-600 dark:text-zinc-300', bg: 'bg-zinc-50 dark:bg-zinc-800/60' },
+                                                { label: 'Net Revenue', value: `${velocityData.kpis.total_revenue.toLocaleString()} RON`, icon: <DollarSign className="w-5 h-5" />, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
                                                 { label: 'SKU-uri Active', value: velocityData.kpis.unique_skus, icon: <Tag className="w-5 h-5" />, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
-                                                { label: 'Unități / Zi', value: velocityData.kpis.avg_units_per_day, icon: <TrendingUp className="w-5 h-5" />, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+                                                { label: 'Net U/Zi', value: velocityData.kpis.avg_units_per_day, icon: <TrendingUp className="w-5 h-5" />, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
                                                 { label: 'Avg Order Value', value: `${velocityData.kpis.avg_order_value} RON`, icon: <BarChart3 className="w-5 h-5" />, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/20' },
                                                 { label: 'Comenzi Livrate', value: velocityData.kpis.delivered_orders?.toLocaleString(), icon: <Truck className="w-5 h-5" />, color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/20' },
                                             ].map(kpi => (
-                                                <div key={kpi.label} className={`${kpi.bg} rounded-xl border border-zinc-200 dark:border-zinc-700 p-4`}>
-                                                    <div className="flex items-center gap-2 mb-2">
+                                                <div key={kpi.label} className={`${kpi.bg} rounded-xl border border-zinc-200 dark:border-zinc-700 p-3`}>
+                                                    <div className="flex items-center gap-1.5 mb-1">
                                                         <span className={kpi.color}>{kpi.icon}</span>
-                                                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{kpi.label}</span>
+                                                        <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">{kpi.label}</span>
                                                     </div>
-                                                    <div className={`text-xl font-bold ${kpi.color}`}>{kpi.value}</div>
+                                                    <div className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</div>
                                                 </div>
                                             ))}
                                         </div>
@@ -3370,6 +3372,34 @@ export default function Analytics() {
                                                             placeholder="Caută SKU..."
                                                             className="w-48 px-2 py-1 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white"
                                                         />
+                                                        <button
+                                                            onClick={() => {
+                                                                const headers = ['SKU', 'Produs', 'Magazin', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'COGS', 'Marjă', 'Marjă %', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
+                                                                const rows = sortedProducts.map(p => [
+                                                                    p.sku, p.product_name || '', p.store_name || '',
+                                                                    p.gross_units || 0, p.gross_revenue || 0,
+                                                                    p.units_sold, p.revenue,
+                                                                    p.cogs, p.margin, p.margin_pct,
+                                                                    p.orders, p.gross_velocity || 0, p.velocity,
+                                                                    p.velocity_change_pct,
+                                                                    p.days_since_last_sale ?? '', p.stock_available || 0,
+                                                                    p.inventory_value || 0, p.revenue_share, p.delivery_rate
+                                                                ])
+                                                                const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+                                                                const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+                                                                const url = URL.createObjectURL(blob)
+                                                                const a = document.createElement('a')
+                                                                a.href = url
+                                                                const period = velocityData?.meta ? `${velocityData.meta.date_from?.slice(0,10)}_${velocityData.meta.date_to?.slice(0,10)}` : 'export'
+                                                                a.download = `viteza_vanzari_${period}.csv`
+                                                                a.click()
+                                                                URL.revokeObjectURL(url)
+                                                            }}
+                                                            className="px-3 py-1 text-xs font-medium rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors flex items-center gap-1"
+                                                            title="Export CSV"
+                                                        >
+                                                            <Download className="w-3.5 h-3.5" /> CSV
+                                                        </button>
                                                     </div>
                                                 </div>
                                                 <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
@@ -3379,23 +3409,24 @@ export default function Analytics() {
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8 bg-zinc-50 dark:bg-zinc-900">#</th>
                                                                 <VSort col="sku" label="SKU" />
                                                                 <VSort col="store_name" label="Magazin" tip="Magazinul de origine" />
-                                                                <VSort col="units_sold" label="Unități" tip="Total unități livrate" />
-                                                                <VSort col="revenue" label="Revenue" tip="Venit total RON" />
-                                                                <VSort col="margin" label="Marjă" tip="Revenue − COGS" />
+                                                                <VSort col="gross_units" label="Brut" tip="Total unități comandate (toate outcome-urile)" />
+                                                                <VSort col="units_sold" label="Net" tip="Unități livrate (doar DELIVERED)" />
+                                                                <VSort col="gross_revenue" label="Rev. Brut" tip="Revenue din toate comenzile" />
+                                                                <VSort col="revenue" label="Rev. Net" tip="Revenue doar din livrări" />
+                                                                <VSort col="margin" label="Marjă" tip="Revenue net − COGS" />
                                                                 <VSort col="margin_pct" label="Marjă %" />
                                                                 <VSort col="orders" label="Comenzi" />
-                                                                <VSort col="velocity" label="Viteză (u/zi)" tip="Unități vândute pe zi" />
+                                                                <VSort col="velocity" label="V. Net (u/zi)" tip="Unități livrate pe zi" />
                                                                 <VSort col="velocity_change_pct" label="Trend" tip="Schimbare față de perioada anterioară" />
                                                                 <VSort col="days_since_last_sale" label="Zile fără" tip="Zile de la ultima vânzare" />
                                                                 <VSort col="stock_available" label="Stoc" tip="Stoc disponibil curent" />
-                                                                <VSort col="inventory_value" label="Val. Inventar" tip="Stoc × Cost/buc" />
                                                                 <VSort col="revenue_share" label="Share %" tip="% din revenue total" />
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900">Sparkline</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                                             {sortedProducts.length === 0 && (
-                                                                <tr><td colSpan={15} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
+                                                                <tr><td colSpan={16} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
                                                             )}
                                                             {sortedProducts.map((p, i) => {
                                                                 const rowKey = `${p.sku}::${p.store_uid || ''}`
@@ -3411,7 +3442,9 @@ export default function Analytics() {
                                                                         <td className="px-3 py-2">
                                                                             <span className="text-xs px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full whitespace-nowrap">{p.store_name || '—'}</span>
                                                                         </td>
+                                                                        <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_units || 0).toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
+                                                                        <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_revenue || 0).toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{p.revenue.toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
                                                                         <td className={`px-3 py-2 text-sm font-medium ${p.margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{p.margin.toLocaleString()}</td>
                                                                         <td className={`px-3 py-2 text-sm ${p.margin_pct >= 30 ? 'text-emerald-600' : p.margin_pct >= 10 ? 'text-amber-600' : 'text-red-600'}`}>{p.margin_pct}%</td>
@@ -3429,14 +3462,13 @@ export default function Analytics() {
                                                                             {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
                                                                         </td>
                                                                         <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>
-                                                                        <td className="px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400">{p.inventory_value > 0 ? `${p.inventory_value.toLocaleString()} RON` : '—'}</td>
                                                                         <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
                                                                         <td className="px-3 py-2"><Sparkline data={p.daily_series} /></td>
                                                                     </tr>
                                                                     {/* Expanded detail */}
                                                                     {velocityExpanded === rowKey && (
                                                                         <tr className="bg-zinc-50 dark:bg-zinc-900/40">
-                                                                            <td colSpan={15} className="px-4 py-4">
+                                                                            <td colSpan={16} className="px-4 py-4">
                                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                                     <div>
                                                                                         <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>

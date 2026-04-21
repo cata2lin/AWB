@@ -142,7 +142,7 @@ async def get_sales_velocity(
         "sku": "", "group_key": "", "store_names": "", "product_name": "",
         "store_uids_in_group": set(),
         "units_sold": 0, "revenue": 0.0, "orders": 0,
-        "delivered_units": 0, "total_units": 0,
+        "delivered_units": 0, "total_units": 0, "gross_revenue": 0.0,
         "last_sale_date": None, "daily_units": defaultdict(float),
         "by_country": defaultdict(lambda: {"units": 0, "revenue": 0.0}),
     })
@@ -216,6 +216,7 @@ async def get_sales_velocity(
                     agg["product_name"] = product_name
 
                 agg["total_units"] += qty
+                agg["gross_revenue"] += line_rev
                 agg["orders"] += 1
 
                 if is_delivered:
@@ -307,6 +308,8 @@ async def get_sales_velocity(
     now = datetime.utcnow()
     total_revenue = sum(a["revenue"] for a in sku_current.values())
     total_units = sum(a["units_sold"] for a in sku_current.values())
+    total_gross_units = sum(a["total_units"] for a in sku_current.values())
+    total_gross_revenue = sum(a["gross_revenue"] for a in sku_current.values())
 
     products = []
     for comp_key, agg in sku_current.items():
@@ -314,7 +317,9 @@ async def get_sales_velocity(
         store_names = agg.get("store_names", "")
         store_uids_in_group = agg.get("store_uids_in_group", set())
         units = agg["units_sold"]
-        if units < min_units:
+        gross_units = agg["total_units"]
+        gross_rev = agg["gross_revenue"]
+        if gross_units < min_units:
             continue
 
         revenue = agg["revenue"]
@@ -360,12 +365,17 @@ async def get_sales_velocity(
         stock = group_stock_map.get(comp_key, 0)
         inv_value = round(unit_cost * stock, 2)
 
+        gross_velocity = _safe_div(gross_units, period_days)
+
         products.append({
             "sku": sku,
             "store_uid": "|".join(sorted(store_uids_in_group)),
             "store_name": store_names,
             "product_name": agg["product_name"],
             "stores_count": len(store_uids_in_group),
+            "gross_units": int(gross_units),
+            "gross_revenue": round(gross_rev, 2),
+            "gross_velocity": round(gross_velocity, 2),
             "units_sold": int(units),
             "revenue": round(revenue, 2),
             "cogs": round(cogs, 2),
@@ -395,6 +405,8 @@ async def get_sales_velocity(
     top_sku = products[0]["sku"] if products else None
 
     kpis = {
+        "total_gross_units": int(total_gross_units),
+        "total_gross_revenue": round(total_gross_revenue, 2),
         "total_units": int(total_units),
         "total_revenue": round(total_revenue, 2),
         "unique_skus": unique_skus,
