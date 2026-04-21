@@ -15,7 +15,7 @@ from app.services.frisbo.parser import parse_order
 
 # Configure logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 class FrisboClient:
