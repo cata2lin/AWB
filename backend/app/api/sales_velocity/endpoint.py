@@ -27,6 +27,9 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 # Outcomes that count as "delivered" for velocity purposes
 DELIVERED_OUTCOMES = {"DELIVERED"}
 
+# Nubra shares SKUs with esteban/GT but sells different products — never merge
+NUBRA_UID = "7d1a2e21-7efb-4cd7-b4e7-09ef875430a9-1774614410-JJ99XONT29"
+
 
 def _safe_div(a, b):
     return a / b if b else 0.0
@@ -93,20 +96,24 @@ async def get_sales_velocity(
     sku_cost_map: Dict[str, float] = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
 
     # ── Build store groups based on shared product listings ──────────────
-    # If a product listing covers stores [A, B], orders from A or B for that SKU
-    # should be grouped together. If store C has a separate listing for the same
-    # SKU, it gets its own row.
+    # ── Build SKU-level groups (merge across stores, except nubra) ──────
+    # Group key = just SKU for most stores, "sku::nubra" for nubra
     stock_query = await db.execute(
         select(Product)
         .where(Product.sku.isnot(None), Product.sku != '', Product.exclude_from_stock == False)
     )
     all_products = stock_query.scalars().all()
 
-    # Maps (sku, store_uid) → group_key  and  group_key → stock
-    sku_store_to_group: Dict[str, str] = {}   # "sku::store_uid" → group_key
-    group_stock_map: Dict[str, int] = {}       # group_key → total stock
-    group_stores_map: Dict[str, set] = {}      # group_key → set of store_uids
-    group_names_map: Dict[str, str] = {}       # group_key → display name
+    # Maps
+    sku_stock_map: Dict[str, int] = {}          # group_key → total stock
+    sku_group_stores: Dict[str, set] = {}       # group_key → set of store_uids
+    sku_product_name: Dict[str, str] = {}       # group_key → best product name
+
+    def _group_key_for(sku: str, store_uid: str) -> str:
+        """Compute the merge-group key. Nubra is always isolated."""
+        if store_uid == NUBRA_UID:
+            return f"{sku}::nubra"
+        return sku
 
     for prod in all_products:
         if not prod.sku:
@@ -121,30 +128,30 @@ async def get_sales_velocity(
         if not s_uids:
             s_uids = []
 
-        # The group key is the sorted store_uids signature for this product
-        group_key = f"{prod.sku}::{'|'.join(sorted(s_uids))}" if s_uids else f"{prod.sku}::"
-        group_stock_map[group_key] = group_stock_map.get(group_key, 0) + (prod.stock_available or 0)
-
-        if group_key not in group_stores_map:
-            group_stores_map[group_key] = set()
+        # Each store_uid in this listing maps to a group_key
         for s_uid in s_uids:
-            sku_store_to_group[f"{prod.sku}::{s_uid}"] = group_key
-            group_stores_map[group_key].add(s_uid)
-
-        # Build display name: join store names
-        if group_key not in group_names_map and s_uids:
-            names = [stores_map.get(u, u) for u in sorted(s_uids)]
-            group_names_map[group_key] = " + ".join(names)
+            gk = _group_key_for(prod.sku, s_uid)
+            sku_stock_map[gk] = sku_stock_map.get(gk, 0) + (prod.stock_available or 0)
+            if gk not in sku_group_stores:
+                sku_group_stores[gk] = set()
+            sku_group_stores[gk].add(s_uid)
+            if gk not in sku_product_name and prod.title_1:
+                sku_product_name[gk] = prod.title_1
 
     # ── 4. Process orders into current vs previous period ─────────────────
-    # Per-group aggregation structures
+    # Per-SKU-group aggregation
     sku_current: Dict[str, dict] = defaultdict(lambda: {
-        "sku": "", "group_key": "", "store_names": "", "product_name": "",
+        "sku": "", "group_key": "", "product_name": "",
         "store_uids_in_group": set(),
         "units_sold": 0, "revenue": 0.0, "orders": 0,
         "delivered_units": 0, "total_units": 0, "gross_revenue": 0.0,
         "last_sale_date": None, "daily_units": defaultdict(float),
         "by_country": defaultdict(lambda: {"units": 0, "revenue": 0.0}),
+        "by_store": defaultdict(lambda: {
+            "store_name": "", "store_uid": "",
+            "gross_units": 0, "units_sold": 0, "gross_revenue": 0.0, "revenue": 0.0,
+            "orders": 0, "daily_units": defaultdict(float),
+        }),
     })
     sku_previous: Dict[str, dict] = defaultdict(lambda: {"units_sold": 0, "revenue": 0.0, "orders": 0})
 
@@ -203,34 +210,43 @@ async def get_sales_velocity(
             product_name = inv.get("title_1", "") or ""
 
             if is_current:
-                # Look up group for this (sku, store_uid) pair
-                store_lookup = f"{sku}::{order.store_uid or ''}"
-                composite_key = sku_store_to_group.get(store_lookup, store_lookup)
+                # Look up merged group for this SKU (nubra gets isolated)
+                composite_key = _group_key_for(sku, order.store_uid or "")
                 agg = sku_current[composite_key]
                 agg["sku"] = sku
                 agg["group_key"] = composite_key
                 agg["store_uids_in_group"].add(order.store_uid or "")
-                # Build display name from all stores in this group
-                agg["store_names"] = group_names_map.get(composite_key, stores_map.get(order.store_uid, order.store_uid or ""))
-                if not agg["product_name"] and product_name:
-                    agg["product_name"] = product_name
+                if not agg["product_name"]:
+                    agg["product_name"] = product_name or sku_product_name.get(composite_key, "")
 
                 agg["total_units"] += qty
                 agg["gross_revenue"] += line_rev
                 agg["orders"] += 1
 
+                # Per-store sub-aggregation
+                st = agg["by_store"][order.store_uid or ""]
+                st["store_uid"] = order.store_uid or ""
+                st["store_name"] = stores_map.get(order.store_uid, order.store_uid or "")
+                st["gross_units"] += qty
+                st["gross_revenue"] += line_rev
+                st["orders"] += 1
+
                 if is_delivered:
                     agg["units_sold"] += qty
                     agg["revenue"] += line_rev
                     agg["delivered_units"] += qty
+                    st["units_sold"] += qty
+                    st["revenue"] += line_rev
 
                     # Track last sale date
                     if order_date and (agg["last_sale_date"] is None or order_date > agg["last_sale_date"]):
                         agg["last_sale_date"] = order_date
 
-                    # Daily series
+                    # Daily series (global for this SKU)
                     day_key = str(to_bucharest_date(order_date)) if order_date else "unknown"
                     agg["daily_units"][day_key] += qty
+                    # Daily series per store
+                    st["daily_units"][day_key] += qty
 
                     # By country
                     if order_country:
@@ -241,7 +257,7 @@ async def get_sales_velocity(
                     daily_totals[day_key]["units"] += qty
                     daily_totals[day_key]["revenue"] += line_rev
 
-                    # Store-level
+                    # Store-level global
                     sa = store_agg[order.store_uid]
                     sa["store_name"] = stores_map.get(order.store_uid, order.store_uid)
                     sa["units"] += qty
@@ -249,11 +265,10 @@ async def get_sales_velocity(
                     sa["active_skus"].add(sku)
 
                 if is_delivered:
-                    daily_totals[str(to_bucharest_date(order_date)) if order_date else "unknown"]["orders"] += 0  # counted once below
+                    daily_totals[str(to_bucharest_date(order_date)) if order_date else "unknown"]["orders"] += 0
 
             elif is_prev and is_delivered:
-                prev_lookup = f"{sku}::{order.store_uid or ''}"
-                prev_key = sku_store_to_group.get(prev_lookup, prev_lookup)
+                prev_key = _group_key_for(sku, order.store_uid or "")
                 prev = sku_previous[prev_key]
                 prev["units_sold"] += qty
                 prev["revenue"] += line_rev
@@ -314,8 +329,11 @@ async def get_sales_velocity(
     products = []
     for comp_key, agg in sku_current.items():
         sku = agg["sku"]
-        store_names = agg.get("store_names", "")
         store_uids_in_group = agg.get("store_uids_in_group", set())
+        # Build store display name from all stores in this group
+        store_names = " + ".join(sorted(
+            stores_map.get(u, u) for u in store_uids_in_group if u
+        ))
         units = agg["units_sold"]
         gross_units = agg["total_units"]
         gross_rev = agg["gross_revenue"]
@@ -362,10 +380,31 @@ async def get_sales_velocity(
         ]
         by_country.sort(key=lambda x: x["units"], reverse=True)
 
-        stock = group_stock_map.get(comp_key, 0)
+        stock = sku_stock_map.get(comp_key, 0)
         inv_value = round(unit_cost * stock, 2)
 
         gross_velocity = _safe_div(gross_units, period_days)
+
+        # Build per-store breakdown
+        by_store_list = []
+        for st_uid, st_data in agg["by_store"].items():
+            st_velocity = _safe_div(st_data["units_sold"], period_days)
+            st_daily = []
+            for i in range(period_days):
+                d = str(to_bucharest(dt_from + timedelta(days=i)).date())
+                st_daily.append({"date": d, "units": st_data["daily_units"].get(d, 0)})
+            by_store_list.append({
+                "store_uid": st_uid,
+                "store_name": st_data["store_name"],
+                "gross_units": int(st_data["gross_units"]),
+                "units_sold": int(st_data["units_sold"]),
+                "gross_revenue": round(st_data["gross_revenue"], 2),
+                "revenue": round(st_data["revenue"], 2),
+                "orders": st_data["orders"],
+                "velocity": round(st_velocity, 2),
+                "daily_series": st_daily,
+            })
+        by_store_list.sort(key=lambda x: x["units_sold"], reverse=True)
 
         products.append({
             "sku": sku,
@@ -392,6 +431,7 @@ async def get_sales_velocity(
             "revenue_share": round(revenue_share, 2),
             "daily_series": daily_series,
             "by_country": by_country[:10],
+            "by_store": by_store_list,
             "stock_available": stock,
             "unit_cost": round(unit_cost, 2),
             "inventory_value": inv_value,

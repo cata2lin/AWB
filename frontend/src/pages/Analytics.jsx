@@ -3408,7 +3408,7 @@ export default function Analytics() {
                                                             <tr>
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8 bg-zinc-50 dark:bg-zinc-900">#</th>
                                                                 <VSort col="sku" label="SKU" />
-                                                                <VSort col="store_name" label="Magazin" tip="Magazinul de origine" />
+                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900">Magazine</th>
                                                                 <VSort col="gross_units" label="Brut" tip="Total unități comandate (toate outcome-urile)" />
                                                                 <VSort col="units_sold" label="Net" tip="Unități livrate (doar DELIVERED)" />
                                                                 <VSort col="gross_revenue" label="Rev. Brut" tip="Revenue din toate comenzile" />
@@ -3440,7 +3440,12 @@ export default function Analytics() {
                                                                             {p.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.product_name}</div>}
                                                                         </td>
                                                                         <td className="px-3 py-2">
-                                                                            <span className="text-xs px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full whitespace-nowrap">{p.store_name || '—'}</span>
+                                                                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                                                                {(p.store_name || '—').split(' + ').map((s, si) => (
+                                                                                    <span key={si} className="text-[10px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full whitespace-nowrap">{s}</span>
+                                                                                ))}
+                                                                                {p.stores_count > 1 && <span className="text-[10px] text-zinc-400">({p.stores_count})</span>}
+                                                                            </div>
                                                                         </td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_units || 0).toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
@@ -3469,27 +3474,65 @@ export default function Analytics() {
                                                                     {velocityExpanded === rowKey && (
                                                                         <tr className="bg-zinc-50 dark:bg-zinc-900/40">
                                                                             <td colSpan={16} className="px-4 py-4">
-                                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                                    <div>
-                                                                                        <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
-                                                                                        <div className="space-y-1 text-xs">
-                                                                                            {p.by_country.map(bc => (
-                                                                                                <div key={bc.country} className="flex justify-between">
-                                                                                                    <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || '🏳️'} {bc.country}</span>
-                                                                                                    <span className="font-medium text-zinc-700 dark:text-zinc-200">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
-                                                                                                </div>
-                                                                                            ))}
-                                                                                            {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
+                                                                                <div className="space-y-4">
+                                                                                    {/* Per-Store Breakdown */}
+                                                                                    {p.by_store && p.by_store.length > 0 && (
+                                                                                        <div>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🏪 Per Magazin</h5>
+                                                                                            <table className="w-full text-xs">
+                                                                                                <thead>
+                                                                                                    <tr className="text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
+                                                                                                        <th className="text-left py-1.5 pr-3">Magazin</th>
+                                                                                                        <th className="text-right py-1.5 px-2">Brut</th>
+                                                                                                        <th className="text-right py-1.5 px-2">Net</th>
+                                                                                                        <th className="text-right py-1.5 px-2">Rev. Brut</th>
+                                                                                                        <th className="text-right py-1.5 px-2">Rev. Net</th>
+                                                                                                        <th className="text-right py-1.5 px-2">Comenzi</th>
+                                                                                                        <th className="text-right py-1.5 px-2">V (u/zi)</th>
+                                                                                                        <th className="text-left py-1.5 pl-3 w-[120px]">Trend</th>
+                                                                                                    </tr>
+                                                                                                </thead>
+                                                                                                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
+                                                                                                    {p.by_store.map(st => (
+                                                                                                        <tr key={st.store_uid} className="hover:bg-zinc-100 dark:hover:bg-zinc-800/50">
+                                                                                                            <td className="py-1.5 pr-3">
+                                                                                                                <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{st.store_name}</span>
+                                                                                                            </td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{st.gross_units.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 font-medium text-zinc-700 dark:text-zinc-300">{st.units_sold.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{st.gross_revenue.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-700 dark:text-zinc-300">{st.revenue.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-600 dark:text-zinc-400">{st.orders}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 font-bold text-emerald-600 dark:text-emerald-400">{st.velocity}</td>
+                                                                                                            <td className="py-1.5 pl-3"><Sparkline data={st.daily_series} /></td>
+                                                                                                        </tr>
+                                                                                                    ))}
+                                                                                                </tbody>
+                                                                                            </table>
                                                                                         </div>
-                                                                                    </div>
-                                                                                    <div>
-                                                                                        <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
-                                                                                        <div className="space-y-1 text-xs">
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.cogs.toLocaleString()} RON</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.delivery_rate}%</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.prev_velocity} u/zi</span></div>
-                                                                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>
+                                                                                    )}
+                                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                                        <div>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
+                                                                                            <div className="space-y-1 text-xs">
+                                                                                                {p.by_country.map(bc => (
+                                                                                                    <div key={bc.country} className="flex justify-between">
+                                                                                                        <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || '🏳️'} {bc.country}</span>
+                                                                                                        <span className="font-medium text-zinc-700 dark:text-zinc-200">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
+                                                                                                    </div>
+                                                                                                ))}
+                                                                                                {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
+                                                                                            <div className="space-y-1 text-xs">
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.cogs.toLocaleString()} RON</span></div>
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.delivery_rate}%</span></div>
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.prev_velocity} u/zi</span></div>
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>
+                                                                                            </div>
                                                                                         </div>
                                                                                     </div>
                                                                                 </div>
