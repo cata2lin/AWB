@@ -3374,9 +3374,9 @@ export default function Analytics() {
                                                         />
                                                         <button
                                                             onClick={() => {
-                                                                const headers = ['SKU', 'Produs', 'Magazin', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'COGS', 'Marjă', 'Marjă %', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
+                                                                const headers = ['SKU', 'Produs', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'COGS', 'Marjă', 'Marjă %', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
                                                                 const rows = sortedProducts.map(p => [
-                                                                    p.sku, p.product_name || '', p.store_name || '',
+                                                                    p.sku, p.product_name || '',
                                                                     p.gross_units || 0, p.gross_revenue || 0,
                                                                     p.units_sold, p.revenue,
                                                                     p.cogs, p.margin, p.margin_pct,
@@ -3408,7 +3408,7 @@ export default function Analytics() {
                                                             <tr>
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8 bg-zinc-50 dark:bg-zinc-900">#</th>
                                                                 <VSort col="sku" label="SKU" />
-                                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900">Magazine</th>
+
                                                                 <VSort col="gross_units" label="Brut" tip="Total unități comandate (toate outcome-urile)" />
                                                                 <VSort col="units_sold" label="Net" tip="Unități livrate (doar DELIVERED)" />
                                                                 <VSort col="gross_revenue" label="Rev. Brut" tip="Revenue din toate comenzile" />
@@ -3426,7 +3426,7 @@ export default function Analytics() {
                                                         </thead>
                                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                                             {sortedProducts.length === 0 && (
-                                                                <tr><td colSpan={16} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
+                                                                <tr><td colSpan={15} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
                                                             )}
                                                             {sortedProducts.map((p, i) => {
                                                                 const rowKey = `${p.sku}::${p.store_uid || ''}`
@@ -3439,14 +3439,7 @@ export default function Analytics() {
                                                                             <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
                                                                             {p.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.product_name}</div>}
                                                                         </td>
-                                                                        <td className="px-3 py-2">
-                                                                            <div className="flex flex-wrap gap-1 max-w-[200px]">
-                                                                                {(p.store_name || '—').split(' + ').map((s, si) => (
-                                                                                    <span key={si} className="text-[10px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full whitespace-nowrap">{s}</span>
-                                                                                ))}
-                                                                                {p.stores_count > 1 && <span className="text-[10px] text-zinc-400">({p.stores_count})</span>}
-                                                                            </div>
-                                                                        </td>
+
                                                                         <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_units || 0).toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_revenue || 0).toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
