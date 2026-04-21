@@ -11,16 +11,17 @@ from typing import List
 # Constants — Final outcome mapping from workflow/shipment/fulfillment statuses
 # ---------------------------------------------------------------------------
 
-DELIVERED_WORKFLOW = {"delivered", "customer_pickup"}
-BACK_TO_SENDER_WORKFLOW = {"back_to_sender", "returning_to_sender"}
+DELIVERED_WORKFLOW = {"delivered", "customer_pickup", "in_parcel_locker"}
+BACK_TO_SENDER_WORKFLOW = {"back_to_sender", "returning_to_sender", "incorrect_address", "lost"}
 BACK_TO_SENDER_SHIPMENT = {"received_by_sender", "returning_to_sender"}
 CANCELLED_WORKFLOW = {"cancelled"}
 CANCELLED_SHIPMENT = {"canceled"}
 REFUSED_WORKFLOW = {"refused", "unsuccessful_delivery"}
 REFUSED_SHIPMENT = {"refused", "unsuccessful_delivery"}
-DELIVERY_PROBLEM_WORKFLOW = {"incorrect_address", "redirected", "on_hold"}
+DELIVERY_PROBLEM_WORKFLOW = {"redirected", "on_hold", "deferred_delivery"}
 DELIVERY_PROBLEM_SHIPMENT = {"incorrect_address", "redirected"}
-NOT_SHIPPED_WORKFLOW = {"waiting_for_courier"}
+IN_TRANSIT_WORKFLOW = {"fulfilled"}
+NOT_SHIPPED_WORKFLOW = {"waiting_for_courier", "not_fulfilled"}
 NOT_SHIPPED_SHIPMENT = {"created_awb", "not_created"}
 NOT_SHIPPED_FULFILLMENT = {"not_fulfilled", "partial"}
 
@@ -54,6 +55,8 @@ def compute_final_outcome(workflow: str, shipment: str, fulfillment: str) -> str
         return "REFUSED"
     if ws in DELIVERY_PROBLEM_WORKFLOW or ss in DELIVERY_PROBLEM_SHIPMENT:
         return "DELIVERY_PROBLEM"
+    if ws in IN_TRANSIT_WORKFLOW:
+        return "IN_TRANSIT"
     if ws in NOT_SHIPPED_WORKFLOW or ss in NOT_SHIPPED_SHIPMENT or fs in NOT_SHIPPED_FULFILLMENT:
         return "NOT_SHIPPED_OR_PENDING"
     return "OTHER"
