@@ -46,15 +46,15 @@ async def get_deliverability_stats(
     query = select(
         Order.store_uid,
         func.count(Order.id).label('total'),
-        func.sum(case((Order.aggregated_status == 'delivered', 1), else_=0)).label('delivered'),
+        func.sum(case((Order.aggregated_status.in_(['delivered', 'customer_pickup']), 1), else_=0)).label('delivered'),
         func.sum(case((Order.aggregated_status == 'cancelled', 1), else_=0)).label('cancelled'),
-        func.sum(case((Order.aggregated_status == 'back_to_sender', 1), else_=0)).label('returned'),
+        func.sum(case((Order.aggregated_status.in_(['back_to_sender', 'returning_to_sender']), 1), else_=0)).label('returned'),
         func.sum(case((Order.aggregated_status == 'in_transit', 1), else_=0)).label('in_transit'),
         func.sum(case((Order.aggregated_status == 'out_for_delivery', 1), else_=0)).label('out_for_delivery'),
         func.sum(case((Order.aggregated_status == 'processing', 1), else_=0)).label('processing'),
         func.sum(case((Order.aggregated_status == 'ready_for_pickup', 1), else_=0)).label('ready_for_pickup'),
         func.sum(case((Order.aggregated_status == 'new', 1), else_=0)).label('new'),
-        func.sum(case((Order.aggregated_status == 'refused', 1), else_=0)).label('refused'),
+        func.sum(case((Order.aggregated_status.in_(['refused', 'unsuccessful_delivery']), 1), else_=0)).label('refused'),
         func.sum(case((Order.aggregated_status == 'waiting_for_courier', 1), else_=0)).label('waiting_for_courier'),
     ).group_by(Order.store_uid)
     
