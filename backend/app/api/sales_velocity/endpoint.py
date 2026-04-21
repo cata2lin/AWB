@@ -9,6 +9,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func as sqlfunc
@@ -65,8 +66,12 @@ async def get_sales_velocity(
             dt_from = datetime.utcnow() - timedelta(days=days)
             dt_to = datetime.utcnow()
     else:
-        dt_to = datetime.utcnow()
-        dt_from = dt_to - timedelta(days=days)
+        # Use Bucharest midnight boundaries so date range matches Shopify/RO
+        now_buc = datetime.now(ZoneInfo("Europe/Bucharest"))
+        end_of_today_buc = now_buc.replace(hour=23, minute=59, second=59, microsecond=0)
+        start_buc = (now_buc - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+        dt_from = start_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        dt_to = end_of_today_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
     period_days = max((dt_to - dt_from).days, 1)
 
