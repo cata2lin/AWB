@@ -235,6 +235,18 @@ async def get_purchase_orders(
     orders_result = await db.execute(order_query)
     orders = orders_result.scalars().all()
 
+    # FX rate preload for non-RON currencies
+    from app.api.exchange_rates import preload_rates, get_rate_from_cache
+    from app.core.timezone import to_bucharest_date, romania_today
+    non_ron_currencies = {(o.currency or 'RON').upper() for o in orders if (o.currency or 'RON').upper() != 'RON'}
+    rate_cache = {}
+    if non_ron_currencies:
+        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in orders]
+        if order_dates:
+            min_date = min(order_dates)
+            max_date = max(order_dates)
+            rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
+
     # Per-SKU sales aggregation
     sku_sales = defaultdict(lambda: {"units": 0, "revenue": 0.0, "orders": 0})
 
@@ -261,6 +273,12 @@ async def get_purchase_orders(
                 continue
             qty = float(item.get("quantity", 1) or 1)
             price = float(item.get("price", 0) or 0)
+            # Convert price to RON
+            order_currency = (order.currency or 'RON').upper()
+            if order_currency != 'RON':
+                fx = get_rate_from_cache(order_currency, to_bucharest_date(order.frisbo_created_at) or romania_today(), rate_cache)
+                if fx is not None:
+                    price = price * fx
             sku_sales[sku]["units"] += qty
             sku_sales[sku]["revenue"] += price * qty
             sku_sales[sku]["orders"] += 1

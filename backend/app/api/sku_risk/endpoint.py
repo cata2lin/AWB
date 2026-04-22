@@ -16,8 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.timezone import to_bucharest_iso, date_str_to_utc_start, date_str_to_utc_end
+from app.core.timezone import to_bucharest_iso, to_bucharest_date, date_str_to_utc_start, date_str_to_utc_end
 from app.models import Order, Store, SkuCost
+from app.api.exchange_rates import preload_rates, get_rate_from_cache
 from app.api.sku_risk.computations import (
     compute_final_outcome, safe_div, normalize_min_max,
     PROBLEM_OUTCOMES, DEFAULT_SHIPPING_COST_PCT_THRESHOLD,
@@ -90,6 +91,17 @@ async def get_sku_risk(
     sku_costs_result = await db.execute(select(SkuCost))
     sku_cost_map: Dict[str, float] = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
 
+    # ── FX rate preload for non-RON currencies ───────────────────────────
+    from app.core.timezone import romania_today
+    non_ron_currencies = {(o.currency or 'RON').upper() for o in all_orders if (o.currency or 'RON').upper() != 'RON'}
+    rate_cache = {}
+    if non_ron_currencies:
+        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in all_orders]
+        if order_dates:
+            min_date = min(order_dates)
+            max_date = max(order_dates)
+            rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
+
     # ── 4. Process orders ─────────────────────────────────────────────────
     order_data_list = []
     orders_with_shipping = 0
@@ -117,6 +129,14 @@ async def get_sku_risk(
                 items_raw = []
 
         # Deduplicate and aggregate line items by SKU within order
+        # FX rate for this order (all items share the same currency)
+        order_currency = (order.currency or 'RON').upper()
+        fx_rate = 1.0
+        if order_currency != 'RON':
+            fx = get_rate_from_cache(order_currency, to_bucharest_date(order.frisbo_created_at) or romania_today(), rate_cache)
+            if fx is not None:
+                fx_rate = fx
+
         sku_lines: Dict[str, dict] = {}
         for item in items_raw:
             inv = item.get("inventory_item", {}) or {}
@@ -124,7 +144,7 @@ async def get_sku_risk(
             if not sku:
                 continue
             qty = float(item.get("quantity", 1) or 1)
-            price = float(item.get("price", 0) or 0)
+            price = float(item.get("price", 0) or 0) * fx_rate
             line_rev = price * qty
 
             if sku in sku_lines:
@@ -170,8 +190,8 @@ async def get_sku_risk(
             "store_name": stores_map.get(order.store_uid, order.store_uid),
             "date": to_bucharest_iso(order.frisbo_created_at),
             "final_outcome": final_outcome,
-            "order_total": order.total_price or 0,
-            "shipping_charged": shipping_charged,
+            "order_total": (order.total_price or 0) * fx_rate,
+            "shipping_charged": round(shipping_charged * fx_rate, 2) if shipping_charged is not None else None,
             "real_shipping_cost": real_shipping,
             "courier_name": order.courier_name or "",
             "country_code": order_country,

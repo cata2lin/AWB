@@ -20,6 +20,7 @@ from app.core.timezone import to_bucharest_iso, to_bucharest_date, to_bucharest,
 from app.models import Order, Store, SkuCost
 from app.models.product import Product
 from app.api.sku_risk.computations import compute_final_outcome
+from app.api.exchange_rates import preload_rates, get_rate_from_cache
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,17 @@ async def get_sales_velocity(
 
     result = await db.execute(query)
     all_orders = result.scalars().all()
+
+    # ── FX rate preload for non-RON currencies ───────────────────────────
+    from app.core.timezone import romania_today
+    non_ron_currencies = {(o.currency or 'RON').upper() for o in all_orders if (o.currency or 'RON').upper() != 'RON'}
+    rate_cache = {}
+    if non_ron_currencies:
+        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in all_orders]
+        if order_dates:
+            min_date = min(order_dates)
+            max_date = max(order_dates)
+            rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
 
     # ── 3. Load stores + SKU costs + stock ──────────────────────────────────
     stores_result = await db.execute(select(Store))
@@ -211,6 +223,12 @@ async def get_sales_velocity(
 
             qty = float(item.get("quantity", 1) or 1)
             price = float(item.get("price", 0) or 0)
+            # Convert price to RON using per-order date BNR rate
+            order_currency = (order.currency or 'RON').upper()
+            if order_currency != 'RON':
+                fx = get_rate_from_cache(order_currency, to_bucharest_date(order.frisbo_created_at) or romania_today(), rate_cache)
+                if fx is not None:
+                    price = price * fx
             line_rev = price * qty
             product_name = inv.get("title_1", "") or ""
 
