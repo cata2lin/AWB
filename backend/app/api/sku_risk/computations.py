@@ -20,9 +20,10 @@ REFUSED_WORKFLOW = {"refused", "unsuccessful_delivery"}
 REFUSED_SHIPMENT = {"refused", "unsuccessful_delivery"}
 DELIVERY_PROBLEM_WORKFLOW = {"redirected", "on_hold", "deferred_delivery"}
 DELIVERY_PROBLEM_SHIPMENT = {"incorrect_address", "redirected"}
-IN_TRANSIT_WORKFLOW = {"fulfilled"}
+IN_TRANSIT_WORKFLOW = {"fulfilled", "in_transit", "out_for_delivery"}
+IN_TRANSIT_SHIPMENT = {"in_transit", "out_for_delivery"}
 NOT_SHIPPED_WORKFLOW = {"waiting_for_courier", "not_fulfilled"}
-NOT_SHIPPED_SHIPMENT = {"created_awb", "not_created"}
+NOT_SHIPPED_SHIPMENT = {"created_awb", "not_created", "generated_awb"}
 NOT_SHIPPED_FULFILLMENT = {"not_fulfilled", "partial"}
 
 # Problem outcomes for SKU risk
@@ -55,7 +56,7 @@ def compute_final_outcome(workflow: str, shipment: str, fulfillment: str) -> str
         return "REFUSED"
     if ws in DELIVERY_PROBLEM_WORKFLOW or ss in DELIVERY_PROBLEM_SHIPMENT:
         return "DELIVERY_PROBLEM"
-    if ws in IN_TRANSIT_WORKFLOW:
+    if ws in IN_TRANSIT_WORKFLOW or ss in IN_TRANSIT_SHIPMENT:
         return "IN_TRANSIT"
     if ws in NOT_SHIPPED_WORKFLOW or ss in NOT_SHIPPED_SHIPMENT or fs in NOT_SHIPPED_FULFILLMENT:
         return "NOT_SHIPPED_OR_PENDING"
