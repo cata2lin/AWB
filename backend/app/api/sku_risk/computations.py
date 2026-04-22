@@ -19,12 +19,12 @@ CANCELLED_SHIPMENT = {"canceled"}
 REFUSED_WORKFLOW = {"refused", "unsuccessful_delivery"}
 REFUSED_SHIPMENT = {"refused", "unsuccessful_delivery"}
 DELIVERY_PROBLEM_WORKFLOW = {"redirected", "on_hold", "deferred_delivery"}
-DELIVERY_PROBLEM_SHIPMENT = {"incorrect_address", "redirected"}
+DELIVERY_PROBLEM_SHIPMENT = {"incorrect_address", "redirected", "deferred_delivery"}
 IN_TRANSIT_WORKFLOW = {"fulfilled", "in_transit", "out_for_delivery"}
-IN_TRANSIT_SHIPMENT = {"in_transit", "out_for_delivery"}
+IN_TRANSIT_SHIPMENT = {"in_transit", "out_for_delivery", "customer_pickup"}
 NOT_SHIPPED_WORKFLOW = {"waiting_for_courier", "not_fulfilled"}
 NOT_SHIPPED_SHIPMENT = {"created_awb", "not_created", "generated_awb"}
-NOT_SHIPPED_FULFILLMENT = {"not_fulfilled", "partial"}
+NOT_SHIPPED_FULFILLMENT = {"not_fulfilled", "partial", "on_hold", "ready_for_picking"}
 
 # Problem outcomes for SKU risk
 PROBLEM_OUTCOMES = {"BACK_TO_SENDER", "CANCELLED", "REFUSED"}
