@@ -22,6 +22,10 @@ export const analyticsApi = {
         const { data } = await api.get('/analytics/profitability', { params })
         return data
     },
+    getMultiPeriodProfitability: async (params = {}) => {
+        const { data } = await api.get('/analytics/profitability/multi-period', { params })
+        return data
+    },
     getSkuRisk: async (params = {}) => {
         const { data } = await api.get('/analytics/sku-risk', { params })
         return data

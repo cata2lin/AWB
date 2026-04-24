@@ -27,6 +27,7 @@ from app.models.business_cost import BusinessCost
 from app.api.profitability_config import get_or_create_config
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _sku_hash(line_items) -> Optional[str]:
@@ -281,13 +282,14 @@ async def get_overall_profitability(
                             missing_sku_costs.add(sku)
         
         # --- Determine category first (affects which costs apply) ---
-        if status == 'delivered':
+        # ALIGNED with deliverability tab status groups for consistency
+        if status in ['delivered', 'customer_pickup', 'in_parcel_locker']:
             cat = 'delivered'
-        elif status in ['back_to_sender', 'returned']:
+        elif status in ['back_to_sender', 'returned', 'returning_to_sender', 'incorrect_address', 'lost']:
             cat = 'returned'
         elif status in ['cancelled', 'voided']:
             cat = 'cancelled'
-        elif status in ['in_transit', 'out_for_delivery', 'customer_pickup']:
+        elif status in ['in_transit', 'out_for_delivery', 'fulfilled', 'redirected', 'deferred_delivery', 'on_hold']:
             cat = 'in_transit'
         else:
             cat = 'other'
@@ -478,7 +480,6 @@ async def get_overall_profitability(
     }
     
     # --- Fetch marketing costs from Google Sheets ---
-    logger = logging.getLogger(__name__)
     marketing_costs = {}
     marketing_total = {'facebook': 0, 'tiktok': 0, 'google': 0, 'total': 0}
     try:

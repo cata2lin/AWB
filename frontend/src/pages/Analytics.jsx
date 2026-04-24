@@ -26,20 +26,22 @@ import {
     DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2,
     Eye, EyeOff, Settings2, Download, ArrowUpDown
 } from 'lucide-react'
-import { exportPnlToExcel, exportPnlComparativToExcel } from '../utils/pnlExport'
+import { exportPnlToExcel } from '../utils/pnlExport'
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
 import ProductsTab from '../components/ProductsTab'
 import PrintHistoryTab from '../components/PrintHistoryTab'
 import PurchaseOrdersTab from '../components/PurchaseOrdersTab'
 import MultiSelectFilter from '../components/MultiSelectFilter'
+import ContributionMarginPnl from '../components/ContributionMarginPnl'
+import DetailedPnl from '../components/DetailedPnl'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
-    'RO': '🇷🇴', 'BG': '🇧🇬', 'HU': '🇭🇺', 'DE': '🇩🇪', 'FR': '🇫🇷',
-    'IT': '🇮🇹', 'ES': '🇪🇸', 'PL': '🇵🇱', 'AT': '🇦🇹', 'GR': '🇬🇷',
-    'NL': '🇳🇱', 'BE': '🇧🇪', 'PT': '🇵🇹', 'SE': '🇸🇪', 'GB': '🇬🇧',
-    'CZ': '🇨🇿', 'SK': '🇸🇰', 'HR': '🇭🇷', 'SI': '🇸🇮', 'MD': '🇲🇩',
-    'UA': '🇺🇦', 'RS': '🇷🇸', 'IE': '🇮🇪'
+    'RO': 'ðŸ‡·ðŸ‡´', 'BG': 'ðŸ‡§ðŸ‡¬', 'HU': 'ðŸ‡­ðŸ‡º', 'DE': 'ðŸ‡©ðŸ‡ª', 'FR': 'ðŸ‡«ðŸ‡·',
+    'IT': 'ðŸ‡®ðŸ‡¹', 'ES': 'ðŸ‡ªðŸ‡¸', 'PL': 'ðŸ‡µðŸ‡±', 'AT': 'ðŸ‡¦ðŸ‡¹', 'GR': 'ðŸ‡¬ðŸ‡·',
+    'NL': 'ðŸ‡³ðŸ‡±', 'BE': 'ðŸ‡§ðŸ‡ª', 'PT': 'ðŸ‡µðŸ‡¹', 'SE': 'ðŸ‡¸ðŸ‡ª', 'GB': 'ðŸ‡¬ðŸ‡§',
+    'CZ': 'ðŸ‡¨ðŸ‡¿', 'SK': 'ðŸ‡¸ðŸ‡°', 'HR': 'ðŸ‡­ðŸ‡·', 'SI': 'ðŸ‡¸ðŸ‡®', 'MD': 'ðŸ‡²ðŸ‡©',
+    'UA': 'ðŸ‡ºðŸ‡¦', 'RS': 'ðŸ‡·ðŸ‡¸', 'IE': 'ðŸ‡®ðŸ‡ª'
 }
 
 // Color palette for charts
@@ -84,7 +86,6 @@ export default function Analytics() {
     const [profitLoading, setProfitLoading] = useState(false)
     const [expandedPnlSections, setExpandedPnlSections] = useState({})
     const [profitStores, setProfitStores] = useState([]) // Dedicated store filter for profitability tabs
-    const [pnlHiddenStores, setPnlHiddenStores] = useState([]) // Hide specific store columns in P&L Comparativ
 
     // CSV Coverage Gaps state
     const [csvGapsData, setCsvGapsData] = useState(null)
@@ -190,7 +191,7 @@ export default function Analytics() {
     }, [])
 
     // Fetch analytics data
-    // Compute effective date range key — only changes when BOTH dates are set
+    // Compute effective date range key â€” only changes when BOTH dates are set
     // This prevents double-reload when user sets one date at a time
     const effectiveDateRange = (customDateFrom && customDateTo) ? `${customDateFrom}_${customDateTo}` : null
 
@@ -226,7 +227,7 @@ export default function Analytics() {
                 setPrintAnalytics(printRes)
                 setIsLoading(false)
 
-                // Profitability is NOT auto-fetched — user must click "Analizează"
+                // Profitability is NOT auto-fetched â€” user must click "Analizează"
             } catch (err) {
                 console.error('Failed to fetch analytics:', err)
                 setIsLoading(false)
@@ -580,14 +581,14 @@ export default function Analytics() {
                     Profitabilitate
                 </button>
                 <button
-                    onClick={() => setActiveTab('pnlCompare')}
-                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'pnlCompare'
+                    onClick={() => setActiveTab('pnlDetailed')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'pnlDetailed'
                         ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
                         }`}
                 >
                     <BarChart3 className="w-4 h-4 inline mr-2" />
-                    P&L Comparativ
+                    P&L Detaliat
                 </button>
                 <button
                     onClick={() => setActiveTab('skuCosts')}
@@ -729,7 +730,7 @@ export default function Analytics() {
                                         <input type="date" value={delivDateFrom}
                                             onChange={(e) => setDelivDateFrom(e.target.value)}
                                             className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
-                                        <span className="text-zinc-400">→</span>
+                                        <span className="text-zinc-400">â†’</span>
                                         <input type="date" value={delivDateTo}
                                             onChange={(e) => setDelivDateTo(e.target.value)}
                                             className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
@@ -849,7 +850,7 @@ export default function Analytics() {
                                                             {c.label}
                                                             <ArrowUpDown className={`w-3 h-3 ${delivSort.col === c.field ? 'text-indigo-500' : 'opacity-40'}`} />
                                                             {delivSort.col === c.field && (
-                                                                <span className="text-[9px] text-indigo-500">{delivSort.dir === 'asc' ? '↑' : '↓'}</span>
+                                                                <span className="text-[9px] text-indigo-500">{delivSort.dir === 'asc' ? 'â†‘' : 'â†“'}</span>
                                                             )}
                                                         </span>
                                                     </th>
@@ -931,669 +932,9 @@ export default function Analytics() {
                     {/* Profitability Tab */}
                     {activeTab === 'profitability' && (
                         <div className="space-y-6">
-                            {/* ═══ DATE PERIOD FILTER ═══ */}
-                            <div className="bg-white dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mr-1">Perioadă:</span>
-                                    {[
-                                        { key: 'thisMonth', label: 'Luna curentă' },
-                                        { key: 'lastMonth', label: 'Luna trecută' },
-                                        { key: '30d', label: '30 zile' },
-                                        { key: '90d', label: '90 zile' },
-                                    ].map(p => (
-                                        <button
-                                            key={p.key}
-                                            onClick={() => { setProfitPeriod(p.key); setProfitDateFrom(''); setProfitDateTo('') }}
-                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${profitPeriod === p.key
-                                                ? 'bg-indigo-600 text-white shadow-sm'
-                                                : 'bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                                                }`}
-                                        >
-                                            {p.label}
-                                        </button>
-                                    ))}
+                            {/* â•â•â• CONTRIBUTION MARGIN P&L â•â•â• */}
+                            <ContributionMarginPnl authFetch={authFetch} />
 
-                                    {/* Month quick-select */}
-                                    <select
-                                        value={/^\d{4}-\d{2}$/.test(profitPeriod) ? profitPeriod : ''}
-                                        onChange={(e) => { if (e.target.value) { setProfitPeriod(e.target.value); setProfitDateFrom(''); setProfitDateTo('') } }}
-                                        className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-white border-0 cursor-pointer"
-                                    >
-                                        <option value="">Lună specifică...</option>
-                                        {(() => {
-                                            const months = []
-                                            const now = new Date()
-                                            for (let i = 0; i < 18; i++) {
-                                                const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-                                                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                                                const label = d.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
-                                                months.push(<option key={key} value={key}>{label}</option>)
-                                            }
-                                            return months
-                                        })()}
-                                    </select>
-
-                                    <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600 mx-1" />
-
-                                    {/* Custom range */}
-                                    <button
-                                        onClick={() => setProfitPeriod('custom')}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${profitPeriod === 'custom'
-                                            ? 'bg-indigo-600 text-white shadow-sm'
-                                            : 'bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                                            }`}
-                                    >
-                                        Perioadă custom
-                                    </button>
-                                    {profitPeriod === 'custom' && (
-                                        <>
-                                            <input
-                                                type="date"
-                                                value={profitDateFrom}
-                                                onChange={(e) => setProfitDateFrom(e.target.value)}
-                                                className="px-2 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
-                                            />
-                                            <span className="text-zinc-400">→</span>
-                                            <input
-                                                type="date"
-                                                value={profitDateTo}
-                                                onChange={(e) => setProfitDateTo(e.target.value)}
-                                                className="px-2 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
-                                            />
-                                        </>
-                                    )}
-
-                                    <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600 mx-1" />
-
-                                    {/* Store filter */}
-                                    <div className="relative">
-                                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Magazine</label>
-                                        <select
-                                            value=""
-                                            onChange={e => {
-                                                const v = e.target.value
-                                                if (!v) return
-                                                setProfitStores(prev => prev.includes(v) ? prev.filter(s => s !== v) : [...prev, v])
-                                            }}
-                                            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white"
-                                        >
-                                            <option value="">{profitStores.length === 0 ? 'Toate' : `${profitStores.length} selectate`}</option>
-                                            {stores.map(s => (
-                                                <option key={s.uid} value={s.uid}>{profitStores.includes(s.uid) ? '✓ ' : ''}{s.name}</option>
-                                            ))}
-                                        </select>
-                                        {profitStores.length > 0 && (
-                                            <button onClick={() => setProfitStores([])} className="absolute -top-0.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center leading-none">×</button>
-                                        )}
-                                    </div>
-
-                                    <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer self-end">
-                                        <input type="checkbox"
-                                            checked={Object.keys(expandedPnlSections).length > 0 && Object.values(expandedPnlSections).every(v => v)}
-                                            onChange={e => {
-                                                const allSections = ['income', 'cogs', 'operational', 'marketing', 'fixed']
-                                                if (e.target.checked) {
-                                                    setExpandedPnlSections(Object.fromEntries(allSections.map(s => [s, true])))
-                                                } else {
-                                                    setExpandedPnlSections({})
-                                                }
-                                            }}
-                                            className="rounded border-zinc-300 text-indigo-600 w-3.5 h-3.5" />
-                                        Expandate
-                                    </label>
-
-                                    <button onClick={fetchProfitNow} disabled={profitLoading}
-                                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 self-end">
-                                        {profitLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
-                                        Analizează
-                                    </button>
-
-                                    {profitabilityData && (
-                                        <button
-                                            onClick={() => exportPnlToExcel(profitabilityData)}
-                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 self-end"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                            Export Excel
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-
-                            {!profitabilityData && !profitLoading && (
-                                <div className="text-center py-16 text-zinc-500 dark:text-zinc-400">
-                                    <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                                    <p className="text-lg font-medium">Selectează filtrele și apasă Analizează</p>
-                                    <p className="text-sm mt-1">Profitabilitatea va fi calculată pe baza filtrelor selectate.</p>
-                                </div>
-                            )}
-                            {profitLoading && (
-                                <div className="flex items-center justify-center py-20">
-                                    <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
-                                    <span className="ml-3 text-zinc-500 dark:text-zinc-300">Se calculează profitabilitatea...</span>
-                                </div>
-                            )}
-                            {profitabilityData && (
-                                <>
-                                    {/* ═══ P&L INCOME STATEMENT ═══ */}
-                                    {(() => {
-                                        const pnl = profitabilityData.pnl
-                                        const vatRate = profitabilityData.config?.vat_rate || 0.21
-                                        const fm = (val) => formatMoney(val)
-                                        const pctColor = (pct) => pct >= 20 ? 'text-green-600 dark:text-green-400' : pct >= 10 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
-
-                                        const summary = profitabilityData.summary
-                                        const cb = summary?.cost_breakdown || {}
-
-                                        const getVal = (pnlObj, fallback) => {
-                                            if (pnlObj) return pnlObj
-                                            const v = fallback || 0
-                                            return { cu_tva: v, fara_tva: vatRate > 0 ? v / (1 + vatRate) : v }
-                                        }
-
-                                        // Tooltip helper (same as P&L Comparativ tab)
-                                        const PnlTooltip = ({ text }) => text ? (
-                                            <span className="relative group/tip inline-flex ml-1">
-                                                <Info className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 cursor-help opacity-50 group-hover/tip:opacity-100 transition-opacity" />
-                                                <span className="absolute left-6 top-0 z-[100] invisible group-hover/tip:visible opacity-0 group-hover/tip:opacity-100 transition-all duration-200 w-[320px] max-w-[90vw] px-3 py-2.5 text-xs font-normal normal-case tracking-normal leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-600 whitespace-normal break-words">
-                                                    {text}
-                                                </span>
-                                            </span>
-                                        ) : null
-
-                                        // P&L Row component — single value column
-                                        const PnlRow = ({ label, value, isHeader, isBold, isTotal, isProfit, isNegative, indent, pct, tooltip, className: extraClass }) => {
-                                            const rowBg = isHeader ? 'bg-zinc-100 dark:bg-zinc-900/60' : isTotal ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''
-                                            const textStyle = isHeader ? 'font-bold text-zinc-900 dark:text-white uppercase text-xs tracking-wide' :
-                                                isBold ? 'font-bold text-zinc-900 dark:text-white' :
-                                                    isTotal ? 'font-semibold text-zinc-800 dark:text-white border-t border-zinc-300 dark:border-zinc-600' :
-                                                        'text-zinc-700 dark:text-white'
-                                            const valColor = isProfit ? (value >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400') :
-                                                isNegative ? 'text-red-600 dark:text-red-400' : ''
-                                            const pl = indent ? `pl-${indent * 4 + 4}` : 'pl-4'
-
-                                            return (
-                                                <tr className={`${rowBg} ${extraClass || ''}`}>
-                                                    <td className={`${pl} py-1 text-sm ${textStyle}`}>
-                                                        <span className="inline-flex items-center">
-                                                            {label}
-                                                            <PnlTooltip text={tooltip} />
-                                                        </span>
-                                                        {pct !== undefined && (
-                                                            <span className={`ml-2 text-xs font-normal ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</span>
-                                                        )}
-                                                    </td>
-                                                    {isHeader ? (
-                                                        <td className="px-4 py-1 text-xs font-bold text-right text-zinc-500 dark:text-white uppercase"></td>
-                                                    ) : (
-                                                        <td className={`px-4 py-1 text-sm text-right font-medium ${valColor || 'text-zinc-800 dark:text-white'}`}>
-                                                            {value !== undefined && value !== null ? fm(value) : ''}
-                                                        </td>
-                                                    )}
-                                                </tr>
-                                            )
-                                        }
-
-                                        // Collapsible TVA deductions section
-                                        const TvaSection = ({ title, items, totalTva }) => {
-                                            const sectionKey = `tva-${title}`
-                                            const isOpen = expandedPnlSections[sectionKey] === true // default closed
-                                            const toggle = () => setExpandedPnlSections(prev => ({ ...prev, [sectionKey]: !isOpen }))
-                                            // Filter out items with 0 TVA
-                                            const validItems = items.filter(i => i.tva && Math.abs(i.tva) > 0.01)
-                                            if (validItems.length === 0 && (!totalTva || Math.abs(totalTva) < 0.01)) return null
-                                            return (
-                                                <>
-                                                    <tr className="cursor-pointer select-none hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-colors" onClick={toggle}>
-                                                        <td className="pl-8 py-2 text-xs text-amber-700 dark:text-amber-400 font-medium">
-                                                            <span className="inline-flex items-center gap-1">
-                                                                <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-                                                                📋 TVA Deduceri
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-xs text-right text-amber-600 dark:text-amber-400 font-medium">
-                                                            {!isOpen && totalTva ? fm(-Math.abs(totalTva)) : ''}
-                                                        </td>
-                                                    </tr>
-                                                    {isOpen && validItems.map((item, idx) => (
-                                                        <tr key={idx} className="text-amber-600/80 dark:text-amber-500/80">
-                                                            <td className="pl-12 py-1.5 text-xs">{item.label}</td>
-                                                            <td className="px-4 py-1.5 text-xs text-right">{fm(-Math.abs(item.tva))}</td>
-                                                        </tr>
-                                                    ))}
-                                                </>
-                                            )
-                                        }
-
-                                        // Renders a P&L table for a given store or total
-                                        const renderStorePnl = (sp, title, isTotal, extraContent) => {
-                                            const inc = sp.income || {}
-                                            const cg = sp.cogs || {}
-                                            const op = sp.operational || {}
-                                            const mkt = sp.marketing || {}
-                                            const fc = sp.fixed_costs || {}
-                                            const np = sp.net_profit || { cu_tva: 0, fara_tva: 0 }
-                                            const npPct = sp.net_margin_pct ?? 0
-                                            const statusBreakdown = sp.status_breakdown || {}
-                                            const bizBySection = sp.business_costs_by_section || pnl?.business_costs_by_section || {}
-
-                                            // Revenue calculations
-                                            const grossSales = inc.gross_sales || { cu_tva: 0, fara_tva: 0 }
-                                            const returnsCancelled = inc.returns_cancelled || { cu_tva: 0, fara_tva: 0 }
-                                            const returnsCount = inc.returns_cancelled_count || 0
-                                            const salesDelivered = inc.sales_delivered || { cu_tva: 0, fara_tva: 0 }
-                                            const deliveredCount = inc.delivered_count || 0
-
-                                            // Net revenue (Vânzări = only delivered)
-                                            const netRevenue = salesDelivered
-                                            // TVA amount
-                                            const tvaAmount = (netRevenue.cu_tva || 0) - (netRevenue.fara_tva || 0)
-                                            const vatPctDisplay = Math.round(vatRate * 100)
-
-                                            // Intermediate profit metrics from backend
-                                            const grossProfit = sp.gross_profit || { cu_tva: 0, fara_tva: 0 }
-                                            const grossMarginPct = sp.gross_margin_pct ?? 0
-                                            const operatingProfit = sp.operating_profit || { cu_tva: 0, fara_tva: 0 }
-                                            const operatingMarginPct = sp.operating_margin_pct ?? 0
-
-                                            // Cost values (cu_tva for display, fara_tva for totals)
-                                            const cogsVal = cg.total_cogs?.cu_tva || 0
-                                            const cogsFara = cg.total_cogs?.fara_tva || 0
-                                            const cogsTva = cogsVal - cogsFara
-                                            const transportVal = op.shipping?.cu_tva || 0
-                                            const transportFara = op.shipping?.fara_tva || 0
-                                            const transportTva = transportVal - transportFara
-                                            const comisionVal = op.gt_commission?.cu_tva || 0
-                                            const comisionFara = op.gt_commission?.fara_tva || 0
-                                            const comisionTva = comisionVal - comisionFara
-                                            const paymentVal = op.payment_fee?.cu_tva || 0
-                                            const paymentFara = op.payment_fee?.fara_tva || 0
-                                            const paymentTva = paymentVal - paymentFara
-                                            const frisboVal = op.frisbo_fee?.cu_tva || 0
-                                            const frisboFara = op.frisbo_fee?.fara_tva || 0
-                                            const frisboTva = frisboVal - frisboFara
-                                            const warehouseVal = op.warehouse_salary?.cu_tva || 0
-                                            const warehouseFara = op.warehouse_salary?.fara_tva || 0
-                                            const warehouseTva = warehouseVal - warehouseFara
-
-                                            // Operational total (without packaging)
-                                            const opTotalCu = transportVal + comisionVal + paymentVal + frisboVal + warehouseVal
-                                            const opTotalFara = transportFara + comisionFara + paymentFara + frisboFara + warehouseFara
-                                            const opTotalTva = opTotalCu - opTotalFara
-
-                                            // Marketing — FB/TikTok have TVA, Google does NOT
-                                            const fbVal = mkt.facebook?.cu_tva || 0
-                                            const fbFara = mkt.facebook?.fara_tva || 0
-                                            const fbTva = fbVal - fbFara
-                                            const ttVal = mkt.tiktok?.cu_tva || 0
-                                            const ttFara = mkt.tiktok?.fara_tva || 0
-                                            const ttTva = ttVal - ttFara
-                                            const gadsVal = mkt.google?.cu_tva || 0 // Google = no TVA, cu_tva == fara_tva
-                                            const mktTotalCu = fbVal + ttVal + gadsVal
-                                            const mktTotalFara = fbFara + ttFara + gadsVal // Google: fara = cu (no TVA)
-                                            const mktTotalTva = fbTva + ttTva // only FB + TikTok
-
-                                            // Fixed costs
-                                            const fcTotalCu = fc.total?.cu_tva || 0
-                                            const fcTotalFara = fc.total?.fara_tva || 0
-                                            const fcTotalTva = fcTotalCu - fcTotalFara
-
-                                            // Grand totals
-                                            const totalCostsFara = cogsFara + opTotalFara + mktTotalFara + fcTotalFara
-                                            const totalCostsCu = cogsVal + opTotalCu + mktTotalCu + fcTotalCu
-
-                                            // Ref revenue for % calculations
-                                            const refRev = netRevenue.fara_tva || 1
-
-                                            // Status labels
-                                            const statusLabels = {
-                                                'in_transit': '📦 În curs de livrare',
-                                                'returned': '↩️ Returnate',
-                                                'cancelled': '❌ Anulate',
-                                                'other': '❓ Altele',
-                                            }
-
-                                            // Collapsible section component (single-value)
-                                            const PnlSection = ({ id, icon, label, tooltip, totalValue, totalPct, children, isNeg }) => {
-                                                const sectionKey = `${title}-${id}`
-                                                const isOpen = expandedPnlSections[sectionKey] !== false // default open
-                                                const toggle = () => setExpandedPnlSections(prev => ({ ...prev, [sectionKey]: !isOpen }))
-                                                return (
-                                                    <>
-                                                        <tr className="bg-zinc-100 dark:bg-zinc-900/60 cursor-pointer select-none hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-colors" onClick={toggle}>
-                                                            <td className="pl-4 py-1.5 text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wide">
-                                                                <span className="inline-flex items-center gap-1.5">
-                                                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-                                                                    {icon} {label}
-                                                                    <PnlTooltip text={tooltip} />
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-4 py-1.5 text-xs font-bold text-right text-zinc-500 dark:text-white uppercase">
-                                                                {!isOpen && totalValue !== undefined ? (
-                                                                    <span className={isNeg ? 'text-red-500 dark:text-red-400' : ''}>
-                                                                        {fm(totalValue)}
-                                                                        {totalPct !== undefined && <span className={`ml-1 ${pctColor(totalPct)}`}>({totalPct.toFixed(1)}%)</span>}
-                                                                    </span>
-                                                                ) : ''}
-                                                            </td>
-                                                        </tr>
-                                                        {isOpen && children}
-                                                    </>
-                                                )
-                                            }
-
-                                            return (
-                                                <div key={title} className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                                                    <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
-                                                        <h3 className="font-bold text-base text-zinc-900 dark:text-white flex items-center gap-2">
-                                                            {isTotal ? '📊' : <Store className="w-5 h-5" />} {title}
-                                                        </h3>
-                                                        <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-                                                            {(() => {
-                                                                const shipped = sp.shipped_count || (deliveredCount + (statusBreakdown?.in_transit?.count || 0))
-                                                                const livRate = shipped > 0 ? ((deliveredCount / shipped) * 100).toFixed(1) : 0
-                                                                const livColor = livRate >= 85 ? 'text-green-500' : livRate >= 70 ? 'text-yellow-500' : 'text-red-500'
-                                                                return (
-                                                                    <>
-                                                                        <span>📦 {shipped} expediate</span>
-                                                                        <span>✅ {deliveredCount} livrate</span>
-                                                                        <span className={livColor}>📊 {livRate}% livrabilitate</span>
-                                                                        {returnsCount > 0 && <span className="text-red-400">↩ {returnsCount} retur/anulate</span>}
-                                                                    </>
-                                                                )
-                                                            })()}
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <table className="border-collapse">
-                                                            <tbody>
-                                                                {/* ═══ VENITURI ═══ */}
-                                                                <PnlSection id="income" icon="📈" label="VENITURI"
-                                                                    tooltip="Secțiunea de venituri cuprinde toate sumele încasate sau așteptate din comenzi, înainte de deducerea costurilor."
-                                                                    totalValue={netRevenue.fara_tva}>
-
-                                                                    <PnlRow label="Vânzări Brute (Gross Sales)" value={grossSales.cu_tva} indent={1}
-                                                                        tooltip='Suma totală a valorii TUTUROR comenzilor din perioada selectată, indiferent de status (livrate + returnate + anulate + în tranzit + altele). Convertit în RON la cursul BNR din data comenzii.' />
-
-                                                                    {returnsCancelled.cu_tva > 0 && (
-                                                                        <PnlRow label={`(-) Returnate/Anulate (${returnsCount})`}
-                                                                            value={-returnsCancelled.cu_tva} indent={1} isNegative
-                                                                            tooltip='Returnate = comenzi cu status "returned" sau "back_to_sender". Anulate = "cancelled" sau "voided". COGS = 0 (produsele se întorc în stoc). Transport pierdut pentru returnate.' />
-                                                                    )}
-
-                                                                    {/* Show unrealized revenue (in_transit + other) to close the gap */}
-                                                                    {(() => {
-                                                                        const inTransitRev = statusBreakdown?.in_transit?.revenue?.cu_tva || 0;
-                                                                        const otherRev = statusBreakdown?.other?.revenue?.cu_tva || 0;
-                                                                        const unrealizedRev = inTransitRev + otherRev;
-                                                                        const unrealizedCount = (statusBreakdown?.in_transit?.count || 0) + (statusBreakdown?.other?.count || 0);
-                                                                        if (unrealizedRev > 0) return (
-                                                                            <PnlRow label={`(-) Nerealizate/În tranzit (${unrealizedCount})`}
-                                                                                value={-unrealizedRev} indent={1} isNegative
-                                                                                tooltip='Comenzi cu status: "in_transit", "out_for_delivery", "customer_pickup" sau alt status necunoscut. Nu sunt confirmate ca livrate, deci nu intră în veniturile realizate.' />
-                                                                        );
-                                                                        return null;
-                                                                    })()}
-
-                                                                    <PnlRow label={`Vânzări Revenue (${deliveredCount} livrate)`}
-                                                                        value={netRevenue.cu_tva} isTotal
-                                                                        tooltip='Venitul realizat = doar comenzile cu status "delivered". Formula: Vânzări Brute − Returnate − Anulate − Nerealizate.' />
-
-                                                                    <PnlRow label={`(-) TVA (${vatPctDisplay}%)`}
-                                                                        value={-tvaAmount} indent={1} isNegative
-                                                                        tooltip={`TVA ${vatPctDisplay}% dedus din venitul realizat. Formula: Revenue cu TVA − Revenue fără TVA. TVA-ul se deduce pentru a obține baza netă de calcul.`} />
-
-                                                                    <PnlRow label="Revenue net (fără TVA)"
-                                                                        value={netRevenue.fara_tva} isBold
-                                                                        tooltip='Venitul net fără TVA = baza pe care se calculează toate marjele și procentele de cost. Formula: Revenue cu TVA / (1 + rata TVA).' />
-                                                                </PnlSection>
-
-                                                                {/* ═══ COGS ═══ */}
-                                                                <PnlSection id="cogs" icon="📦" label="COGS (Cost Produse)"
-                                                                    tooltip='Cost of Goods Sold — costul de achiziție al produselor vândute. Se calculează doar pentru comenzile livrate (COGS = 0 pentru returnate/anulate).'
-                                                                    totalValue={cogsFara}
-                                                                    totalPct={refRev ? parseFloat(((cogsFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
-
-                                                                    <PnlRow label="(-) Cost produse vândute" value={cogsVal} indent={1} isNegative
-                                                                        tooltip='Suma (cost_unitar × cantitate) pentru fiecare produs din comenzile livrate. Costurile sunt definite în tab-ul Costuri SKU.'
-                                                                        pct={refRev ? parseFloat(((cogsFara / refRev) * 100).toFixed(1)) : undefined} />
-
-                                                                    <TvaSection title={`${title}-cogs`} totalTva={cogsTva}
-                                                                        items={[{ label: 'TVA Produse', tva: cogsTva }]} />
-
-                                                                    <PnlRow label="Total COGS (fără TVA)" value={cogsFara} isTotal isNegative
-                                                                        tooltip='Totalul costurilor directe (fără TVA) = Cost produse / (1 + TVA). Scade din Profit Brut.' />
-                                                                </PnlSection>
-
-                                                                {/* ═══ GROSS PROFIT ═══ */}
-                                                                <tr className="bg-emerald-50 dark:bg-emerald-900/20">
-                                                                    <td className="pl-4 py-1.5 text-sm font-bold text-emerald-800 dark:text-emerald-300">
-                                                                        <span className="inline-flex items-center">
-                                                                            💰 PROFIT BRUT
-                                                                            <PnlTooltip text='Profit Brut = Revenue Net (fără TVA) − COGS (fără TVA). Reflectă câștigul după costul produselor, înainte de costurile operaționale, marketing și fixe.' />
-                                                                        </span>
-                                                                        <span className={`ml-2 text-xs font-normal ${pctColor(grossMarginPct)}`}>({grossMarginPct.toFixed(1)}%)</span>
-                                                                    </td>
-                                                                    <td className={`px-4 py-1.5 text-sm text-right font-bold ${grossProfit.fara_tva >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                        {fm(grossProfit.fara_tva)}
-                                                                    </td>
-                                                                </tr>
-
-                                                                {/* ═══ OPERATIONAL COSTS ═══ */}
-                                                                <PnlSection id="operational" icon="🏢" label="COSTURI OPERAȚIONALE"
-                                                                    tooltip='Costurile de operare — transport, fulfillment, comisioane. Se aplică doar comenzilor livrate (anulate nu au costuri operaționale).'
-                                                                    totalValue={opTotalFara}
-                                                                    totalPct={refRev ? parseFloat(((opTotalFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
-
-                                                                    {transportVal > 0 && (
-                                                                        <PnlRow label="(-) Transport" value={transportVal} indent={1} isNegative
-                                                                            tooltip='Costul transportului din comenzile livrate. Prioritate: 1) Cost real din CSV curierat, 2) Comandă anterioară cu aceleași produse, 3) Media magazinului (30 zile), 4) Diferență subtotal vs total.'
-                                                                            pct={refRev ? parseFloat(((transportFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                    )}
-                                                                    {comisionVal > 0 && (
-                                                                        <PnlRow label={`(-) Comision agenție (${profitabilityData.config?.gt_commission_pct || 0}%)`}
-                                                                            value={comisionVal} indent={1} isNegative
-                                                                            tooltip={`${profitabilityData.config?.gt_commission_pct || 0}% din venitul comenzilor livrate pe magazinul George Talent. Se aplică DOAR pentru acel magazin.`}
-                                                                            pct={refRev ? parseFloat(((comisionFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                    )}
-                                                                    {paymentVal > 0 && (
-                                                                        <PnlRow label="(-) Procesare plată" value={paymentVal} indent={1} isNegative
-                                                                            tooltip={`${profitabilityData.config?.payment_processing_pct || 0}% + ${profitabilityData.config?.payment_processing_fixed || 0} RON fix/comandă pentru plăți cu cardul. Comenzile ramburs nu au această taxă.`} />
-                                                                    )}
-                                                                    {frisboVal > 0 && (
-                                                                        <PnlRow label="(-) Fulfillment (Frisbo)" value={frisboVal} indent={1} isNegative
-                                                                            tooltip={`Cost fix pe comandă (${profitabilityData.config?.frisbo_fee_per_order || 0} RON) × comenzile livrate. Taxă de fulfillment 3PL Frisbo.`} />
-                                                                    )}
-                                                                    {warehouseVal > 0 && (
-                                                                        <PnlRow label="(-) Salariu depozit" value={warehouseVal} indent={1} isNegative
-                                                                            tooltip={`Cost fix pe pachet (${profitabilityData.config?.warehouse_salary_per_package || 0} RON) × pachete expediate. Forța de muncă depozit. Fără TVA.`} />
-                                                                    )}
-
-                                                                    <TvaSection title={`${title}-operational`} totalTva={opTotalTva}
-                                                                        items={[
-                                                                            { label: 'TVA Transport', tva: transportTva },
-                                                                            { label: 'TVA Comision', tva: comisionTva },
-                                                                            { label: 'TVA Procesare plată', tva: paymentTva },
-                                                                            { label: 'TVA Fulfillment', tva: frisboTva },
-                                                                            { label: 'TVA Salariu depozit', tva: warehouseTva },
-                                                                        ]} />
-
-                                                                    <PnlRow label="Total Operațional (fără TVA)" value={opTotalFara} isTotal isNegative
-                                                                        tooltip='Suma: Transport + Fulfillment + Salariu Depozit + Comision + Procesare Plată (toate fără TVA).'
-                                                                        pct={refRev ? parseFloat(((opTotalFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                </PnlSection>
-
-                                                                <tr><td colSpan={2} className="py-1.5"></td></tr>
-
-                                                                {/* ═══ OPERATING PROFIT ═══ */}
-                                                                <tr className="bg-blue-50 dark:bg-blue-900/20">
-                                                                    <td className="pl-4 py-1.5 text-sm font-bold text-blue-800 dark:text-blue-300">
-                                                                        <span className="inline-flex items-center">
-                                                                            📈 PROFIT OPERAȚIONAL
-                                                                            <PnlTooltip text='Profit Operațional = Profit Brut − Total Costuri Operaționale (fără TVA). Reflectă profitul după costurile directe și de operare, înainte de marketing și costuri fixe.' />
-                                                                        </span>
-                                                                        <span className={`ml-2 text-xs font-normal ${pctColor(operatingMarginPct)}`}>({operatingMarginPct.toFixed(1)}%)</span>
-                                                                    </td>
-                                                                    <td className={`px-4 py-1.5 text-sm text-right font-bold ${operatingProfit.fara_tva >= 0 ? 'text-blue-700 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                        {fm(operatingProfit.fara_tva)}
-                                                                    </td>
-                                                                </tr>
-
-                                                                {/* ═══ MARKETING ═══ */}
-                                                                {mktTotalCu > 0 && (
-                                                                    <>
-                                                                        <PnlSection id="marketing" icon="📣" label="COSTURI MARKETING"
-                                                                            tooltip='Cheltuieli publicitare din Google Sheets (tab CPA), agregate pe platformă pentru perioada selectată.'
-                                                                            totalValue={mktTotalFara}
-                                                                            totalPct={refRev ? parseFloat(((mktTotalFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
-
-                                                                            {fbVal > 0 && (
-                                                                                <PnlRow label="(-) Facebook Ads" value={fbVal} indent={1} isNegative
-                                                                                    tooltip='Cheltuieli Facebook/Meta Ads din Google Sheets pentru perioada selectată.'
-                                                                                    pct={refRev ? parseFloat(((fbFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                            )}
-                                                                            {ttVal > 0 && (
-                                                                                <PnlRow label="(-) TikTok Ads" value={ttVal} indent={1} isNegative
-                                                                                    tooltip='Cheltuieli TikTok Ads din Google Sheets. Fără TVA (platformă internațională).'
-                                                                                    pct={refRev ? parseFloat(((ttFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                            )}
-                                                                            {gadsVal > 0 && (
-                                                                                <PnlRow label="(-) Google Ads" value={gadsVal} indent={1} isNegative
-                                                                                    tooltip='Cheltuieli Google Ads din Google Sheets. Fără TVA (platformă internațională).'
-                                                                                    pct={refRev ? parseFloat(((gadsVal / refRev) * 100).toFixed(1)) : undefined} />
-                                                                            )}
-
-                                                                            <PnlRow label="Total Marketing" value={mktTotalFara} isTotal isNegative
-                                                                                tooltip='Suma: Facebook + TikTok + Google Ads. Date din Google Sheets CPA tab.'
-                                                                                pct={refRev ? parseFloat(((mktTotalFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                        </PnlSection>
-                                                                    </>
-                                                                )}
-
-                                                                {/* ═══ FIXED COSTS ═══ */}
-                                                                {(() => {
-                                                                    const fixedEntries = bizBySection.fixed || []
-                                                                    const hasFixed = fixedEntries.length > 0 || (fc.total && (fc.total.cu_tva > 0 || fc.total.fara_tva > 0))
-                                                                    if (!hasFixed) return null
-                                                                    return (
-                                                                        <>
-                                                                            <PnlSection id="fixed" icon="💼" label={`COSTURI FIXE (${pnl?.fixed_costs_month || ''})`}
-                                                                                tooltip={`Costurile fixe lunare din luna ${pnl?.fixed_costs_month || 'curentă'}, gestionate în Settings → Business Costs.`}
-                                                                                totalValue={fcTotalFara}
-                                                                                totalPct={refRev ? parseFloat(((fcTotalFara / refRev) * 100).toFixed(1)) : undefined} isNeg>
-
-                                                                                {fixedEntries.length > 0 ? (
-                                                                                    fixedEntries.map(entry => (
-                                                                                        <PnlRow key={`fc-${entry.id}`}
-                                                                                            label={`(-) ${entry.label}`}
-                                                                                            value={entry.cu_tva}
-                                                                                            indent={1} isNegative
-                                                                                            pct={refRev ? parseFloat(((entry.fara_tva / refRev) * 100).toFixed(1)) : undefined} />
-                                                                                    ))
-                                                                                ) : (
-                                                                                    [{ key: 'salary', label: '👤 Salarii' }, { key: 'utility', label: '⚡ Utilități' },
-                                                                                    { key: 'subscription', label: '📋 Subscripții' }, { key: 'marketing', label: '📣 Marketing (biz)' },
-                                                                                    { key: 'rent', label: '🏠 Chirie' }, { key: 'other', label: '📦 Altele' }].map(cat => {
-                                                                                        const val = fc[cat.key]
-                                                                                        if (!val || (val.cu_tva === 0 && val.fara_tva === 0)) return null
-                                                                                        return <PnlRow key={cat.key} label={`(-) ${cat.label}`} value={val.cu_tva} indent={1} isNegative
-                                                                                            pct={refRev ? parseFloat(((val.fara_tva / refRev) * 100).toFixed(1)) : undefined} />
-                                                                                    })
-                                                                                )}
-
-                                                                                {fcTotalTva > 0.01 && (
-                                                                                    <TvaSection title={`${title}-fixed`} totalTva={fcTotalTva}
-                                                                                        items={fixedEntries.length > 0
-                                                                                            ? fixedEntries.map(e => ({ label: `TVA ${e.label}`, tva: (e.cu_tva || 0) - (e.fara_tva || 0) }))
-                                                                                            : [{ label: 'TVA Costuri Fixe', tva: fcTotalTva }]
-                                                                                        } />
-                                                                                )}
-
-                                                                                <PnlRow label="Total Costuri Fixe (fără TVA)" value={fcTotalFara} isTotal isNegative
-                                                                                    tooltip='Suma tuturor costurilor fixe lunare. Fiecare intrare respectă flag-ul cu/fără TVA definit individual.'
-                                                                                    pct={refRev ? parseFloat(((fcTotalFara / refRev) * 100).toFixed(1)) : undefined} />
-                                                                            </PnlSection>
-                                                                        </>
-                                                                    )
-                                                                })()}
-
-                                                                {/* ═══ TOTAL COSTS ═══ */}
-                                                                <PnlRow label="📋 Total costuri (fără TVA)" value={totalCostsFara} isTotal isNegative
-                                                                    tooltip='Suma tuturor categoriilor de cost: COGS + Operațional + Marketing + Costuri Fixe (toate fără TVA).'
-                                                                    pct={refRev ? parseFloat(((totalCostsFara / refRev) * 100).toFixed(1)) : undefined} />
-
-
-                                                                {/* ═══ NET PROFIT ═══ */}
-                                                                <tr className="bg-zinc-900 dark:bg-zinc-950">
-                                                                    <td className="pl-4 py-2 text-sm font-bold text-white">
-                                                                        <span className="inline-flex items-center">
-                                                                            💵 PROFIT NET
-                                                                            <PnlTooltip text='Profit Net = Profit Operațional − Marketing − Costuri Fixe (fără TVA). Aceasta este linia de bottom-line — câștigul real după absolut toate costurile.' />
-                                                                        </span>
-                                                                        <span className={`ml-2 text-xs font-normal ${pctColor(npPct)}`}>({typeof npPct === 'number' ? npPct.toFixed(1) : npPct}%)</span>
-                                                                    </td>
-                                                                    <td className={`px-4 py-2 text-sm text-right font-bold ${np.fara_tva >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                                        {fm(np.fara_tva)}
-                                                                    </td>
-                                                                </tr>
-
-                                                                {/* % Profit */}
-                                                                <tr className="bg-zinc-800 dark:bg-zinc-900">
-                                                                    <td className="pl-4 py-2 text-xs text-zinc-400">
-                                                                        <span className="inline-flex items-center">
-                                                                            % Profit (din revenue fără TVA)
-                                                                            <PnlTooltip text='Marja Netă = Profit Net / Revenue Net (fără TVA) × 100. Indică ce procent din venitul net rămâne ca profit după toate costurile.' />
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className={`px-4 py-2 text-xs text-right font-semibold ${pctColor(npPct)}`}>
-                                                                        {typeof npPct === 'number' ? npPct.toFixed(2) : npPct}%
-                                                                    </td>
-                                                                </tr>
-
-                                                                {extraContent}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </div>
-                                            )
-                                        }
-
-                                        // Returns data for total P&L extra content
-                                        const returns = {
-                                            count: pnl?.returns?.count || summary?.returned_orders || 0,
-                                            loss: getVal(pnl?.returns?.loss, summary?.return_loss),
-                                        }
-
-                                        // Extra content for total P&L: just returns info
-                                        const totalExtraContent = returns.count > 0 ? (
-                                            <>
-                                                <tr><td colSpan={2} className="py-1"></td></tr>
-                                                <PnlRow label="📦 RETURURI" isHeader />
-                                                <PnlRow label={`Retururi (${returns.count} comenzi)`} value={returns.loss.fara_tva} indent={1} isNegative />
-                                            </>
-                                        ) : null
-
-                                        const storePnls = profitabilityData.pnl_by_store || []
-
-                                        return (
-                                            <div className="space-y-3">
-                                                {/* Individual store P&L tables */}
-                                                {storePnls.map(sp => renderStorePnl(sp, `P&L — ${sp.store_name}`, false, null))}
-
-                                                {/* Aggregate total P&L (with marketing, net profit, returns) */}
-                                                {renderStorePnl(
-                                                    { ...pnl, income: { ...pnl?.income, sales_delivered: pnl?.income?.total_realized, delivered_count: pnl?.income?.delivered_count } },
-                                                    storePnls.length > 1 ? '📊 TOTAL — Toate Magazinele' : '📊 Raport P&L Total',
-                                                    true,
-                                                    totalExtraContent
-                                                )}
-                                            </div>
-                                        )
-
-                                    })()}
-                                </>
-                            )}
 
 
                             {/* Order Profitability Table */}
@@ -1717,10 +1058,10 @@ export default function Analytics() {
                                                                         {/* Currency conversion notice */}
                                                                         {order.original_currency && order.original_currency !== 'RON' && (
                                                                             <div className="mb-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800 text-sm">
-                                                                                <span className="font-medium text-amber-800 dark:text-amber-300">💱 Currency conversion:</span>
+                                                                                <span className="font-medium text-amber-800 dark:text-amber-300">ðŸ’± Currency conversion:</span>
                                                                                 <span className="text-amber-700 dark:text-amber-400 ml-1">
                                                                                     Original order in {order.original_currency} ({formatMoney(order.original_total_price)} {order.original_currency})
-                                                                                    → converted at {order.exchange_rate} {order.original_currency}/RON
+                                                                                    â†’ converted at {order.exchange_rate} {order.original_currency}/RON
                                                                                 </span>
                                                                             </div>
                                                                         )}
@@ -1767,7 +1108,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">📋 Packaging</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ“‹ Packaging</div>
                                                                                         <div className="text-[11px] text-zinc-400">Fixed {formatMoney(profitabilityData?.config?.packaging_cost_per_order)} RON/order</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.packaging_cost)} RON</div>
@@ -1775,28 +1116,28 @@ export default function Analytics() {
 
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">👤 GT Commission</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ‘¤ GT Commission</div>
                                                                                         <div className="text-[11px] text-zinc-400">{profitabilityData?.config?.gt_commission_pct}% × {formatMoney(order.total_price)} (GT store only)</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.gt_commission)} RON</div>
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">💳 Payment Processing</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ’³ Payment Processing</div>
                                                                                         <div className="text-[11px] text-zinc-400">{profitabilityData?.config?.payment_processing_pct}% × {formatMoney(order.total_price)} + {formatMoney(profitabilityData?.config?.payment_processing_fixed)} fixed</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.payment_fee)} RON</div>
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">🏭 Frisbo Fee</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ­ Frisbo Fee</div>
                                                                                         <div className="text-[11px] text-zinc-400">Fixed {formatMoney(profitabilityData?.config?.frisbo_fee_per_order)} RON/order</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.frisbo_fee)} RON</div>
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">🚚 Shipping Cost</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">ðŸšš Shipping Cost</div>
                                                                                         <div className="text-[11px] text-zinc-400">Total Price − Subtotal (courier delivery cost)</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.shipping_cost)} RON</div>
@@ -1911,7 +1252,7 @@ export default function Analytics() {
                                 )}
                             </div>
 
-                            {/* ═══ CSV IMPORT COVERAGE GAPS ═══ */}
+                            {/* â•â•â• CSV IMPORT COVERAGE GAPS â•â•â• */}
                             <div className="bg-white dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-6">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
@@ -1976,7 +1317,7 @@ export default function Analytics() {
                                                                         <Calendar className="w-4 h-4 text-zinc-400" />
                                                                         <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
                                                                             {new Date(gap.date_from).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                                                            {' → '}
+                                                                            {' â†’ '}
                                                                             {new Date(gap.date_to).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                                                                         </span>
                                                                         <span className="text-xs text-zinc-400">({gap.weeks} {gap.weeks === 1 ? 'week' : 'weeks'})</span>
@@ -2019,460 +1360,9 @@ export default function Analytics() {
                     )
                     }
 
-                    {/* P&L Comparison Tab */}
-                    {activeTab === 'pnlCompare' && (
-                        <div className="space-y-6">
-                            {/* ═══ DATE PERIOD FILTER (shared with Profitabilitate) ═══ */}
-                            <div className="bg-white dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mr-1">Perioadă:</span>
-                                    {[
-                                        { key: 'thisMonth', label: 'Luna curentă' },
-                                        { key: 'lastMonth', label: 'Luna trecută' },
-                                        { key: '30d', label: '30 zile' },
-                                        { key: '90d', label: '90 zile' },
-                                    ].map(p => (
-                                        <button
-                                            key={p.key}
-                                            onClick={() => { setProfitPeriod(p.key); setProfitDateFrom(''); setProfitDateTo('') }}
-                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${profitPeriod === p.key
-                                                ? 'bg-indigo-600 text-white shadow-sm'
-                                                : 'bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                                                }`}
-                                        >
-                                            {p.label}
-                                        </button>
-                                    ))}
-
-                                    {/* Month quick-select */}
-                                    <select
-                                        value={/^\d{4}-\d{2}$/.test(profitPeriod) ? profitPeriod : ''}
-                                        onChange={(e) => { if (e.target.value) { setProfitPeriod(e.target.value); setProfitDateFrom(''); setProfitDateTo('') } }}
-                                        className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-white border-0 cursor-pointer"
-                                    >
-                                        <option value="">Lună specifică...</option>
-                                        {(() => {
-                                            const months = []
-                                            const now = new Date()
-                                            for (let i = 0; i < 18; i++) {
-                                                const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-                                                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                                                const label = d.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
-                                                months.push(<option key={key} value={key}>{label}</option>)
-                                            }
-                                            return months
-                                        })()}
-                                    </select>
-
-                                    <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600 mx-1" />
-
-                                    {/* Custom range */}
-                                    <button
-                                        onClick={() => setProfitPeriod('custom')}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${profitPeriod === 'custom'
-                                            ? 'bg-indigo-600 text-white shadow-sm'
-                                            : 'bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                                            }`}
-                                    >
-                                        Perioadă custom
-                                    </button>
-                                    {profitPeriod === 'custom' && (
-                                        <>
-                                            <input
-                                                type="date"
-                                                value={profitDateFrom}
-                                                onChange={(e) => setProfitDateFrom(e.target.value)}
-                                                className="px-2 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
-                                            />
-                                            <span className="text-zinc-400">→</span>
-                                            <input
-                                                type="date"
-                                                value={profitDateTo}
-                                                onChange={(e) => setProfitDateTo(e.target.value)}
-                                                className="px-2 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
-                                            />
-                                        </>
-                                    )}
-
-                                    <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600 mx-1" />
-
-                                    {/* Store filter */}
-                                    <div className="relative">
-                                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Magazine</label>
-                                        <select
-                                            value=""
-                                            onChange={e => {
-                                                const v = e.target.value
-                                                if (!v) return
-                                                setProfitStores(prev => prev.includes(v) ? prev.filter(s => s !== v) : [...prev, v])
-                                            }}
-                                            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white"
-                                        >
-                                            <option value="">{profitStores.length === 0 ? 'Toate' : `${profitStores.length} selectate`}</option>
-                                            {stores.map(s => (
-                                                <option key={s.uid} value={s.uid}>{profitStores.includes(s.uid) ? '✓ ' : ''}{s.name}</option>
-                                            ))}
-                                        </select>
-                                        {profitStores.length > 0 && (
-                                            <button onClick={() => setProfitStores([])} className="absolute -top-0.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center leading-none">×</button>
-                                        )}
-                                    </div>
-
-                                    <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer self-end">
-                                        <input type="checkbox"
-                                            checked={Object.keys(expandedPnlSections).length > 0 && Object.values(expandedPnlSections).every(v => v)}
-                                            onChange={e => {
-                                                const allSections = ['income', 'cogs', 'operational', 'marketing', 'fixed']
-                                                if (e.target.checked) {
-                                                    setExpandedPnlSections(Object.fromEntries(allSections.map(s => [s, true])))
-                                                } else {
-                                                    setExpandedPnlSections({})
-                                                }
-                                            }}
-                                            className="rounded border-zinc-300 text-indigo-600 w-3.5 h-3.5" />
-                                        Expandate
-                                    </label>
-
-                                    <button onClick={fetchProfitNow} disabled={profitLoading}
-                                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 self-end">
-                                        {profitLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
-                                        Analizează
-                                    </button>
-                                </div>
-                            </div>
-
-                    {!profitabilityData && !profitLoading && (
-                        <div className="text-center py-16 text-zinc-500 dark:text-zinc-400">
-                            <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                            <p className="text-lg font-medium">Selectează filtrele și apasă Analizează</p>
-                            <p className="text-sm mt-1">P&L Comparativ va fi generat pe baza filtrelor selectate.</p>
-                        </div>
-                    )}
-                    {profitLoading && (
-                        <div className="flex items-center justify-center py-20">
-                            <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
-                            <span className="ml-3 text-zinc-500 dark:text-zinc-300">Se calculează P&L...</span>
-                        </div>
-                    )}
-                    {profitabilityData && (() => {
-                        const pnl = profitabilityData.pnl
-                        const storePnls = profitabilityData.pnl_by_store || []
-                        const fm = (val) => formatMoney(val)
-                        const config = profitabilityData.config || {}
-                        const bizBySection = pnl?.business_costs_by_section || {}
-
-                        // Build columns: each store + total (filter by hidden stores)
-                        const allColumns = [
-                            ...storePnls.map(sp => ({ key: sp.store_uid, label: sp.store_name, data: sp })),
-                            { key: '_total', label: 'TOTAL', data: { ...pnl, income: { ...pnl?.income, sales_delivered: pnl?.income?.total_realized, delivered_count: pnl?.income?.delivered_count } } },
-                        ]
-                        const columns = allColumns.filter(c => c.key === '_total' || !pnlHiddenStores.includes(c.key))
-
-                        // Row definitions
-                        const getValue = (col, path) => {
-                            // Handle computed paths for unrealized revenue
-                            if (path === '__unrealized_revenue') {
-                                const sb = col.data?.status_breakdown || {};
-                                const inTransit = sb.in_transit?.revenue?.cu_tva || 0;
-                                const other = sb.other?.revenue?.cu_tva || 0;
-                                const total = inTransit + other;
-                                return total > 0 ? { cu_tva: total, fara_tva: total / 1.21 } : { cu_tva: 0, fara_tva: 0 };
-                            }
-                            if (path === '__unrealized_count') {
-                                const sb = col.data?.status_breakdown || {};
-                                return (sb.in_transit?.count || 0) + (sb.other?.count || 0);
-                            }
-                            let obj = col.data
-                            for (const p of path.split('.')) obj = obj?.[p]
-                            return obj
-                        }
-                        const getNum = (col, path) => {
-                            const v = getValue(col, path)
-                            return typeof v === 'number' ? v : (v?.cu_tva || 0)
-                        }
-
-                        // Build dynamic fixed cost rows from business_costs_by_section
-                        const fixedEntries = bizBySection.fixed || []
-                        const fixedCostRows = fixedEntries.length > 0
-                            ? fixedEntries.map(entry => ({
-                                type: 'dynamic', label: `(-) ${entry.label}`, amount: entry.cu_tva, isNeg: true
-                            }))
-                            : []
-
-                        const rows = [
-                            { type: 'header', label: '📈 VENITURI', section: 'income', tooltip: 'Secțiunea de venituri cuprinde toate sumele încasate sau așteptate din comenzi, înainte de deducerea costurilor.' },
-                            { type: 'row', label: 'Vânzări Brute', path: 'income.gross_sales', section: 'income', tooltip: 'Suma totală a valorii TUTUROR comenzilor din perioada selectată, indiferent de status (livrate + returnate + anulate + în tranzit + altele). Se ia total_price din fiecare comandă, convertit în RON la cursul BNR din data comenzii.' },
-                            { type: 'row', label: '(-) Returnate/Anulate', path: 'income.returns_cancelled', isNeg: true, section: 'income', countPath: 'income.returns_cancelled_count', tooltip: 'Valoarea comenzilor returnate/anulate. Se scade din Vânzări Brute.' },
-                            { type: 'row', label: '(-) Nerealizate/În tranzit', path: '__unrealized_revenue', isNeg: true, section: 'income', countPath: '__unrealized_count', tooltip: 'Valoarea comenzilor încă în curs de livrare. Se scade deoarece nu sunt confirmate.' },
-                            { type: 'total', label: 'Revenue Livrat', path: 'income.sales_delivered', section: 'income', countPath: 'income.delivered_count', tooltip: 'Venitul net realizat = doar comenzile livrate.' },
-                            { type: 'spacer' },
-                            { type: 'header', label: '📦 COGS', section: 'cogs', checkPath: 'cogs.total_cogs', tooltip: 'Cost of Goods Sold — costul de achiziție al produselor vândute.' },
-                            { type: 'row', label: 'Cost Produse (SKU)', path: 'cogs.sku_costs', isNeg: true, section: 'cogs', tooltip: 'Suma (cost_unitar × cantitate) din comenzile livrate.' },
-                            { type: 'total', label: 'Total COGS', path: 'cogs.total_cogs', isNeg: true, section: 'cogs', tooltip: 'Totalul costurilor directe ale produselor vândute.' },
-                            { type: 'profit', label: '💰 PROFIT BRUT', path: 'gross_profit', pctKey: 'gross_margin_pct', tooltip: 'Profit Brut = Revenue Livrat − Total COGS.' },
-                            { type: 'spacer' },
-                            { type: 'header', label: '🏢 COSTURI OPERAȚIONALE', section: 'operational', checkPath: 'operational.total_operational', tooltip: 'Transport, fulfillment, comisioane — doar comenzi livrate.' },
-                            { type: 'row', label: 'Transport', path: 'operational.shipping', isNeg: true, section: 'operational', tooltip: 'Cost transport comenzi livrate (CSV curierat / estimare istoric).' },
-                            { type: 'row', label: 'Frisbo Fee', path: 'operational.frisbo_fee', isNeg: true, section: 'operational', tooltip: `${config.frisbo_fee_per_order || 0} RON/comandă × comenzi livrate.` },
-                            { type: 'row', label: 'Salariu Depozit', path: 'operational.warehouse_salary', isNeg: true, section: 'operational', tooltip: `${config.warehouse_salary_per_package || 0} RON/pachet × pachete expediate.` },
-                            { type: 'row', label: `Comision GT (${config.gt_commission_pct || 0}%)`, path: 'operational.gt_commission', isNeg: true, section: 'operational', tooltip: `${config.gt_commission_pct || 0}% din venitul George Talent.` },
-                            { type: 'row', label: `Procesare Plăți (${config.payment_processing_pct || 0}%)`, path: 'operational.payment_fee', isNeg: true, section: 'operational', tooltip: `${config.payment_processing_pct || 0}% din venituri + fix/card.` },
-                            { type: 'total', label: 'Total Operațional', path: 'operational.total_operational', isNeg: true, section: 'operational', tooltip: 'Suma costurilor operaționale.' },
-                            { type: 'profit', label: '📈 PROFIT OPERAȚIONAL', path: 'operating_profit', pctKey: 'operating_margin_pct', tooltip: 'Profit Brut − Total Costuri Operaționale.' },
-                            { type: 'spacer' },
-                            { type: 'header', label: '📣 MARKETING', section: 'marketing', checkPath: 'marketing.total', tooltip: 'Cheltuielile de marketing din Google Sheets.' },
-                            { type: 'row', label: 'Facebook Ads', path: 'marketing.facebook', isNeg: true, section: 'marketing', tooltip: 'Cheltuieli Facebook/Meta Ads.' },
-                            { type: 'row', label: 'TikTok Ads', path: 'marketing.tiktok', isNeg: true, section: 'marketing', tooltip: 'Cheltuieli TikTok Ads.' },
-                            { type: 'row', label: 'Google Ads', path: 'marketing.google', isNeg: true, section: 'marketing', tooltip: 'Cheltuieli Google Ads.' },
-                            { type: 'total', label: 'Total Marketing', path: 'marketing.total', isNeg: true, section: 'marketing', tooltip: 'Suma Facebook + TikTok + Google Ads.' },
-                            { type: 'spacer', checkPath: 'marketing.total' },
-                            { type: 'header', label: `💼 COSTURI FIXE (${pnl?.fixed_costs_month || ''})`, section: 'fixed', checkPath: 'fixed_costs.total', tooltip: `Costuri fixe lunare (${pnl?.fixed_costs_month || ''}).` },
-                            ...fixedCostRows.map(r => ({ ...r, section: 'fixed' })),
-                            { type: 'total', label: 'Total Costuri Fixe', path: 'fixed_costs.total', isNeg: true, section: 'fixed', tooltip: 'Suma tuturor costurilor fixe lunare.' },
-                            { type: 'spacer', checkPath: 'fixed_costs.total' },
-                            { type: 'net', label: '💵 PROFIT NET', path: 'net_profit', pctKey: 'net_margin_pct', tooltip: 'Profit Operațional − Marketing − Costuri Fixe.' },
-                        ]
-
-                        // Filter: hide row if ALL columns have 0, or if section is collapsed
-                        const shouldShow = (row) => {
-                            // Collapsible: non-header rows in a collapsed section are hidden
-                            if (row.section && row.type !== 'header' && !expandedPnlSections[row.section]) {
-                                return false
-                            }
-                            if (row.type === 'spacer') {
-                                if (!row.checkPath) return true
-                                return columns.some(c => {
-                                    const v = getValue(c, row.checkPath)
-                                    return v && (v.cu_tva !== 0 || v.fara_tva !== 0)
-                                })
-                            }
-                            if (!row.path) return true
-                            if (row.checkPath) {
-                                return columns.some(c => {
-                                    const v = getValue(c, row.checkPath)
-                                    return v && (v.cu_tva !== 0 || v.fara_tva !== 0)
-                                })
-                            }
-                            if (row.type === 'header') {
-                                if (!row.checkPath) return true
-                                return columns.some(c => {
-                                    const v = getValue(c, row.checkPath)
-                                    return v && (v.cu_tva !== 0 || v.fara_tva !== 0)
-                                })
-                            }
-                            if (row.type === 'profit' || row.type === 'net') return true
-                            return columns.some(c => {
-                                const v = getValue(c, row.path)
-                                return v && (v.cu_tva !== 0 || v.fara_tva !== 0)
-                            })
-                        }
-
-                        const pctColor = (pct) => pct >= 20 ? 'text-green-600 dark:text-green-400' : pct >= 10 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
-
-                        // Tooltip helper component
-                        const TooltipLabel = ({ label, tooltip, className = '' }) => (
-                            <span className={`inline-flex items-center gap-1 ${className}`}>
-                                {label}
-                                {tooltip && (
-                                    <span className="relative group/tip inline-flex">
-                                        <Info className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 cursor-help opacity-50 group-hover/tip:opacity-100 transition-opacity" />
-                                        <span className="absolute left-6 top-0 z-[100] invisible group-hover/tip:visible opacity-0 group-hover/tip:opacity-100 transition-all duration-200 w-[340px] max-w-[90vw] px-3 py-2.5 text-xs font-normal normal-case tracking-normal leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-600 whitespace-normal break-words">
-                                            {tooltip}
-                                        </span>
-                                    </span>
-                                )}
-                            </span>
-                        )
-
-                        return (
-                            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                                <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-700">
-                                    <div className="flex items-center justify-between">
-                                        <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                                            📊 P&L Comparativ — Toate Magazinele
-                                        </h3>
-                                        <button
-                                            onClick={() => exportPnlComparativToExcel(profitabilityData)}
-                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                            Export Excel
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                                        Comparație side-by-side a profitabilității per magazin. Valori cu TVA.
-                                        <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium">
-                                            💱 Toate valorile convertite în RON (curs BNR istoric)
-                                        </span>
-                                    </p>
-                                    {profitabilityData?.unconvertible_currencies?.length > 0 && (
-                                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                                            ⚠️ Curs BNR lipsă pentru: {profitabilityData.unconvertible_currencies.join(', ')} — valorile au rămas neconvertite
-                                        </p>
-                                    )}
-                                </div>
-                                {/* Store column toggle */}
-                                {storePnls.length > 1 && (
-                                    <div className="flex items-center gap-2 flex-wrap mt-2 px-1">
-                                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">⚙ Coloane:</span>
-                                        {storePnls.map(sp => (
-                                            <label key={sp.store_uid} className="inline-flex items-center gap-1 text-xs cursor-pointer">
-                                                <input type="checkbox" checked={!pnlHiddenStores.includes(sp.store_uid)}
-                                                    onChange={() => setPnlHiddenStores(prev => prev.includes(sp.store_uid) ? prev.filter(s => s !== sp.store_uid) : [...prev, sp.store_uid])}
-                                                    className="rounded border-zinc-300 text-indigo-600 w-3.5 h-3.5" />
-                                                <span className="text-zinc-600 dark:text-zinc-300">{sp.store_name}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                                <div className="overflow-auto max-h-[75vh]">
-                                    <table className="w-full border-collapse min-w-[600px]">
-                                        <thead className="sticky top-0 z-10">
-                                            <tr className="bg-zinc-100 dark:bg-zinc-900">
-                                                <th className="text-left pl-4 pr-2 py-3 text-xs font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wide min-w-[200px] sticky left-0 bg-zinc-100 dark:bg-zinc-900 z-10">Indicator</th>
-                                                {columns.map(col => (
-                                                    <th key={col.key} className={`px-3 py-3 text-right text-xs font-bold uppercase tracking-wide min-w-[130px] ${col.key === '_total' ? 'text-zinc-900 dark:text-white bg-zinc-200 dark:bg-zinc-800' : 'text-zinc-600 dark:text-zinc-300'
-                                                        }`}>{col.label}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {/* Delivery stats summary rows */}
-                                            {(() => {
-                                                const statRows = [
-                                                    { label: '📦 Expediate', getVal: (col) => col.data?.shipped_count || ((col.data?.income?.delivered_count || 0) + (col.data?.status_breakdown?.in_transit?.count || 0)) },
-                                                    { label: '✅ Livrate', getVal: (col) => col.data?.income?.delivered_count || 0 },
-                                                    { label: '↩ Retur/Anulate', getVal: (col) => col.data?.income?.returns_cancelled_count || 0, isNeg: true },
-                                                    { label: '📊 Livrabilitate', getVal: (col) => {
-                                                        const shipped = col.data?.shipped_count || ((col.data?.income?.delivered_count || 0) + (col.data?.status_breakdown?.in_transit?.count || 0))
-                                                        const delivered = col.data?.income?.delivered_count || 0
-                                                        return shipped > 0 ? ((delivered / shipped) * 100).toFixed(1) : 0
-                                                    }, isPct: true },
-                                                ]
-                                                return statRows.map((sr, si) => (
-                                                    <tr key={`stat-${si}`} className={si === 0 ? 'border-b border-zinc-100 dark:border-zinc-700/50' : si === statRows.length - 1 ? 'border-b-2 border-zinc-300 dark:border-zinc-600' : ''}>
-                                                        <td className={`pl-3 pr-2 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300 sticky left-0 bg-white dark:bg-zinc-800 z-10`}>{sr.label}</td>
-                                                        {columns.map(col => {
-                                                            const val = sr.getVal(col)
-                                                            let color = 'text-zinc-700 dark:text-zinc-200'
-                                                            if (sr.isNeg && val > 0) color = 'text-red-500 dark:text-red-400'
-                                                            if (sr.isPct) {
-                                                                const n = parseFloat(val)
-                                                                color = n >= 85 ? 'text-green-600 dark:text-green-400' : n >= 70 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
-                                                            }
-                                                            return (
-                                                                <td key={col.key} className={`px-2 py-1 text-right text-xs font-semibold ${color} ${col.key === '_total' ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : ''}`}>
-                                                                    {sr.isPct ? `${val}%` : val}
-                                                                </td>
-                                                            )
-                                                        })}
-                                                    </tr>
-                                                ))
-                                            })()}
-                                            {rows.filter(shouldShow).map((row, idx) => {
-                                                if (row.type === 'spacer') {
-                                                    return <tr key={idx}><td colSpan={columns.length + 1} className="py-0.5"></td></tr>
-                                                }
-                                                if (row.type === 'header') {
-                                                    const isOpen = expandedPnlSections[row.section]
-                                                    return (
-                                                        <tr key={idx} className="bg-zinc-100 dark:bg-zinc-900/60 cursor-pointer select-none hover:bg-zinc-200/70 dark:hover:bg-zinc-900/80 transition-colors"
-                                                            onClick={() => setExpandedPnlSections(prev => ({ ...prev, [row.section]: !prev[row.section] }))}>
-                                                            <td className="pl-3 pr-1 py-1.5 text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wide sticky left-0 bg-zinc-100 dark:bg-zinc-900 z-10">
-                                                                <span className="inline-flex items-center gap-1.5">
-                                                                    {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                                                    <TooltipLabel label={row.label} tooltip={row.tooltip} />
-                                                                </span>
-                                                            </td>
-                                                            {columns.map(col => (
-                                                                <td key={col.key} className={`px-2 py-1.5 text-right text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase ${col.key === '_total' ? 'bg-zinc-200/60 dark:bg-zinc-800/60' : ''}`}></td>
-                                                            ))}
-                                                        </tr>
-                                                    )
-                                                }
-                                                if (row.type === 'net') {
-                                                    return (
-                                                        <tr key={idx} className="bg-zinc-900 dark:bg-zinc-950">
-                                                            <td className="pl-3 py-2 text-sm font-bold text-white sticky left-0 bg-zinc-900 dark:bg-zinc-950 z-10"><TooltipLabel label={row.label} tooltip={row.tooltip} /></td>
-                                                            {columns.map(col => {
-                                                                const v = getValue(col, row.path)
-                                                                const pct = col.data?.[row.pctKey]
-                                                                const val = v?.cu_tva ?? 0
-                                                                return (
-                                                                    <td key={col.key} className={`px-2 py-2 text-right text-sm font-bold ${col.key === '_total' ? 'bg-zinc-800 dark:bg-zinc-900' : ''} ${val >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                                        {fm(val)}{pct !== undefined && <span className={`text-[10px] font-normal ml-1 ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</span>}
-                                                                    </td>
-                                                                )
-                                                            })}
-                                                        </tr>
-                                                    )
-                                                }
-                                                if (row.type === 'profit') {
-                                                    return (
-                                                        <tr key={idx} className="bg-zinc-50 dark:bg-zinc-800/60">
-                                                            <td className="pl-3 py-1.5 text-sm font-bold text-zinc-900 dark:text-white sticky left-0 bg-zinc-50 dark:bg-zinc-800 z-10"><TooltipLabel label={row.label} tooltip={row.tooltip} /></td>
-                                                            {columns.map(col => {
-                                                                const v = getValue(col, row.path)
-                                                                const pct = col.data?.[row.pctKey]
-                                                                const val = v?.cu_tva ?? 0
-                                                                return (
-                                                                    <td key={col.key} className={`px-2 py-1.5 text-right text-sm font-bold ${col.key === '_total' ? 'bg-zinc-100 dark:bg-zinc-800' : ''} ${val >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                                        {fm(val)}{pct !== undefined && <span className={`text-[10px] font-normal ml-1 ${pctColor(pct)}`}>({typeof pct === 'number' ? pct.toFixed(1) : pct}%)</span>}
-                                                                    </td>
-                                                                )
-                                                            })}
-                                                        </tr>
-                                                    )
-                                                }
-                                                if (row.type === 'dynamic') {
-                                                    return (
-                                                        <tr key={idx}>
-                                                            <td className="pl-6 py-1 text-xs text-zinc-600 dark:text-zinc-300 sticky left-0 bg-white dark:bg-zinc-800 z-10">
-                                                                <TooltipLabel label={row.label} tooltip={row.tooltip} />
-                                                            </td>
-                                                            {columns.map(col => {
-                                                                const val = col.key === '_total' ? (row.amount || 0) : 0
-                                                                return (
-                                                                    <td key={col.key} className={`px-2 py-1 text-xs text-right font-medium ${col.key === '_total' ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : ''} text-red-600 dark:text-red-400`}>
-                                                                        {val !== 0 ? fm(val) : '—'}
-                                                                    </td>
-                                                                )
-                                                            })}
-                                                        </tr>
-                                                    )
-                                                }
-                                                // row or total
-                                                const isTotal = row.type === 'total'
-                                                return (
-                                                    <tr key={idx} className={isTotal ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''}>
-                                                        <td className={`${isTotal ? 'pl-3' : 'pl-6'} py-1 text-xs ${isTotal ? 'font-semibold text-zinc-800 dark:text-white border-t border-zinc-200 dark:border-zinc-700' : 'text-zinc-600 dark:text-zinc-300'} sticky left-0 ${isTotal ? 'bg-zinc-50 dark:bg-zinc-800' : 'bg-white dark:bg-zinc-800'} z-10`}>
-                                                            <TooltipLabel label={row.label} tooltip={row.tooltip} />
-                                                            {row.countPath && (() => {
-                                                                const totalCol = columns.find(c => c.key === '_total')
-                                                                const count = totalCol ? (getValue(totalCol, row.countPath) || 0) : columns.reduce((sum, c) => sum + (getValue(c, row.countPath) || 0), 0)
-                                                                return <span className="text-[10px] text-zinc-400 ml-1">({count})</span>
-                                                            })()}
-                                                        </td>
-                                                        {columns.map(col => {
-                                                            const v = getValue(col, row.path)
-                                                            const val = v?.cu_tva ?? (typeof v === 'number' ? v : 0)
-                                                            const valColor = row.isNeg ? 'text-red-600 dark:text-red-400' : 'text-zinc-800 dark:text-white'
-                                                            return (
-                                                                <td key={col.key} className={`px-2 py-1 text-xs text-right font-medium ${isTotal ? 'font-semibold border-t border-zinc-200 dark:border-zinc-700' : ''} ${col.key === '_total' ? (isTotal ? 'bg-zinc-100 dark:bg-zinc-800' : 'bg-zinc-50/50 dark:bg-zinc-800/30') : ''} ${valColor}`}>
-                                                                    {val !== 0 ? fm(val) : '—'}
-                                                                </td>
-                                                            )
-                                                        })}
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )
-                    })()}
-                        </div>
+                    {/* P&L Detaliat Tab */}
+                    {activeTab === 'pnlDetailed' && (
+                        <DetailedPnl authFetch={authFetch} />
                     )}
 
                     {/* SKU Costs Tab */}
@@ -2742,7 +1632,7 @@ export default function Analytics() {
                                                                 />
                                                             ) : (
                                                                 <span className={sku.cost === 0 ? 'text-amber-500 font-medium' : ''}>
-                                                                    {sku.cost === 0 ? '⚠ 0 RON' : `${sku.cost} RON`}
+                                                                    {sku.cost === 0 ? 'âš  0 RON' : `${sku.cost} RON`}
                                                                 </span>
                                                             )}
                                                         </td>
@@ -2794,7 +1684,7 @@ export default function Analytics() {
                     }
 
 
-                    {/* ── SKU Risk & Shipping Anomalies Tab ── */}
+                    {/* â”€â”€ SKU Risk & Shipping Anomalies Tab â”€â”€ */}
                     {activeTab === 'skuRisk' && (() => {
                         const fetchSkuRisk = async () => {
                             setSkuRiskLoading(true)
@@ -2844,7 +1734,7 @@ export default function Analytics() {
                                 onClick={() => setSkuRiskSort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
                                 title={tip || ''}
                             >
-                                {label} {skuRiskSort.col === col ? (skuRiskSort.dir === 'desc' ? '↓' : '↑') : ''}
+                                {label} {skuRiskSort.col === col ? (skuRiskSort.dir === 'desc' ? 'â†“' : 'â†‘') : ''}
                             </th>
                         )
 
@@ -2904,8 +1794,8 @@ export default function Analytics() {
                                     {skuRiskData?.meta && (
                                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
                                             <span>📦 {skuRiskData.meta.filtered_orders.toLocaleString()} comenzi</span>
-                                            <span>🏷️ {skuRiskData.meta.unique_skus} SKU-uri ({skuRiskData.meta.skus_passing_volume} cu volum suficient)</span>
-                                            <span>🚚 Acoperire shipping: {skuRiskData.meta.shipping_coverage_pct}%</span>
+                                            <span>ðŸ·️ {skuRiskData.meta.unique_skus} SKU-uri ({skuRiskData.meta.skus_passing_volume} cu volum suficient)</span>
+                                            <span>ðŸšš Acoperire shipping: {skuRiskData.meta.shipping_coverage_pct}%</span>
                                         </div>
                                     )}
                                 </div>
@@ -2924,7 +1814,7 @@ export default function Analytics() {
                                             <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
                                                 <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                     <AlertTriangle className="w-4 h-4 text-red-500" />
-                                                    SKU-uri problematice — Ranked by Risk Score
+                                                    SKU-uri problematice â€” Ranked by Risk Score
                                                 </h3>
                                             </div>
                                             <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
@@ -2962,14 +1852,14 @@ export default function Analytics() {
                                                                     </td>
                                                                     <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.units_sold}</td>
                                                                     <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.orders_with_sku}</td>
-                                                                    <td className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400">{s.problem_units || '—'}</td>
+                                                                    <td className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400">{s.problem_units || 'â€”'}</td>
                                                                     <td className="px-3 py-2 text-sm font-semibold"><span className={s.problem_rate > 15 ? 'text-red-600' : s.problem_rate > 5 ? 'text-amber-600' : 'text-green-600'}>{s.problem_rate}%</span></td>
                                                                     <td className="px-3 py-2 text-sm"><span className={s.contamination_rate > 15 ? 'text-red-600' : s.contamination_rate > 5 ? 'text-amber-600' : 'text-zinc-600 dark:text-zinc-300'}>{s.contamination_rate}%</span></td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_back_to_sender || '—'}</td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_cancelled || '—'}</td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_refused || '—'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_back_to_sender || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_cancelled || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_refused || 'â€”'}</td>
                                                                     <td className="px-3 py-2 text-sm"><span className={s.shipping_anomaly_rate > 10 ? 'text-red-600' : 'text-zinc-600 dark:text-zinc-400'}>{s.shipping_anomaly_rate}%</span></td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.avg_ship_cost_per_unit > 0 ? `${s.avg_ship_cost_per_unit} RON` : '—'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.avg_ship_cost_per_unit > 0 ? `${s.avg_ship_cost_per_unit} RON` : 'â€”'}</td>
                                                                     <td className="px-3 py-2">
                                                                         {s.risk_score !== null ? (
                                                                             <span className={`text-sm font-bold ${riskColor(s.risk_score)} px-2 py-0.5 rounded-md ${riskBg(s.risk_score)}`}>{s.risk_score}</span>
@@ -2997,7 +1887,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 {/* Outcome breakdown */}
                                                                                 <div>
-                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Outcome Breakdown</h5>
+                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸ“Š Outcome Breakdown</h5>
                                                                                     <div className="space-y-1 text-xs">
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Back to Sender</span><span className="font-medium text-zinc-900 dark:text-white">{s.units_back_to_sender} u</span></div>
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Anulate</span><span className="font-medium text-zinc-900 dark:text-white">{s.units_cancelled} u</span></div>
@@ -3008,7 +1898,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 {/* Financial */}
                                                                                 <div>
-                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">💰 Financial</h5>
+                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸ’° Financial</h5>
                                                                                     <div className="space-y-1 text-xs">
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Revenue total</span><span className="font-medium text-zinc-900 dark:text-white">{s.revenue_total.toLocaleString()} RON</span></div>
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-900 dark:text-white">{s.cogs_total.toLocaleString()} RON</span></div>
@@ -3047,7 +1937,7 @@ export default function Analytics() {
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Magazin</th>
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Data</th>
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Curier</th>
-                                                                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Țară</th>
+                                                                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Èšară</th>
                                                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Total</th>
                                                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Ship. Taxat</th>
                                                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Cost Real</th>
@@ -3063,17 +1953,17 @@ export default function Analytics() {
                                                                 <tr key={ao.uid} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
                                                                     <td className="px-3 py-2 text-xs font-mono text-zinc-700 dark:text-zinc-300">{ao.order_number || ao.uid?.slice(0, 8)}</td>
                                                                     <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.store_name}</td>
-                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.date ? new Date(ao.date).toLocaleDateString() : '—'}</td>
-                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.courier_name || '—'}</td>
-                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.country_code || '—'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.date ? new Date(ao.date).toLocaleDateString() : 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.courier_name || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.country_code || 'â€”'}</td>
                                                                     <td className="px-3 py-2 text-xs text-right text-zinc-700 dark:text-zinc-300">{ao.order_total?.toFixed(2)}</td>
-                                                                    <td className="px-3 py-2 text-xs text-right text-zinc-700 dark:text-zinc-300">{ao.shipping_charged?.toFixed(2) ?? '—'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-right text-zinc-700 dark:text-zinc-300">{ao.shipping_charged?.toFixed(2) ?? 'â€”'}</td>
                                                                     <td className="px-3 py-2 text-xs text-right font-medium text-zinc-900 dark:text-white">{ao.real_shipping_cost?.toFixed(2)}</td>
                                                                     <td className={`px-3 py-2 text-xs text-right font-semibold ${ao.shipping_margin < 0 ? 'text-red-600' : 'text-green-600'}`}>{ao.shipping_margin?.toFixed(2)}</td>
                                                                     <td className={`px-3 py-2 text-xs text-right ${ao.shipping_cost_pct > 25 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>{ao.shipping_cost_pct}%</td>
                                                                     <td className="px-3 py-2"><span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${ao.final_outcome === 'DELIVERED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : ao.final_outcome === 'BACK_TO_SENDER' || ao.final_outcome === 'REFUSED' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'}`}>{ao.final_outcome}</span></td>
                                                                     <td className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 max-w-[200px]">
-                                                                        {ao.anomaly_reasons?.map((r, i) => <div key={i}>⚠ {r}</div>)}
+                                                                        {ao.anomaly_reasons?.map((r, i) => <div key={i}>âš  {r}</div>)}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-xs text-zinc-500 max-w-[150px] truncate" title={ao.skus?.join(', ')}>{ao.skus?.join(', ')}</td>
                                                                 </tr>
@@ -3084,10 +1974,10 @@ export default function Analytics() {
                                                 {anomalyTotalPages > 1 && (
                                                     <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-700 flex items-center justify-center gap-2">
                                                         <button onClick={() => setSkuRiskAnomalyPage(p => Math.max(0, p - 1))} disabled={skuRiskAnomalyPage === 0}
-                                                            className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">← Prev</button>
+                                                            className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">â† Prev</button>
                                                         <span className="text-xs text-zinc-500">{skuRiskAnomalyPage + 1} / {anomalyTotalPages}</span>
                                                         <button onClick={() => setSkuRiskAnomalyPage(p => Math.min(anomalyTotalPages - 1, p + 1))} disabled={skuRiskAnomalyPage >= anomalyTotalPages - 1}
-                                                            className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">Next →</button>
+                                                            className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">Next â†’</button>
                                                     </div>
                                                 )}
                                             </div>
@@ -3145,7 +2035,7 @@ export default function Analytics() {
                         )
                     })()}
 
-                    {/* ── Sales Velocity & Product Analytics Tab ── */}
+                    {/* â”€â”€ Sales Velocity & Product Analytics Tab â”€â”€ */}
                     {activeTab === 'salesVelocity' && (() => {
                         const fetchVelocity = async () => {
                             setVelocityLoading(true)
@@ -3187,7 +2077,7 @@ export default function Analytics() {
                                 onClick={() => setVelocitySort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
                                 title={tip || ''}
                             >
-                                {label} {velocitySort.col === col ? (velocitySort.dir === 'desc' ? '↓' : '↑') : ''}
+                                {label} {velocitySort.col === col ? (velocitySort.dir === 'desc' ? 'â†“' : 'â†‘') : ''}
                             </th>
                         )
 
@@ -3243,8 +2133,8 @@ export default function Analytics() {
                                                             <rect x={Math.min(x - 10, w - 140)} y={Math.max(5, h - 30 - barH - 68)} width={130} height={60} rx={6} fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
                                                             <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 16} fontSize="10" fill="#e4e4e7" fontWeight="600">{t.date}</text>
                                                             <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 30} fontSize="9" fill="#10b981">📦 {t.units.toLocaleString()} unități</text>
-                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 43} fontSize="9" fill="#60a5fa">💰 {t.revenue.toLocaleString()} RON</text>
-                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 55} fontSize="9" fill="#fbbf24">📋 {t.orders} comenzi</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 43} fontSize="9" fill="#60a5fa">ðŸ’° {t.revenue.toLocaleString()} RON</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 55} fontSize="9" fill="#fbbf24">ðŸ“‹ {t.orders} comenzi</text>
                                                         </g>
                                                     )}
                                                 </g>
@@ -3306,8 +2196,8 @@ export default function Analytics() {
                                     {velocityData?.meta && (
                                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
                                             <span>📦 {velocityData.meta.total_orders?.toLocaleString()} comenzi totale</span>
-                                            <span>📅 {velocityData.meta.period_days} zile</span>
-                                            <span>🏷️ {velocityData.kpis?.unique_skus} SKU-uri active</span>
+                                            <span>ðŸ“… {velocityData.meta.period_days} zile</span>
+                                            <span>ðŸ·️ {velocityData.kpis?.unique_skus} SKU-uri active</span>
                                         </div>
                                     )}
                                 </div>
@@ -3363,7 +2253,7 @@ export default function Analytics() {
                                                 <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                         <TrendingUp className="w-4 h-4 text-emerald-500" />
-                                                        Performanță Produse — {sortedProducts.length} SKU-uri
+                                                        Performanță Produse â€” {sortedProducts.length} SKU-uri
                                                     </h3>
                                                     <div className="flex items-center gap-2">
                                                         <Search className="w-4 h-4 text-zinc-400" />
@@ -3457,7 +2347,7 @@ export default function Analytics() {
                                                                             </div>
                                                                         </td>
                                                                         <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                                                                            {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
+                                                                            {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : 'â€”'}
                                                                         </td>
                                                                         <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
@@ -3471,7 +2361,7 @@ export default function Analytics() {
                                                                                     {/* Per-Store Breakdown */}
                                                                                     {p.by_store && p.by_store.length > 0 && (
                                                                                         <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🏪 Per Magazin</h5>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸª Per Magazin</h5>
                                                                                             <table className="w-full text-xs">
                                                                                                 <thead>
                                                                                                     <tr className="text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
@@ -3506,19 +2396,19 @@ export default function Analytics() {
                                                                                     )}
                                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                                         <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸŒ Per Èšară</h5>
                                                                                             <div className="space-y-1 text-xs">
                                                                                                 {p.by_country.map(bc => (
                                                                                                     <div key={bc.country} className="flex justify-between">
-                                                                                                        <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || '🏳️'} {bc.country}</span>
+                                                                                                        <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || 'ðŸ³️'} {bc.country}</span>
                                                                                                         <span className="font-medium text-zinc-700 dark:text-zinc-200">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
                                                                                                     </div>
                                                                                                 ))}
-                                                                                                {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
+                                                                                                {p.by_country.length === 0 && <div className="text-zinc-400">â€”</div>}
                                                                                             </div>
                                                                                         </div>
                                                                                         <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸ“Š Detalii</h5>
                                                                                             <div className="space-y-1 text-xs">
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.cogs.toLocaleString()} RON</span></div>
@@ -3549,7 +2439,7 @@ export default function Analytics() {
                                                 <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-4 flex items-center gap-2">
                                                         <BarChart3 className="w-4 h-4 text-emerald-500" />
-                                                        Trend Zilnic — Unități Vândute
+                                                        Trend Zilnic â€” Unități Vândute
                                                     </h3>
                                                     <TrendChart trends={velocityData.trends} />
                                                 </div>
@@ -3558,7 +2448,7 @@ export default function Analytics() {
                                                 <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-4 flex items-center gap-2">
                                                         <TrendingUp className="w-4 h-4 text-emerald-500" />
-                                                        Top 10 — Cele mai rapide SKU-uri (u/zi)
+                                                        Top 10 â€” Cele mai rapide SKU-uri (u/zi)
                                                     </h3>
                                                     <div className="space-y-2">
                                                         {filteredProducts.slice(0, 10).map((p, i) => {
@@ -3578,7 +2468,7 @@ export default function Analytics() {
                                                     </div>
                                                 </div>
 
-                                                {/* Growth vs Decline — Full tables with search/sort */}
+                                                {/* Growth vs Decline â€” Full tables with search/sort */}
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     {/* Growing */}
                                                     {(() => {
@@ -3588,7 +2478,7 @@ export default function Analytics() {
                                                         return (
                                                             <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                                                 <h3 className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-2 flex items-center gap-2">
-                                                                    <ArrowUpRight className="w-4 h-4" /> 🚀 Cele mai în creștere ({allGrowing.length})
+                                                                    <ArrowUpRight className="w-4 h-4" /> ðŸš€ Cele mai în creștere ({allGrowing.length})
                                                                 </h3>
                                                                 <div className="flex items-center gap-2 mb-2">
                                                                     <input type="text" value={growthSearch} onChange={e => setGrowthSearch(e.target.value)} placeholder="Caută SKU..."
@@ -3605,7 +2495,7 @@ export default function Analytics() {
                                                                         <div key={p.sku} className="flex items-center justify-between text-xs border-b border-zinc-100 dark:border-zinc-700/50 pb-1">
                                                                             <span className="text-zinc-700 dark:text-zinc-300 truncate mr-2" title={p.product_name}>{p.sku}</span>
                                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                                <span className="text-zinc-400">{p.prev_velocity} → {p.velocity}</span>
+                                                                                <span className="text-zinc-400">{p.prev_velocity} â†’ {p.velocity}</span>
                                                                                 <span className="font-bold text-emerald-600">+{p.velocity_change_pct}%</span>
                                                                             </div>
                                                                         </div>
@@ -3623,7 +2513,7 @@ export default function Analytics() {
                                                         return (
                                                             <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                                                 <h3 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-2">
-                                                                    <ArrowDownRight className="w-4 h-4" /> 📉 Cele mai în scădere ({allDeclining.length})
+                                                                    <ArrowDownRight className="w-4 h-4" /> ðŸ“‰ Cele mai în scădere ({allDeclining.length})
                                                                 </h3>
                                                                 <div className="flex items-center gap-2 mb-2">
                                                                     <input type="text" value={declineSearch} onChange={e => setDeclineSearch(e.target.value)} placeholder="Caută SKU..."
@@ -3640,7 +2530,7 @@ export default function Analytics() {
                                                                         <div key={p.sku} className="flex items-center justify-between text-xs border-b border-zinc-100 dark:border-zinc-700/50 pb-1">
                                                                             <span className="text-zinc-700 dark:text-zinc-300 truncate mr-2" title={p.product_name}>{p.sku}</span>
                                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                                <span className="text-zinc-400">{p.prev_velocity} → {p.velocity}</span>
+                                                                                <span className="text-zinc-400">{p.prev_velocity} â†’ {p.velocity}</span>
                                                                                 <span className="font-bold text-red-600">{p.velocity_change_pct}%</span>
                                                                             </div>
                                                                         </div>
@@ -3652,7 +2542,7 @@ export default function Analytics() {
                                                     })()}
                                                 </div>
 
-                                                {/* Store Comparison — Expandable */}
+                                                {/* Store Comparison â€” Expandable */}
                                                 {velocityData.store_comparison?.length > 0 && (
                                                     <div>
                                                         <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-3 flex items-center gap-2">
@@ -3882,8 +2772,8 @@ export default function Analytics() {
                         }
 
                         const sortIcon = (col) => {
-                            if (skuProfitSort.col !== col) return '↕'
-                            return skuProfitSort.dir === 'asc' ? '↑' : '↓'
+                            if (skuProfitSort.col !== col) return 'â†•'
+                            return skuProfitSort.dir === 'asc' ? 'â†‘' : 'â†“'
                         }
 
                         const marginColor = (pct) => {
@@ -4011,7 +2901,7 @@ export default function Analytics() {
                                                 <div className="text-xs text-zinc-500 dark:text-zinc-400">Marjă Medie</div>
                                                 <div className={`text-2xl font-bold mt-1 ${marginColor(summary.avg_margin || 0)}`}>{summary.avg_margin || 0}%</div>
                                                 {summary.products_without_cost > 0 && (
-                                                    <div className="text-xs text-amber-500 mt-1">⚠ {summary.products_without_cost} fără cost</div>
+                                                    <div className="text-xs text-amber-500 mt-1">âš  {summary.products_without_cost} fără cost</div>
                                                 )}
                                             </div>
                                         </div>
@@ -4084,7 +2974,7 @@ export default function Analytics() {
                                                                         <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${skuProfitExpanded === p.sku ? 'rotate-180' : ''}`} />
                                                                     </td>
                                                                     <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300 font-medium">{p.sku}</td>
-                                                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
+                                                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300 text-xs max-w-[200px] truncate">{p.name || 'â€”'}</td>
                                                                     <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">{formatNumber(p.units_sold)}</td>
                                                                     <td className="px-3 py-2 text-right font-medium text-zinc-800 dark:text-zinc-200">{formatNumber(Math.round(p.revenue))}</td>
                                                                     <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(p.cogs))}</td>
@@ -4134,14 +3024,14 @@ export default function Analytics() {
                                                                                     </div>
                                                                                     <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 border border-zinc-200 dark:border-zinc-700">
                                                                                         <div className="text-xs text-zinc-500 dark:text-zinc-400">Cost Produs</div>
-                                                                                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{p.has_cost ? '✅ Setat' : '❌ Lipsă'}</div>
+                                                                                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{p.has_cost ? 'âœ… Setat' : 'âŒ Lipsă'}</div>
                                                                                     </div>
                                                                                 </div>
 
                                                                                 {/* Per-store breakdown */}
                                                                                 {p.per_store && p.per_store.length > 0 && (
                                                                                     <div>
-                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">📊 Per Magazin</h4>
+                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">ðŸ“Š Per Magazin</h4>
                                                                                         <div className="overflow-x-auto">
                                                                                             <table className="w-full text-xs">
                                                                                                 <thead className="bg-zinc-100 dark:bg-zinc-800">
@@ -4184,7 +3074,7 @@ export default function Analytics() {
                                                                                 {/* Marketing costs for this SKU */}
                                                                                 <div>
                                                                                     <div className="flex items-center justify-between mb-2">
-                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">💰 Costuri Marketing</h4>
+                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">ðŸ’° Costuri Marketing</h4>
                                                                                         <button onClick={(e) => { e.stopPropagation(); setAddingMktFor(addingMktFor === p.sku ? null : p.sku) }}
                                                                                             className="text-xs px-2 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors">
                                                                                             <Plus className="w-3 h-3 inline mr-1" />Adaugă
@@ -4272,7 +3162,7 @@ export default function Analytics() {
                                                         <div key={p.sku} className="flex items-center justify-between bg-white/50 dark:bg-zinc-800/50 rounded-lg px-3 py-2 text-xs">
                                                             <div className="flex items-center gap-3">
                                                                 <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{p.sku}</span>
-                                                                <span className="text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.name || '—'}</span>
+                                                                <span className="text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.name || 'â€”'}</span>
                                                             </div>
                                                             <div className="flex items-center gap-2">
                                                                 {!p.has_cost && <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">Cost Lipsă</span>}
