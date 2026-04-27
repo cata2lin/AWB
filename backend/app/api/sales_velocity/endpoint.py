@@ -29,6 +29,24 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 # Outcomes that count as "delivered" for velocity purposes
 DELIVERED_OUTCOMES = {"DELIVERED"}
 
+# Outcomes excluded from gross counts — Shopify never includes cancelled orders
+# in "Net items sold".  Excluding them aligns our "Brut" with Shopify reporting.
+CANCELLED_OUTCOMES = {"CANCELLED"}
+
+# ── Per-store timezone mapping ───────────────────────────────────────────
+# Shopify stores use their configured timezone for reporting boundaries.
+# When comparing date ranges, we must respect each store's local midnight.
+# Stores not listed here default to Europe/Bucharest.
+STORE_TIMEZONE_MAP: Dict[str, str] = {
+    # Czech stores → Central European Time
+    "bonhaus.cz": "Europe/Prague",
+    # Polish stores → Central European Time
+    "bonhaus.pl": "Europe/Warsaw",
+    # Bulgarian stores — same offset as Romania (EET/EEST)
+    # "bonhaus.bg": "Europe/Sofia",  # same as Bucharest, no adjustment needed
+    # "nocturna.bg": "Europe/Sofia",
+}
+
 # Nubra shares SKUs with esteban/GT but sells different products — never merge
 NUBRA_UID = "7d1a2e21-7efb-4cd7-b4e7-09ef875430a9-1774614410-JJ99XONT29"
 
@@ -59,7 +77,11 @@ async def get_sales_velocity(
     - meta:             Filter info
     """
     # ── 1. Date range ─────────────────────────────────────────────────────
-    if date_from and date_to:
+    # We compute a "widened" UTC window that covers ALL possible store
+    # timezones (UTC+1 through UTC+3).  Per-store filtering in the
+    # aggregation loop then applies the exact local-midnight boundaries.
+    explicit_dates = bool(date_from and date_to)
+    if explicit_dates:
         try:
             dt_from = date_str_to_utc_start(date_from)
             dt_to = date_str_to_utc_end(date_to)
@@ -76,14 +98,43 @@ async def get_sales_velocity(
 
     period_days = max((dt_to - dt_from).days, 1)
 
+    # ── Per-store UTC boundaries (for timezone-aware filtering) ──────────
+    # Pre-compute the UTC start/end for each store timezone so we can
+    # accurately decide whether an order falls inside the user's chosen
+    # date range relative to that store's local clock.
+    _store_utc_bounds: Dict[str, tuple] = {}  # store_name → (utc_start, utc_end)
+
+    def _get_store_bounds(store_name: str) -> tuple:
+        """Return (utc_start, utc_end) for a store, using its local timezone."""
+        if store_name in _store_utc_bounds:
+            return _store_utc_bounds[store_name]
+        tz_name = STORE_TIMEZONE_MAP.get(store_name)
+        if tz_name and explicit_dates:
+            tz = ZoneInfo(tz_name)
+            local_start = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=tz)
+            local_end = datetime.strptime(date_to, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=tz
+            )
+            bounds = (
+                local_start.astimezone(ZoneInfo("UTC")).replace(tzinfo=None),
+                local_end.astimezone(ZoneInfo("UTC")).replace(tzinfo=None),
+            )
+        else:
+            bounds = (dt_from, dt_to)
+        _store_utc_bounds[store_name] = bounds
+        return bounds
+
     # Previous period of same length (for trend comparison)
     prev_from = dt_from - timedelta(days=period_days)
     prev_to = dt_from - timedelta(seconds=1)
 
     # ── 2. Query current + previous period orders ─────────────────────────
+    # Widen the query window by 2 hours to capture orders that might fall
+    # inside a store's local date range but outside Bucharest boundaries.
+    query_margin = timedelta(hours=2)
     query = select(Order).where(
-        Order.frisbo_created_at >= prev_from,  # Get both periods in one query
-        Order.frisbo_created_at <= dt_to,
+        Order.frisbo_created_at >= prev_from - query_margin,
+        Order.frisbo_created_at <= dt_to + query_margin,
     )
 
     if store_uids:
@@ -203,6 +254,7 @@ async def get_sales_velocity(
             order.fulfillment_status,
         )
         is_delivered = final_outcome in DELIVERED_OUTCOMES
+        is_cancelled = final_outcome in CANCELLED_OUTCOMES
 
         # Country
         addr = order.shipping_address or {}
@@ -211,8 +263,12 @@ async def get_sales_velocity(
             continue
 
         order_date = order.frisbo_created_at
-        is_current = order_date and order_date >= dt_from
-        is_prev = order_date and order_date < dt_from
+
+        # Per-store timezone-aware period classification
+        store_name_for_tz = stores_map.get(order.store_uid, "")
+        s_start, s_end = _get_store_bounds(store_name_for_tz)
+        is_current = order_date and order_date >= s_start and order_date <= s_end
+        is_prev = order_date and order_date < s_start and order_date >= (s_start - timedelta(days=period_days))
 
         # Parse items
         for item in items_raw:
@@ -242,17 +298,22 @@ async def get_sales_velocity(
                 if not agg["product_name"]:
                     agg["product_name"] = product_name or sku_product_name.get(composite_key, "")
 
-                agg["total_units"] += qty
-                agg["gross_revenue"] += line_rev
-                agg["orders"] += 1
+                # Cancelled orders are excluded from gross counts to align
+                # with Shopify's "Net items sold" (which never includes
+                # cancelled orders).  They are still queryable via status
+                # breakdowns elsewhere.
+                if not is_cancelled:
+                    agg["total_units"] += qty
+                    agg["gross_revenue"] += line_rev
+                    agg["orders"] += 1
 
-                # Per-store sub-aggregation
-                st = agg["by_store"][order.store_uid or ""]
-                st["store_uid"] = order.store_uid or ""
-                st["store_name"] = stores_map.get(order.store_uid, order.store_uid or "")
-                st["gross_units"] += qty
-                st["gross_revenue"] += line_rev
-                st["orders"] += 1
+                    # Per-store sub-aggregation
+                    st = agg["by_store"][order.store_uid or ""]
+                    st["store_uid"] = order.store_uid or ""
+                    st["store_name"] = stores_map.get(order.store_uid, order.store_uid or "")
+                    st["gross_units"] += qty
+                    st["gross_revenue"] += line_rev
+                    st["orders"] += 1
 
                 if is_delivered:
                     agg["units_sold"] += qty
@@ -308,39 +369,36 @@ async def get_sales_velocity(
     # Dedup order counting in daily totals: re-count at order level
     daily_order_count: Dict[str, int] = defaultdict(int)
     for order in all_orders:
-        if order.frisbo_created_at and order.frisbo_created_at >= dt_from:
-            final_outcome = compute_final_outcome(
-                order.aggregated_status, order.shipment_status, order.fulfillment_status,
-            )
-            if final_outcome in DELIVERED_OUTCOMES:
-                dk = str(to_bucharest_date(order.frisbo_created_at))
-                daily_order_count[dk] += 1
+        if order.frisbo_created_at:
+            s_name = stores_map.get(order.store_uid, "")
+            s_s, s_e = _get_store_bounds(s_name)
+            if order.frisbo_created_at >= s_s and order.frisbo_created_at <= s_e:
+                final_outcome = compute_final_outcome(
+                    order.aggregated_status, order.shipment_status, order.fulfillment_status,
+                )
+                if final_outcome in DELIVERED_OUTCOMES:
+                    dk = str(to_bucharest_date(order.frisbo_created_at))
+                    daily_order_count[dk] += 1
     for dk, cnt in daily_order_count.items():
         daily_totals[dk]["orders"] = cnt
-
-    # Store order counting
-    for order in all_orders:
-        if order.frisbo_created_at and order.frisbo_created_at >= dt_from:
-            final_outcome = compute_final_outcome(
-                order.aggregated_status, order.shipment_status, order.fulfillment_status,
-            )
-            if final_outcome in DELIVERED_OUTCOMES:
-                store_agg[order.store_uid]["orders"] += 1
 
     # Fix double-counting: store orders were counted per line item, reset and recount
     for sa in store_agg.values():
         sa["orders"] = 0
     for order in all_orders:
-        if order.frisbo_created_at and order.frisbo_created_at >= dt_from:
-            final_outcome = compute_final_outcome(
-                order.aggregated_status, order.shipment_status, order.fulfillment_status,
-            )
-            if final_outcome in DELIVERED_OUTCOMES:
-                addr = order.shipping_address or {}
-                oc = (addr.get("country_code", "") or "").upper()
-                if country_code and oc != country_code.upper():
-                    continue
-                store_agg[order.store_uid]["orders"] += 1
+        if order.frisbo_created_at:
+            s_name = stores_map.get(order.store_uid, "")
+            s_s, s_e = _get_store_bounds(s_name)
+            if order.frisbo_created_at >= s_s and order.frisbo_created_at <= s_e:
+                final_outcome = compute_final_outcome(
+                    order.aggregated_status, order.shipment_status, order.fulfillment_status,
+                )
+                if final_outcome in DELIVERED_OUTCOMES:
+                    addr = order.shipping_address or {}
+                    oc = (addr.get("country_code", "") or "").upper()
+                    if country_code and oc != country_code.upper():
+                        continue
+                    store_agg[order.store_uid]["orders"] += 1
 
     # ── 5. Build product performance list ─────────────────────────────────
     now = datetime.utcnow()

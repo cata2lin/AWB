@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import Orders from './pages/Orders'
+import Duplicates from './pages/Duplicates'
 import Rules from './pages/Rules'
 import Settings from './pages/Settings'
 import History from './pages/History'
@@ -37,6 +38,7 @@ function AppContent() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/orders" element={<Orders />} />
+              <Route path="/duplicates" element={<Duplicates />} />
               <Route path="/rules" element={<Rules />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/history" element={<History />} />

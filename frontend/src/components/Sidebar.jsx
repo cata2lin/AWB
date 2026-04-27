@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle } from 'lucide-react'
+import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle, Copy } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
 const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/orders', icon: ListOrdered, label: 'Orders' },
+    { path: '/duplicates', icon: Copy, label: 'Duplicates', indent: true },
     { path: '/rules', icon: Layers, label: 'Rules' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
     { path: '/history', icon: History, label: 'History' },
@@ -67,12 +68,12 @@ export default function Sidebar({ user, onLogout }) {
                         <Link
                             key={item.path}
                             to={item.path}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${isActive
+                            className={`flex items-center gap-3 rounded-lg font-medium transition-all duration-150 ${item.indent ? 'px-3 py-1.5 pl-10 text-xs' : 'px-3 py-2.5 text-sm'} ${isActive
                                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm dark:shadow-none border-l-[3px] border-indigo-500 pl-[9px]'
                                 : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
                                 }`}
                         >
-                            <item.icon className={`w-5 h-5 ${isActive ? 'text-indigo-500' : ''}`} />
+                            <item.icon className={`${item.indent ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'text-indigo-500' : ''}`} />
                             {item.label}
                         </Link>
                     )

@@ -62,6 +62,10 @@ export const ordersApi = {
         const { data } = await api.get(`/orders/${uid}/awbs`)
         return data
     },
+    getDuplicates: async (params = {}) => {
+        const { data } = await api.get('/orders/duplicates', { params })
+        return data
+    },
 }
 
 export const orderActionsApi = {

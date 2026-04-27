@@ -2,10 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useStores } from '../hooks/useApi'
 import { ordersApi, printApi } from '../services/api'
 import MultiSelectFilter from '../components/MultiSelectFilter'
+import { Link } from 'react-router-dom'
 import {
     Search, ArrowUpDown, Package, AlertCircle, ChevronDown, ChevronLeft, ChevronRight,
     User, MapPin, Mail, Filter, X, Printer, FileText, Calendar, Tag, Truck, Store, Save, Lock,
-    DollarSign, RotateCcw, ExternalLink, Loader2, Download, RefreshCw, Phone
+    DollarSign, RotateCcw, ExternalLink, Loader2, Download, RefreshCw, Phone, Copy
 } from 'lucide-react'
 
 export default function Orders() {
@@ -236,6 +237,7 @@ export default function Orders() {
         }
         setPage(0)
     }
+
 
     const clearAllFilters = () => {
         setSearchQuery('')
@@ -480,6 +482,14 @@ export default function Orders() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Link
+                        to="/duplicates"
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+                        title="View cross-store duplicate orders"
+                    >
+                        <Copy className="w-4 h-4" />
+                        Duplicates
+                    </Link>
                     <button
                         onClick={handleExport}
                         disabled={isExporting || isLoading}
@@ -732,6 +742,7 @@ export default function Orders() {
                     </div>
                 </div>
             )}
+
 
             {/* Loading State */}
             {isLoading && (

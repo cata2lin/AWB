@@ -10,7 +10,7 @@
  * - Per-subsidiary breakdowns (COVORIA, MAGDEAL, BONHAUS)
  */
 import React, { useState, useCallback, useMemo } from 'react'
-import { BarChart3, RefreshCw, Calendar, Layers, TrendingUp, TrendingDown, Download, Info, Search, X } from 'lucide-react'
+import { BarChart3, RefreshCw, Calendar, Layers, TrendingUp, TrendingDown, Download, Info, Search, X, ChevronRight, ChevronDown } from 'lucide-react'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 const fmt = (v) => {
@@ -61,14 +61,46 @@ const KpiCard = ({ label, value, trend, trendLabel, color = 'blue', format = 'cu
 }
 
 // ─── Table Row ───────────────────────────────────────────────────────────────
-const CMRow = ({ type, label, values, colCount }) => {
+const CMRow = ({ type, label, values, colCount, onClick, icon }) => {
     const cols = colCount || 4
     if (type === 'spacer') return <tr className="h-3"><td colSpan={cols + 1}></td></tr>
+    if (type === 'divider') return <tr><td colSpan={cols + 1} className="h-2 bg-gradient-to-r from-zinc-200 via-zinc-100 to-zinc-200 dark:from-zinc-700 dark:via-zinc-800 dark:to-zinc-700"></td></tr>
 
     if (type === 'header') {
         return (
-            <tr className="bg-blue-600 dark:bg-blue-700">
-                <td colSpan={cols + 1} className="text-white font-bold py-2 px-3 text-sm">{label}</td>
+            <tr style={{ backgroundColor: 'oklch(0.59 0.14 271.02)' }}
+                className={`${onClick ? 'cursor-pointer' : ''}`}
+                onClick={onClick}>
+                <td colSpan={cols + 1} className="text-white font-bold py-2 px-3 text-sm">
+                    <span className="flex items-center gap-1.5">
+                        {icon}{label}
+                    </span>
+                </td>
+            </tr>
+        )
+    }
+    if (type === 'consolidated') {
+        return (
+            <tr style={{ backgroundColor: 'oklch(0.59 0.14 271.02)' }}
+                className={`${onClick ? 'cursor-pointer' : ''}`}
+                onClick={onClick}>
+                <td colSpan={cols + 1} className="text-white font-extrabold py-2.5 px-3 text-sm tracking-wide">
+                    <span className="flex items-center gap-1.5">
+                        {icon}{label}
+                    </span>
+                </td>
+            </tr>
+        )
+    }
+    if (type === 'subsidiary') {
+        return (
+            <tr className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+                <td colSpan={cols + 1} className="py-2 px-3">
+                    <span className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-200 dark:bg-amber-700/50 text-amber-800 dark:text-amber-300">Subsidiary</span>
+                        <span className="font-bold text-sm text-amber-900 dark:text-amber-200">{label}</span>
+                    </span>
+                </td>
             </tr>
         )
     }
@@ -95,9 +127,9 @@ const CMRow = ({ type, label, values, colCount }) => {
 
     return (
         <tr className={`hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors ${type === 'subtotal' || type === 'total' ? '' : 'border-b border-zinc-100 dark:border-zinc-800'}`}>
-            <td className={`${pad} py-[5px] text-[13px] whitespace-nowrap min-w-[260px] text-zinc-700 dark:text-zinc-300 ${cls}`}>{label}</td>
+            <td className={`${pad} py-[5px] text-[13px] whitespace-nowrap min-w-[260px] text-zinc-700 dark:text-zinc-100 ${cls}`}>{label}</td>
             {(values || []).map((v, i) => (
-                <td key={i} className={`px-3 py-[5px] text-[13px] text-right whitespace-nowrap ${cls} ${isNeg(v) && type !== 'percent' ? 'text-red-600 dark:text-red-400' : ''}`}>
+                <td key={i} className={`px-3 py-[5px] text-[13px] text-right whitespace-nowrap text-zinc-700 dark:text-zinc-100 ${cls} ${isNeg(v) && type !== 'percent' ? 'text-red-600 dark:text-red-400' : ''}`}>
                     {typeof v === 'string' ? v : fmtVal(v)}
                 </td>
             ))}
@@ -244,6 +276,15 @@ export default function ContributionMarginPnl({ authFetch }) {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [storeSearch, setStoreSearch] = useState('')
+    const [expandedDivisions, setExpandedDivisions] = useState({})
+    const [expandedStores, setExpandedStores] = useState({})
+
+    const toggleDivision = useCallback((name) => {
+        setExpandedDivisions(prev => ({ ...prev, [name]: !prev[name] }))
+    }, [])
+    const toggleStore = useCallback((name) => {
+        setExpandedStores(prev => ({ ...prev, [name]: !prev[name] }))
+    }, [])
 
     const API_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -396,25 +437,58 @@ export default function ContributionMarginPnl({ authFetch }) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* Flat list of all stores with blue headers */}
-                                    {(data.subsidiaries || []).flatMap(sub =>
-                                        (sub.stores || []).map(store => ({ ...store, subsidiary: sub.name }))
-                                    )
-                                    .filter(store => store.months?.some(m => (m?.total_orders || 0) > 0))
-                                    .filter(store => !storeSearch || store.name.toLowerCase().includes(storeSearch.toLowerCase()))
-                                    .map((store, storeIdx) => (
-                                        <React.Fragment key={store.name}>
-                                            {/* Delimiter between stores */}
-                                            {storeIdx > 0 && (
-                                                <tr><td colSpan={colCount + 1} className="h-2 bg-gradient-to-r from-zinc-200 via-zinc-100 to-zinc-200 dark:from-zinc-700 dark:via-zinc-800 dark:to-zinc-700"></td></tr>
-                                            )}
-                                            {/* Store blue header */}
-                                            <CMRow type="header" label={store.name} colCount={colCount} />
-                                            {buildSectionRows(store, store.name).map((row, i) => (
-                                                <CMRow key={`${store.name}-${i}`} {...row} colCount={colCount} />
-                                            ))}
-                                        </React.Fragment>
+                                    {/* ARONA Group Consolidated */}
+                                    <CMRow type="consolidated" label="ARONA Group Consolidated Results" colCount={colCount} />
+                                    {buildSectionRows(data.consolidated, '').map((row, i) => (
+                                        <CMRow key={`cons-${i}`} {...row} colCount={colCount} />
                                     ))}
+
+                                    {/* Division sections */}
+                                    {(data.subsidiaries || []).map((division, divIdx) => {
+                                        const divExpanded = expandedDivisions[division.name]
+                                        const divIcon = divExpanded
+                                            ? <ChevronDown className="w-4 h-4" />
+                                            : <ChevronRight className="w-4 h-4" />
+
+                                        // Filter stores by search
+                                        const divStores = (division.stores || [])
+                                            .filter(s => s.months?.some(m => (m?.total_orders || 0) > 0))
+                                            .filter(s => !storeSearch || s.name.toLowerCase().includes(storeSearch.toLowerCase()))
+
+                                        // Skip division if search active and no stores match
+                                        if (storeSearch && divStores.length === 0) return null
+
+                                        return (
+                                            <React.Fragment key={division.name}>
+                                                <CMRow type="divider" colCount={colCount} />
+
+                                                {/* Division Consolidated header (clickable) */}
+                                                <CMRow type="consolidated"
+                                                    label={division.name}
+                                                    colCount={colCount}
+                                                    icon={divIcon}
+                                                    onClick={() => toggleDivision(division.name)} />
+
+                                                {/* Division consolidated P&L rows */}
+                                                {buildSectionRows(division, '').map((row, i) => (
+                                                    <CMRow key={`${division.name}-agg-${i}`} {...row} colCount={colCount} />
+                                                ))}
+
+                                                {/* Expanded: individual subsidiary stores */}
+                                                {divExpanded && divStores.map(store => {
+                                                    const storeExp = expandedStores[store.name]
+                                                    return (
+                                                        <React.Fragment key={store.name}>
+                                                            <CMRow type="subsidiary" label={store.name} colCount={colCount} />
+                                                            {buildSectionRows(store, store.name).map((row, i) => (
+                                                                <CMRow key={`${store.name}-${i}`} {...row} colCount={colCount} />
+                                                            ))}
+                                                        </React.Fragment>
+                                                    )
+                                                })}
+                                            </React.Fragment>
+                                        )
+                                    })}
                                 </tbody>
                             </table>
                         </div>

@@ -17,25 +17,38 @@ from app.core.database import get_db
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Subsidiary mapping: brand name → list of store name patterns (case-insensitive)
+# Division mapping: ARONA Group corporate hierarchy
+# Each division contains a list of store-name patterns (case-insensitive).
+# Order matters — more-specific patterns MUST come before generic ones
+# (e.g. 'nocturna.bg' before 'nocturna', 'bonhaus' before anything else).
 # ---------------------------------------------------------------------------
-SUBSIDIARY_MAP = {
-    "COVORIA": ["covoria"],
-    "MAGDEAL": ["magdeal", "casaofertelor", "ofertelezilei", "reduceribune",
-                "carpetto", "cepatai", "apreciat", "belasil", "gento",
-                "nubra", "rossinails", "grandia"],
-    "BONHAUS": ["bonhaus", "georgetalent", "esteban", "nocturna", "nocturnalux"],
-}
+DIVISION_MAP = [
+    ("SCENTUM", ["esteban", "georgetalent"]),
+    ("DTC Brands", ["rossinails", "belasil", "gento", "apreciat",
+                     "nocturnalux", "nocturna.ro"]),
+    ("UTILITY eCommerce", ["grandia"]),
+    ("TREND eCommerce", ["casaofertelor", "ofertelezilei", "reduceribune",
+                          "magdeal", "carpetto", "covoria", "cepatai"]),
+    ("EUROPE", ["bonhaus", "nocturna.bg"]),
+]
+
+# Legacy alias used by _extract_subsidiary_data for the "all stores" aggregate
+SUBSIDIARY_MAP = {div: patterns for div, patterns in DIVISION_MAP}
 
 
-def _store_to_subsidiary(store_name: str) -> str:
-    """Map a store name to its subsidiary brand."""
+def _store_to_division(store_name: str) -> str:
+    """Map a store name to its ARONA Group division."""
     name_lower = store_name.lower()
-    for subsidiary, patterns in SUBSIDIARY_MAP.items():
+    for division, patterns in DIVISION_MAP:
         for pattern in patterns:
             if pattern in name_lower:
-                return subsidiary
+                return division
     return "OTHER"
+
+
+# Backward-compatible alias
+def _store_to_subsidiary(store_name: str) -> str:
+    return _store_to_division(store_name)
 
 
 def _month_date_range(month_str: str):
@@ -367,7 +380,8 @@ async def get_multi_period_profitability(
     if not month_list:
         return {"error": "No months specified"}
 
-    subsidiary_names = list(SUBSIDIARY_MAP.keys())
+    division_names = [div for div, _ in DIVISION_MAP]
+    subsidiary_names = division_names  # backward compat for _build_period_data
 
     # Fetch profitability for each month by calling the existing endpoint logic
     monthly_results = []
