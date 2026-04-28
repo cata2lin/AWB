@@ -417,8 +417,8 @@ async def product_picker(
             (func.lower(Product.sku) == search_clean.lower()) |
             (Product.barcode == search_clean)
         )
-        exact_r = await db.execute(exact_q)
-        exact_product = exact_r.scalar_one_or_none()
+        exact_result = await db.execute(exact_q.limit(1))
+        exact_product = exact_result.scalars().first()
         if exact_product:
             exact_match_uid = exact_product.uid
 
@@ -427,8 +427,7 @@ async def product_picker(
             (func.lower(Product.title_1).like(sl)) |
             (func.lower(Product.barcode).like(sl))
         )
-    if not search and not filter_store_uids:
-        return {"products": [], "exact_match_uid": None}
+    # When no search and no store filter, still return products (for SKU picker modal)
 
     # Over-fetch more when browsing by store (no text search = more results expected)
     over_fetch = limit + 300 if filter_store_uids and not search else limit + 100
