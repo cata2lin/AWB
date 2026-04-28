@@ -137,7 +137,7 @@ export default function Analytics() {
     // Sales Velocity state
     const [velocityData, setVelocityData] = useState(null)
     const [velocityLoading, setVelocityLoading] = useState(false)
-    const [velocityDays, setVelocityDays] = useState(30)
+    const [velocityDays, setVelocityDays] = useState(1)
     const [velocityDateFrom, setVelocityDateFrom] = useState('')
     const [velocityDateTo, setVelocityDateTo] = useState('')
     const [velocityStores, setVelocityStores] = useState([])
@@ -258,7 +258,7 @@ export default function Analytics() {
         fetchData()
     }, [selectedStores, days, effectiveDateRange])
 
-    // Auto-load velocity data when tab is first activated (with default 30-day period)
+    // Auto-load velocity data when tab is first activated (with default 1-day / today period)
     useEffect(() => {
         if (activeTab === 'salesVelocity' && !velocityData && !velocityLoading) {
             const autoFetch = async () => {
@@ -2249,7 +2249,7 @@ export default function Analytics() {
                             setActiveViewName('')
                         }
 
-                        const advInput = 'w-24 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white'
+                        const advInput = 'w-20 px-2 py-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white'
 
                         return (
                             <div className="space-y-6">
@@ -2338,40 +2338,40 @@ export default function Analytics() {
                                         )}
                                     </div>
 
-                                    {/* Advanced Filters Panel */}
+                                    {/* Advanced Filters Panel — compact, collapsed by default */}
                                     {showAdvancedFilters && (
-                                        <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Filtre Avansate</span>
+                                        <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Filtre Avansate</span>
                                                 {hasActiveFilters && (
-                                                    <button onClick={clearAdvancedFilters} className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
-                                                        <X className="w-3 h-3" /> Resetează filtre
+                                                    <button onClick={clearAdvancedFilters} className="text-[10px] text-red-500 hover:text-red-700 flex items-center gap-0.5">
+                                                        <X className="w-2.5 h-2.5" /> Reset
                                                     </button>
                                                 )}
                                             </div>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                                            <div className="flex flex-wrap items-end gap-2">
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Max Unități</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Max Unit.</label>
                                                     <input type="number" value={velocityMaxUnits} onChange={e => setVelocityMaxUnits(e.target.value)} placeholder="∞" className={advInput} />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Min Revenue (RON)</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Min Rev.</label>
                                                     <input type="number" value={velocityMinRevenue} onChange={e => setVelocityMinRevenue(e.target.value)} placeholder="0" className={advInput} />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Max Revenue (RON)</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Max Rev.</label>
                                                     <input type="number" value={velocityMaxRevenue} onChange={e => setVelocityMaxRevenue(e.target.value)} placeholder="∞" className={advInput} />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Min Stoc</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Min Stoc</label>
                                                     <input type="number" value={velocityMinStock} onChange={e => setVelocityMinStock(e.target.value)} placeholder="0" className={advInput} />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Max Stoc</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Max Stoc</label>
                                                     <input type="number" value={velocityMaxStock} onChange={e => setVelocityMaxStock(e.target.value)} placeholder="∞" className={advInput} />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Direcție Trend</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Trend</label>
                                                     <select value={velocityTrendFilter} onChange={e => setVelocityTrendFilter(e.target.value)} className={advInput}>
                                                         <option value="">Toate</option>
                                                         <option value="up">↑ Pozitiv</option>
@@ -2380,33 +2380,24 @@ export default function Analytics() {
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Trend Min %</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Trend Min%</label>
                                                     <input type="number" value={velocityTrendMinPct} onChange={e => setVelocityTrendMinPct(e.target.value)} placeholder="-∞" className={advInput} />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Trend Max %</label>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Trend Max%</label>
                                                     <input type="number" value={velocityTrendMaxPct} onChange={e => setVelocityTrendMaxPct(e.target.value)} placeholder="+∞" className={advInput} />
                                                 </div>
-                                            </div>
-                                            {/* Exclude stores */}
-                                            <div className="mt-3">
-                                                <label className="block text-[10px] font-medium text-zinc-400 mb-1">Exclude Magazine</label>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {stores.map(s => {
-                                                        const isExcluded = velocityExcludeStores.includes(s.uid)
-                                                        return (
-                                                            <button key={s.uid} onClick={() => setVelocityExcludeStores(prev =>
-                                                                isExcluded ? prev.filter(u => u !== s.uid) : [...prev, s.uid]
-                                                            )}
-                                                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
-                                                                    isExcluded
-                                                                        ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-300 dark:border-red-600 line-through'
-                                                                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100'
-                                                                }`}>
-                                                                {s.name}
-                                                            </button>
-                                                        )
-                                                    })}
+                                                <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Exclude Magazine</label>
+                                                    <MultiSelectFilter
+                                                        label="Exclude"
+                                                        options={stores.map(s => ({ value: s.uid, label: s.name }))}
+                                                        selected={velocityExcludeStores}
+                                                        onChange={setVelocityExcludeStores}
+                                                        icon={Store}
+                                                        searchable={stores.length > 5}
+                                                        allLabel="Niciunul"
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
