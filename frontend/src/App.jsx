@@ -43,6 +43,7 @@ function AppContent() {
               <Route path="/rules" element={<Rules />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
+              <Route path="/purchase-orders/:poNumber" element={<PurchaseOrders />} />
               <Route path="/history" element={<History />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />

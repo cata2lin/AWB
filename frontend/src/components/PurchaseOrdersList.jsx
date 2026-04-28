@@ -8,7 +8,7 @@ import { useState, useMemo } from 'react'
 import {
   Search, Plus, FileText, CheckCircle2, CircleDot, XCircle, AlertTriangle,
   Package, DollarSign, Clock, Layers, RefreshCw, Settings, X, Save, Trash2,
-  ToggleLeft, ToggleRight, Edit3, Loader2
+  ToggleLeft, ToggleRight, Edit3, Loader2, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react'
 
 const STATUS_CONFIG = {
@@ -143,6 +143,44 @@ const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 
 export default function PurchaseOrdersList({ h }) {
   const [showCatEditor, setShowCatEditor] = useState(false)
+  const [sortCol, setSortCol] = useState('created_at')
+  const [sortDir, setSortDir] = useState('desc') // 'asc' | 'desc'
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const SortIcon = ({ col }) => {
+    if (sortCol !== col) return <ArrowUpDown className="h-3 w-3 text-zinc-300 dark:text-zinc-600" />
+    return sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+  }
+
+  // Sort orders client-side
+  const sortedOrders = useMemo(() => {
+    const arr = [...h.orders]
+    arr.sort((a, b) => {
+      let va, vb
+      switch (sortCol) {
+        case 'po_number': va = a.po_number || ''; vb = b.po_number || ''; break
+        case 'status': va = a.status || ''; vb = b.status || ''; break
+        case 'po_category': va = a.po_category || ''; vb = b.po_category || ''; break
+        case 'created_at': va = a.created_at || ''; vb = b.created_at || ''; break
+        case 'total_cost': va = a.total_cost || 0; vb = b.total_cost || 0; break
+        case 'fulfillment':
+          va = (a.total_quantity > 0) ? (a.total_received || 0) / a.total_quantity : 0
+          vb = (b.total_quantity > 0) ? (b.total_received || 0) / b.total_quantity : 0
+          break
+        case 'supplier_name': va = a.supplier_name || ''; vb = b.supplier_name || ''; break
+        default: va = a.created_at || ''; vb = b.created_at || ''
+      }
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase() }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return arr
+  }, [h.orders, sortCol, sortDir])
 
   // Compute stats from loaded orders
   const stats = useMemo(() => {
@@ -320,18 +358,29 @@ export default function PurchaseOrdersList({ h }) {
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">PO #</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Category</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Date</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Total (RON)</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Fulfillment</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">TOM Sync</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Supplier</th>
+                {[
+                  { key: 'po_number', label: 'PO #', align: 'left' },
+                  { key: 'status', label: 'Status', align: 'left' },
+                  { key: 'po_category', label: 'Category', align: 'left' },
+                  { key: 'created_at', label: 'Date', align: 'left' },
+                  { key: 'total_cost', label: 'Total (RON)', align: 'right' },
+                  { key: 'fulfillment', label: 'Fulfillment', align: 'left' },
+                  { key: null, label: 'TOM Sync', align: 'left' },
+                  { key: 'supplier_name', label: 'Supplier', align: 'left' },
+                ].map(col => (
+                  <th key={col.label}
+                    onClick={() => col.key && toggleSort(col.key)}
+                    className={`px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400 ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.key ? 'cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none' : ''}`}>
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      {col.key && <SortIcon col={col.key} />}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {h.orders.map(po => {
+              {sortedOrders.map(po => {
                 const statusConf = STATUS_CONFIG[po.status] || STATUS_CONFIG.DRAFT
                 const StatusIcon = statusConf.icon
                 return (

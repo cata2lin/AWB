@@ -476,12 +476,15 @@ async def amend_po_in_tom(po_id: int, db: AsyncSession) -> dict:
     success = http_status == 200
     applied = response_body.get("applied", []) if isinstance(response_body, dict) else []
     skipped = response_body.get("skipped", []) if isinstance(response_body, dict) else []
+    err = _extract_error(response_body)
+
+    logger.info(f"TOM amend result: status={http_status} applied={len(applied) if isinstance(applied, list) else 0} skipped={len(skipped) if isinstance(skipped, list) else 0} err={err}")
 
     await _log_sync(
         db, po.id, "TOM_PO_AMEND",
         "SUCCESS" if success else "FAILED",
         len(applied) if isinstance(applied, list) else 0,
-        None if success else (network_error or f"HTTP {http_status}"),
+        None if success else (network_error or err.get("message") or f"HTTP {http_status}"),
         {
             "direction": "OUT", "endpoint": path, "method": "POST",
             "httpStatus": http_status, "idempotencyKey": idempotency_key,
@@ -492,7 +495,7 @@ async def amend_po_in_tom(po_id: int, db: AsyncSession) -> dict:
 
     if success:
         return {"ok": True, "status": http_status, "applied": applied, "skipped": skipped}
-    return {"ok": False, "status": http_status, "error": network_error or f"HTTP {http_status}"}
+    return {"ok": False, "status": http_status, "error": network_error or err.get("message") or f"TOM amend failed (HTTP {http_status}). Response: {response_body}"}
 
 
 # ── Cancel (POST /api/v1/po/{SOURCE}/{source_po_id}/cancel) ─────────────
