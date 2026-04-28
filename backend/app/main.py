@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products, purchase_orders, purchase_order_mgmt
+from app.api import settings as settings_api
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.services.scheduler import scheduler
@@ -148,6 +149,7 @@ app.include_router(system.router, prefix="/api/system", tags=["system"])
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(purchase_orders.router, prefix="/api", tags=["purchase-orders"])
 app.include_router(purchase_order_mgmt.router, prefix="/api", tags=["purchase-orders-management"])
+app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 
 
 @app.get("/api/health")

@@ -16,7 +16,9 @@ from app.models.user_activity import UserActivity
 from app.models.product import Product
 from app.models.purchase_order import PurchaseOrder
 from app.models.purchase_order_item import PurchaseOrderItem
+from app.models.po_sync_log import PoSyncLog
 from app.models.generated_barcode import GeneratedBarcode
+from app.models.system_setting import SystemSetting
 
 __all__ = [
     "Store", "Order", "OrderAwb", "Rule", "RulePreset",
@@ -26,7 +28,6 @@ __all__ = [
     "MarketingDailyCost", "SkuMarketingCost",
     "User", "UserActivity",
     "Product",
-    "PurchaseOrder", "PurchaseOrderItem", "GeneratedBarcode",
+    "PurchaseOrder", "PurchaseOrderItem", "PoSyncLog", "GeneratedBarcode",
+    "SystemSetting",
 ]
-
-

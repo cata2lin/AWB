@@ -48,7 +48,7 @@ export const analyticsApi = {
     },
 }
 
-/** Purchase Order management — CRUD operations. */
+/** Purchase Order management — CRUD + TOM sync operations. */
 export const purchaseOrdersMgmtApi = {
     list: async (params = {}) => {
         const { data } = await api.get('/purchase-orders-mgmt/list', { params })
@@ -80,6 +80,28 @@ export const purchaseOrdersMgmtApi = {
     },
     getIncomingStock: async () => {
         const { data } = await api.get('/purchase-orders-mgmt/incoming-stock')
+        return data
+    },
+    // Product picker for adding items to POs
+    productPicker: async (params = {}) => {
+        const { data } = await api.get('/purchase-orders-mgmt/products/picker', { params })
+        return data
+    },
+    // TOM API sync operations (Packaging POs only)
+    tomSend: async (id) => {
+        const { data } = await api.post(`/purchase-orders-mgmt/${id}/tom/send`)
+        return data
+    },
+    tomRefresh: async (id) => {
+        const { data } = await api.post(`/purchase-orders-mgmt/${id}/tom/refresh`)
+        return data
+    },
+    tomAmend: async (id) => {
+        const { data } = await api.post(`/purchase-orders-mgmt/${id}/tom/amend`)
+        return data
+    },
+    tomCancel: async (id, reason = 'Cancelled by user') => {
+        const { data } = await api.post(`/purchase-orders-mgmt/${id}/tom/cancel`, { reason })
         return data
     },
 }
@@ -115,6 +137,30 @@ export const skuMarketingCostsApi = {
     },
     delete: async (id) => {
         const { data } = await api.delete(`/sku-marketing-costs/${id}`)
+        return data
+    },
+}
+
+// ── Settings API (TOM config + PO categories) ────────────────────────────
+export const settingsApi = {
+    getTom: async () => {
+        const { data } = await api.get('/settings/tom')
+        return data
+    },
+    updateTom: async (body) => {
+        const { data } = await api.put('/settings/tom', body)
+        return data
+    },
+    testTom: async () => {
+        const { data } = await api.get('/settings/tom/test')
+        return data
+    },
+    getPoCategories: async () => {
+        const { data } = await api.get('/settings/po-categories')
+        return data
+    },
+    updatePoCategories: async (categories) => {
+        const { data } = await api.put('/settings/po-categories', categories)
         return data
     },
 }

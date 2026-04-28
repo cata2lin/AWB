@@ -283,14 +283,14 @@ async def get_purchase_orders(
             sku_sales[sku]["revenue"] += price * qty
             sku_sales[sku]["orders"] += 1
 
-    # ── 4b. Load incoming PO stock (from confirmed / in_transit POs) ──────
+    # ── 4b. Load incoming PO stock (from active POs) ───────────────────────
     po_incoming_result = await db.execute(
         select(
             PurchaseOrderItem.sku,
             func.sum(PurchaseOrderItem.quantity - PurchaseOrderItem.received_qty),
         )
         .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.purchase_order_id)
-        .where(PurchaseOrder.status.in_(["confirmed", "in_transit"]))
+        .where(PurchaseOrder.status.in_(["APPROVED", "PARTIALLY_RECEIVED"]))
         .group_by(PurchaseOrderItem.sku)
     )
     po_incoming_map = {row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()}

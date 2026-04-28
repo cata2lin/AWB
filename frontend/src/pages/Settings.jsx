@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useStores, useUpdateStore, useSyncStatus } from '../hooks/useApi'
 import { profitabilityConfigApi, businessCostsApi, courierCsvApi } from '../services/api'
+import TomSettingsPanel from '../components/TomSettingsPanel'
 import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, Save, Check, Plus, Trash2, Copy, ChevronLeft, ChevronRight, Edit2, X, FileUp, Loader, Truck, Zap, RotateCcw, FolderOpen, HardDrive } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -255,6 +256,9 @@ export default function Settings() {
                     Configure application preferences, store colors, and profitability parameters
                 </p>
             </div>
+
+            {/* ═══════════════════ TOM API + PO Categories ═══════════════════ */}
+            <TomSettingsPanel />
 
             {/* Sync Status */}
             <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-6 shadow-sm">

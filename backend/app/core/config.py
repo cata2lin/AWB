@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # PDF Storage (relative path works for local dev)
     pdf_storage_path: str = "./storage"
     
+    # TOM API (Purchase Order integration — https://tom.arona.ro)
+    tom_base_url: str = ""
+    tom_api_key_id: str = ""
+    tom_hmac_secret: str = ""
+    tom_source_code: str = "VIGO"
+    
     def get_org_tokens(self) -> List[Dict[str, str]]:
         """
         Parse and return all organization tokens.
