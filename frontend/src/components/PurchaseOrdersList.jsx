@@ -34,7 +34,7 @@ function ProgressBar({ received, ordered }) {
   const pct = ordered > 0 ? Math.min(100, Math.round((received / ordered) * 100)) : 0
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-24 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden">
+      <div className="h-2 w-32 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${
             pct === 100 ? 'bg-green-500' : pct > 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-zinc-600'
@@ -42,7 +42,7 @@ function ProgressBar({ received, ordered }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap tabular-nums">
+      <span className="text-sm text-zinc-500 dark:text-zinc-400 whitespace-nowrap tabular-nums">
         {received ?? 0} / {ordered ?? 0}
       </span>
     </div>
@@ -222,11 +222,11 @@ export default function PurchaseOrdersList({ h }) {
   ]
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Purchase Orders</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-white">Purchase Orders</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Manage purchase orders and track incoming inventory
           </p>
@@ -262,16 +262,16 @@ export default function PurchaseOrdersList({ h }) {
       {/* Scorecards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {scorecards.map(card => (
-          <div key={card.label} className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-            <div className="flex items-center gap-2">
-              <div className={`rounded-lg ${card.bg} p-1.5`}>
-                <card.icon className={`h-4 w-4 ${card.color}`} />
+          <div key={card.label} className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5">
+            <div className="flex items-center gap-2.5">
+              <div className={`rounded-lg ${card.bg} p-2`}>
+                <card.icon className={`h-5 w-5 ${card.color}`} />
               </div>
-              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                 {card.label}
               </span>
             </div>
-            <p className="mt-2 text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
               {card.value}
             </p>
           </div>
@@ -279,20 +279,20 @@ export default function PurchaseOrdersList({ h }) {
       </div>
 
       {/* Status tabs */}
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700 p-1 bg-white dark:bg-zinc-900">
+      <div className="flex gap-1.5 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700 p-1.5 bg-white dark:bg-zinc-900">
         {statusTabs.map(tab => (
           <button
             key={tab.key}
             onClick={() => h.setStatusFilter(tab.key)}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               h.statusFilter === tab.key
                 ? 'bg-gray-900 dark:bg-indigo-600 text-white'
                 : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
-            <tab.icon className="h-3 w-3" />
+            <tab.icon className="h-4 w-4" />
             {tab.label}
-            <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] ${
+            <span className={`ml-0.5 rounded-full px-2 py-0.5 text-xs ${
               h.statusFilter === tab.key ? 'bg-white/20' : 'bg-zinc-100 dark:bg-zinc-800'
             }`}>
               {tab.count}
@@ -303,22 +303,22 @@ export default function PurchaseOrdersList({ h }) {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <Search className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" />
         <input
           type="text"
           value={h.search}
           onChange={(e) => h.setSearch(e.target.value)}
           placeholder="Search by PO number, category, or supplier..."
-          className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-2.5 pl-11 pr-4 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 
       {/* Category filter chips */}
       {h.poCategories.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold mr-1">Category:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold mr-1">Category:</span>
           <button onClick={() => h.setCategoryFilter('')}
-            className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-all ${
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
               !h.categoryFilter
                 ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 shadow-sm'
                 : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
@@ -327,7 +327,7 @@ export default function PurchaseOrdersList({ h }) {
           </button>
           {h.poCategories.map(c => (
             <button key={c.key} onClick={() => h.setCategoryFilter(c.key)}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-all ${
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
                 h.categoryFilter === c.key
                   ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 shadow-sm'
                   : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
@@ -370,7 +370,7 @@ export default function PurchaseOrdersList({ h }) {
                 ].map(col => (
                   <th key={col.label}
                     onClick={() => col.key && toggleSort(col.key)}
-                    className={`px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400 ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.key ? 'cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none' : ''}`}>
+                    className={`px-5 py-3.5 font-medium text-sm text-zinc-500 dark:text-zinc-400 ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.key ? 'cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 select-none' : ''}`}>
                     <span className="inline-flex items-center gap-1">
                       {col.label}
                       {col.key && <SortIcon col={col.key} />}
@@ -387,42 +387,42 @@ export default function PurchaseOrdersList({ h }) {
                   <tr key={po.id}
                     onClick={() => h.selectPO(po.id)}
                     className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer">
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4">
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">
+                        <span className="font-semibold text-base text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">
                           {po.po_number}
                         </span>
                         {po.title && (
-                          <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate max-w-[220px]" title={po.title}>
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[280px]" title={po.title}>
                             {po.title}
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${statusConf.bg} ${statusConf.color}`}>
-                        <StatusIcon className="h-3 w-3" />
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm font-medium ${statusConf.bg} ${statusConf.color}`}>
+                        <StatusIcon className="h-3.5 w-3.5" />
                         {statusConf.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 text-xs">
+                    <td className="px-5 py-4 text-zinc-600 dark:text-zinc-400 text-sm">
                       {h.getCatConfig(po.po_category)?.label || po.po_category || '—'}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                    <td className="px-5 py-4 text-zinc-500 dark:text-zinc-400">
                       {po.created_at ? new Date(po.created_at).toLocaleDateString('en-GB', {
                         day: '2-digit', month: 'short', year: 'numeric'
                       }) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right font-medium tabular-nums text-zinc-800 dark:text-zinc-200">
+                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">
                       {fmt(po.total_cost || 0)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4">
                       <ProgressBar received={po.total_received || 0} ordered={po.total_quantity || 0} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4">
                       <SyncStatusCell po={po} />
                     </td>
-                    <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400 text-xs truncate max-w-[120px]">
+                    <td className="px-5 py-4 text-zinc-500 dark:text-zinc-400 text-sm truncate max-w-[160px]">
                       {po.supplier_name || '—'}
                     </td>
                   </tr>

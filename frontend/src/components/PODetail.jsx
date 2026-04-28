@@ -235,14 +235,14 @@ export default function PODetail({ h }) {
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                 {filteredItems.map(item => (
                   <tr key={item.sku || item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/20">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        {item.product_image ? <img src={item.product_image} className="w-8 h-8 rounded object-cover" /> : <Package className="w-6 h-6 text-zinc-400" />}
-                        <span className="text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">{item.product_name || '—'}</span>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {item.product_image ? <img src={item.product_image} className="w-10 h-10 rounded-lg object-cover" /> : <Package className="w-8 h-8 text-zinc-400" />}
+                        <span className="text-zinc-700 dark:text-zinc-300 truncate max-w-[300px] font-medium">{item.product_name || '—'}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 font-mono font-semibold text-zinc-600 dark:text-zinc-400">{item.sku}</td>
-                    <td className="px-3 py-2.5 text-center">
+                    <td className="px-4 py-3 font-mono font-bold text-base text-zinc-700 dark:text-zinc-300">{item.sku}</td>
+                    <td className="px-4 py-3 text-center">
                       {isCreate ? (
                         <select value={item.priority || ''} onChange={e => h.updateItem(item.sku, 'priority', e.target.value || null)}
                           className="w-24 px-2 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
@@ -260,33 +260,33 @@ export default function PODetail({ h }) {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="px-4 py-3 text-right">
                       {isCreate ? (
                         <input type="number" min="1" value={item.quantity} onChange={e => h.updateItem(item.sku, 'quantity', parseInt(e.target.value) || 0)}
                           className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                       ) : <span className="font-semibold text-zinc-900 dark:text-white">{fmt(item.quantity)}</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="px-4 py-3 text-right">
                       {isCreate ? (
                         <input type="number" min="0" step="0.01" value={item.unit_cost} onChange={e => h.updateItem(item.sku, 'unit_cost', parseFloat(e.target.value) || 0)}
                           className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                       ) : <span className="text-zinc-500">{fmtCur(item.unit_cost)}</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                    <td className="px-4 py-3 text-right font-medium text-zinc-700 dark:text-zinc-300">
                       {fmtCur((item.quantity || 0) * (item.unit_cost || 0))}
                     </td>
                     {!isCreate && (
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-4 py-3 text-right">
                         {item.received_qty > 0 ? <span className="text-green-600 font-medium">{fmt(item.received_qty)}</span> : <span className="text-zinc-400">0</span>}
                       </td>
                     )}
                     {!isCreate && isTomEnabled && (
-                      <td className="px-3 py-2.5 text-center">
+                      <td className="px-4 py-3 text-center">
                         {item.tom_status ? <span className={`text-xs font-medium ${TOM_CLS[item.tom_status] || 'text-zinc-400'}`}>{item.tom_status}</span> : <span className="text-zinc-400">—</span>}
                       </td>
                     )}
                     {isCreate && (
-                      <td className="px-3 py-2.5"><button onClick={() => h.removeItem(item.sku)}><X className="w-4 h-4 text-red-400 hover:text-red-600" /></button></td>
+                      <td className="px-4 py-3"><button onClick={() => h.removeItem(item.sku)}><X className="w-4 h-4 text-red-400 hover:text-red-600" /></button></td>
                     )}
                   </tr>
                 ))}
