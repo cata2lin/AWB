@@ -24,7 +24,7 @@ import {
     ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
     Calendar, ArrowRight, ArrowUpRight, ArrowDownRight, PieChart, MapPin,
     DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2,
-    Eye, EyeOff, Settings2, Download, ArrowUpDown
+    Eye, EyeOff, Settings2, Download, ArrowUpDown, Bookmark, X
 } from 'lucide-react'
 import { exportPnlToExcel } from '../utils/pnlExport'
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
@@ -153,6 +153,28 @@ export default function Analytics() {
     const [expandedStoreUid, setExpandedStoreUid] = useState(null)
     const [alertSearch, setAlertSearch] = useState('')
     const [hoveredTrendBar, setHoveredTrendBar] = useState(null)
+    // Advanced velocity filters
+    const [velocityMaxUnits, setVelocityMaxUnits] = useState('')
+    const [velocityMinRevenue, setVelocityMinRevenue] = useState('')
+    const [velocityMaxRevenue, setVelocityMaxRevenue] = useState('')
+    const [velocityMinStock, setVelocityMinStock] = useState('')
+    const [velocityMaxStock, setVelocityMaxStock] = useState('')
+    const [velocityTrendFilter, setVelocityTrendFilter] = useState('')
+    const [velocityTrendMinPct, setVelocityTrendMinPct] = useState('')
+    const [velocityTrendMaxPct, setVelocityTrendMaxPct] = useState('')
+    const [velocityExcludeStores, setVelocityExcludeStores] = useState([])
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+    // Custom saved views
+    const [savedViews, setSavedViews] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('velocityViews') || '[]') } catch { return [] }
+    })
+    const [activeViewName, setActiveViewName] = useState('')
+    const [newViewName, setNewViewName] = useState('')
+    const [showSaveViewInput, setShowSaveViewInput] = useState(false)
+    // Product selection for PO generation
+    const [selectedSkus, setSelectedSkus] = useState(new Set())
+    const [restockDays, setRestockDays] = useState(30)
+
 
     // SKU Profitability state
     const [skuProfitData, setSkuProfitData] = useState(null)
@@ -2064,9 +2086,30 @@ export default function Analytics() {
 
                         const filteredProducts = velocityData?.products
                             ? velocityData.products.filter(p => {
-                                if (!velocitySearch) return true
-                                const q = velocitySearch.toLowerCase()
-                                return p.sku.toLowerCase().includes(q) || (p.product_name || '').toLowerCase().includes(q)
+                                // Text search
+                                if (velocitySearch) {
+                                    const q = velocitySearch.toLowerCase()
+                                    if (!p.sku.toLowerCase().includes(q) && !(p.product_name || '').toLowerCase().includes(q)) return false
+                                }
+                                // Min/Max units
+                                if (velocityMaxUnits !== '' && p.gross_units > Number(velocityMaxUnits)) return false
+                                // Revenue range
+                                if (velocityMinRevenue !== '' && p.revenue < Number(velocityMinRevenue)) return false
+                                if (velocityMaxRevenue !== '' && p.revenue > Number(velocityMaxRevenue)) return false
+                                // Stock range
+                                if (velocityMinStock !== '' && (p.stock_available ?? 0) < Number(velocityMinStock)) return false
+                                if (velocityMaxStock !== '' && (p.stock_available ?? 0) > Number(velocityMaxStock)) return false
+                                // Trend direction
+                                if (velocityTrendFilter && p.velocity_trend !== velocityTrendFilter) return false
+                                // Trend % range
+                                if (velocityTrendMinPct !== '' && (p.velocity_change_pct ?? 0) < Number(velocityTrendMinPct)) return false
+                                if (velocityTrendMaxPct !== '' && (p.velocity_change_pct ?? 0) > Number(velocityTrendMaxPct)) return false
+                                // Exclude stores
+                                if (velocityExcludeStores.length > 0) {
+                                    const productStoreUids = (p.store_uid || '').split('|')
+                                    if (productStoreUids.every(uid => velocityExcludeStores.includes(uid))) return false
+                                }
+                                return true
                             })
                             : []
 
@@ -2151,18 +2194,93 @@ export default function Analytics() {
                             )
                         }
 
+                        // ── Custom Views helpers ──
+                        const saveCurrentView = () => {
+                            if (!newViewName.trim()) return
+                            const view = {
+                                name: newViewName.trim(),
+                                days: velocityDays, dateFrom: velocityDateFrom, dateTo: velocityDateTo,
+                                stores: velocityStores, excludeStores: velocityExcludeStores,
+                                minUnits: velocityMinUnits, maxUnits: velocityMaxUnits,
+                                minRevenue: velocityMinRevenue, maxRevenue: velocityMaxRevenue,
+                                minStock: velocityMinStock, maxStock: velocityMaxStock,
+                                trendFilter: velocityTrendFilter,
+                                trendMinPct: velocityTrendMinPct, trendMaxPct: velocityTrendMaxPct,
+                                search: velocitySearch,
+                            }
+                            const updated = [...savedViews.filter(v => v.name !== view.name), view]
+                            setSavedViews(updated)
+                            localStorage.setItem('velocityViews', JSON.stringify(updated))
+                            setNewViewName('')
+                            setShowSaveViewInput(false)
+                            setActiveViewName(view.name)
+                        }
+                        const loadView = (view) => {
+                            setVelocityDays(view.days ?? 30)
+                            setVelocityDateFrom(view.dateFrom ?? '')
+                            setVelocityDateTo(view.dateTo ?? '')
+                            setVelocityStores(view.stores ?? [])
+                            setVelocityExcludeStores(view.excludeStores ?? [])
+                            setVelocityMinUnits(view.minUnits ?? 1)
+                            setVelocityMaxUnits(view.maxUnits ?? '')
+                            setVelocityMinRevenue(view.minRevenue ?? '')
+                            setVelocityMaxRevenue(view.maxRevenue ?? '')
+                            setVelocityMinStock(view.minStock ?? '')
+                            setVelocityMaxStock(view.maxStock ?? '')
+                            setVelocityTrendFilter(view.trendFilter ?? '')
+                            setVelocityTrendMinPct(view.trendMinPct ?? '')
+                            setVelocityTrendMaxPct(view.trendMaxPct ?? '')
+                            setVelocitySearch(view.search ?? '')
+                            setActiveViewName(view.name)
+                        }
+                        const deleteView = (name) => {
+                            const updated = savedViews.filter(v => v.name !== name)
+                            setSavedViews(updated)
+                            localStorage.setItem('velocityViews', JSON.stringify(updated))
+                            if (activeViewName === name) setActiveViewName('')
+                        }
+                        const hasActiveFilters = velocityMaxUnits !== '' || velocityMinRevenue !== '' || velocityMaxRevenue !== '' ||
+                            velocityMinStock !== '' || velocityMaxStock !== '' || velocityTrendFilter !== '' ||
+                            velocityTrendMinPct !== '' || velocityTrendMaxPct !== '' || velocityExcludeStores.length > 0
+                        const clearAdvancedFilters = () => {
+                            setVelocityMaxUnits(''); setVelocityMinRevenue(''); setVelocityMaxRevenue('')
+                            setVelocityMinStock(''); setVelocityMaxStock(''); setVelocityTrendFilter('')
+                            setVelocityTrendMinPct(''); setVelocityTrendMaxPct(''); setVelocityExcludeStores([])
+                            setActiveViewName('')
+                        }
+
+                        const advInput = 'w-24 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white'
+
                         return (
                             <div className="space-y-6">
+                                {/* Saved Views Bar */}
+                                {savedViews.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Vederi:</span>
+                                        {savedViews.map(v => (
+                                            <div key={v.name} className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border cursor-pointer transition-all ${
+                                                activeViewName === v.name
+                                                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-600 shadow-sm'
+                                                    : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                                            }`}>
+                                                <span onClick={() => loadView(v)}>{v.name}</span>
+                                                <button onClick={(e) => { e.stopPropagation(); deleteView(v.name) }}
+                                                    className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">×</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* Section A: Controls */}
                                 <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                     <div className="flex flex-wrap items-end gap-4">
                                         <div>
                                             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Perioadă</label>
                                             <div className="flex gap-1">
-                                                {[7, 30, 90, 180, 365].map(d => (
+                                                {[1, 7, 30, 90, 180, 365].map(d => (
                                                     <button key={d} onClick={() => { setVelocityDays(d); setVelocityDateFrom(''); setVelocityDateTo('') }}
                                                         className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${!isCustomDate && velocityDays === d ? 'bg-emerald-600 text-white border-emerald-600' : 'border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'}`}
-                                                    >{d}z</button>
+                                                    >{d === 1 ? 'Azi' : `${d}z`}</button>
                                                 ))}
                                             </div>
                                         </div>
@@ -2198,12 +2316,108 @@ export default function Analytics() {
                                             {velocityLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
                                             Analizează
                                         </button>
+                                        <button onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                                            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors flex items-center gap-1.5 ${hasActiveFilters ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-600' : 'border-zinc-200 dark:border-zinc-600 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700'}`}>
+                                            <Filter className="w-3.5 h-3.5" />
+                                            Filtre {hasActiveFilters ? '●' : ''} {showAdvancedFilters ? '▲' : '▼'}
+                                        </button>
+                                        {/* Save View button */}
+                                        {showSaveViewInput ? (
+                                            <div className="flex items-center gap-1.5">
+                                                <input value={newViewName} onChange={e => setNewViewName(e.target.value)} placeholder="Nume vedere..."
+                                                    onKeyDown={e => e.key === 'Enter' && saveCurrentView()}
+                                                    className="w-36 px-2 py-1.5 text-xs rounded-lg border border-emerald-300 dark:border-emerald-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" autoFocus />
+                                                <button onClick={saveCurrentView} className="px-2 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">✓</button>
+                                                <button onClick={() => { setShowSaveViewInput(false); setNewViewName('') }} className="px-2 py-1.5 text-xs text-zinc-400 hover:text-zinc-600">✕</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setShowSaveViewInput(true)}
+                                                className="px-3 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700 flex items-center gap-1">
+                                                <Bookmark className="w-3.5 h-3.5" /> Salvează
+                                            </button>
+                                        )}
                                     </div>
+
+                                    {/* Advanced Filters Panel */}
+                                    {showAdvancedFilters && (
+                                        <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Filtre Avansate</span>
+                                                {hasActiveFilters && (
+                                                    <button onClick={clearAdvancedFilters} className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
+                                                        <X className="w-3 h-3" /> Resetează filtre
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Max Unități</label>
+                                                    <input type="number" value={velocityMaxUnits} onChange={e => setVelocityMaxUnits(e.target.value)} placeholder="∞" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Min Revenue (RON)</label>
+                                                    <input type="number" value={velocityMinRevenue} onChange={e => setVelocityMinRevenue(e.target.value)} placeholder="0" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Max Revenue (RON)</label>
+                                                    <input type="number" value={velocityMaxRevenue} onChange={e => setVelocityMaxRevenue(e.target.value)} placeholder="∞" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Min Stoc</label>
+                                                    <input type="number" value={velocityMinStock} onChange={e => setVelocityMinStock(e.target.value)} placeholder="0" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Max Stoc</label>
+                                                    <input type="number" value={velocityMaxStock} onChange={e => setVelocityMaxStock(e.target.value)} placeholder="∞" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Direcție Trend</label>
+                                                    <select value={velocityTrendFilter} onChange={e => setVelocityTrendFilter(e.target.value)} className={advInput}>
+                                                        <option value="">Toate</option>
+                                                        <option value="up">↑ Pozitiv</option>
+                                                        <option value="down">↓ Negativ</option>
+                                                        <option value="stable">→ Stabil</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Trend Min %</label>
+                                                    <input type="number" value={velocityTrendMinPct} onChange={e => setVelocityTrendMinPct(e.target.value)} placeholder="-∞" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Trend Max %</label>
+                                                    <input type="number" value={velocityTrendMaxPct} onChange={e => setVelocityTrendMaxPct(e.target.value)} placeholder="+∞" className={advInput} />
+                                                </div>
+                                            </div>
+                                            {/* Exclude stores */}
+                                            <div className="mt-3">
+                                                <label className="block text-[10px] font-medium text-zinc-400 mb-1">Exclude Magazine</label>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {stores.map(s => {
+                                                        const isExcluded = velocityExcludeStores.includes(s.uid)
+                                                        return (
+                                                            <button key={s.uid} onClick={() => setVelocityExcludeStores(prev =>
+                                                                isExcluded ? prev.filter(u => u !== s.uid) : [...prev, s.uid]
+                                                            )}
+                                                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                                                                    isExcluded
+                                                                        ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-300 dark:border-red-600 line-through'
+                                                                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100'
+                                                                }`}>
+                                                                {s.name}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {velocityData?.meta && (
                                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
                                             <span>📦 {velocityData.meta.total_orders?.toLocaleString()} comenzi totale</span>
                                             <span>📅 {velocityData.meta.period_days} zile</span>
                                             <span>🏷️ {velocityData.kpis?.unique_skus} SKU-uri active</span>
+                                            {hasActiveFilters && <span className="text-amber-600 dark:text-amber-400">🔍 {filteredProducts.length}/{velocityData.products.length} produse filtrate</span>}
                                         </div>
                                     )}
                                 </div>
@@ -2302,6 +2516,15 @@ export default function Analytics() {
                                                     <table className="w-full">
                                                         <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                                             <tr>
+                                                                <th className="px-2 py-2.5 w-8 bg-zinc-50 dark:bg-zinc-900">
+                                                                    <input type="checkbox"
+                                                                        checked={selectedSkus.size > 0 && selectedSkus.size === sortedProducts.length}
+                                                                        onChange={e => {
+                                                                            if (e.target.checked) setSelectedSkus(new Set(sortedProducts.map(p => `${p.sku}::${p.store_uid || ''}`)))
+                                                                            else setSelectedSkus(new Set())
+                                                                        }}
+                                                                        className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-emerald-600 focus:ring-emerald-500" />
+                                                                </th>
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8 bg-zinc-50 dark:bg-zinc-900">#</th>
                                                                 <VSort col="sku" label="SKU" />
 
@@ -2328,8 +2551,17 @@ export default function Analytics() {
                                                                 const rowKey = `${p.sku}::${p.store_uid || ''}`
                                                                 return (
                                                                 <Fragment key={rowKey}>
-                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === rowKey ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''}`}
+                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === rowKey ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''} ${selectedSkus.has(rowKey) ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''}`}
                                                                         onClick={() => setVelocityExpanded(velocityExpanded === rowKey ? null : rowKey)}>
+                                                                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                                                                            <input type="checkbox" checked={selectedSkus.has(rowKey)}
+                                                                                onChange={e => {
+                                                                                    const next = new Set(selectedSkus)
+                                                                                    e.target.checked ? next.add(rowKey) : next.delete(rowKey)
+                                                                                    setSelectedSkus(next)
+                                                                                }}
+                                                                                className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-emerald-600 focus:ring-emerald-500" />
+                                                                        </td>
                                                                         <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
                                                                         <td className="px-3 py-2">
                                                                             <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
@@ -2435,6 +2667,39 @@ export default function Analytics() {
                                                     </table>
                                                 </div>
 
+                                            </div>
+                                        )}
+
+                                        {/* Floating PO Generation Bar */}
+                                        {selectedSkus.size > 0 && (
+                                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 dark:bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl px-6 py-3 flex items-center gap-5">
+                                                <span className="text-white text-sm font-medium">{selectedSkus.size} produse selectate</span>
+                                                <div className="flex items-center gap-2">
+                                                    <label className="text-xs text-zinc-400">Zile restock:</label>
+                                                    <input type="number" value={restockDays} onChange={e => setRestockDays(Number(e.target.value) || 30)} min={1}
+                                                        className="w-16 px-2 py-1 text-sm rounded-lg border border-zinc-600 bg-zinc-800 dark:bg-zinc-700 text-white text-center" />
+                                                </div>
+                                                <button onClick={() => {
+                                                    const items = sortedProducts
+                                                        .filter(p => selectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
+                                                        .map(p => ({
+                                                            sku: p.sku,
+                                                            product_name: p.product_name || p.sku,
+                                                            unit_cost: p.unit_cost || 0,
+                                                            quantity: Math.max(1, Math.ceil((p.velocity || 0) * restockDays) - (p.stock_available || 0)),
+                                                            velocity: p.velocity,
+                                                            stock: p.stock_available,
+                                                        }))
+                                                    sessionStorage.setItem('po_prefill', JSON.stringify(items))
+                                                    window.location.href = '/purchase-orders?action=create&from=velocity'
+                                                }}
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5">
+                                                    <Plus className="w-4 h-4" /> Generează PO
+                                                </button>
+                                                <button onClick={() => setSelectedSkus(new Set())}
+                                                    className="text-zinc-400 hover:text-white transition-colors">
+                                                    <X className="w-4 h-4" />
+                                                </button>
                                             </div>
                                         )}
 
