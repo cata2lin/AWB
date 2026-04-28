@@ -2,8 +2,8 @@
  * PODetail — Right panel: view existing PO detail OR create new PO.
  * Unified layout for both modes with inline product search.
  */
-import { useState } from 'react'
-import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter } from 'lucide-react'
 import { STATUS_CFG, TOM_CLS } from './POList'
 import POProductPicker from './POProductPicker'
 
@@ -13,6 +13,8 @@ const fmtCur = n => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { m
 export default function PODetail({ h }) {
   const [showLog, setShowLog] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
+  const [itemSearch, setItemSearch] = useState('')
+  const [itemPriorityFilter, setItemPriorityFilter] = useState('')
   const isCreate = h.mode === 'create'
   const po = isCreate ? null : h.selectedPO
   const items = isCreate ? h.createForm.items : (po?.items || [])
@@ -21,6 +23,22 @@ export default function PODetail({ h }) {
     : h.getCatConfig(po?.po_category)
   const isTomEnabled = catConfig.tom_enabled
   const hasTom = !isCreate && !!po?.tom_number
+
+  const totalCost = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_cost || 0), 0)
+  const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0)
+
+  // Filter items by search and priority — must be called before any early return
+  const filteredItems = useMemo(() => {
+    let result = items
+    if (itemSearch) {
+      const q = itemSearch.toLowerCase()
+      result = result.filter(i => (i.product_name || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
+    }
+    if (itemPriorityFilter) {
+      result = result.filter(i => (i.priority || po?.priority || 'STANDARD') === itemPriorityFilter)
+    }
+    return result
+  }, [items, itemSearch, itemPriorityFilter, po?.priority])
 
   // Empty state
   if (!isCreate && !po) {
@@ -34,110 +52,107 @@ export default function PODetail({ h }) {
     )
   }
 
-  const totalCost = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_cost || 0), 0)
-  const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0)
-
   return (
     <div className="flex flex-col h-full">
       {/* ═══ HEADER ═══ */}
-      <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-bold text-zinc-800 dark:text-white flex items-center gap-2">
+      <div className="p-5 border-b border-zinc-200 dark:border-zinc-700">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-zinc-800 dark:text-white flex items-center gap-2">
             {isCreate ? (
-              <><Plus className="w-4 h-4 text-indigo-500" /> New Purchase Order</>
+              <><Plus className="w-5 h-5 text-indigo-500" /> New Purchase Order</>
             ) : (
-              <><span className="font-mono">{po.po_number}</span>
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${STATUS_CFG[po.status]?.cls || ''}`}>
+              <><span className="font-mono text-lg">{po.po_number}</span>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_CFG[po.status]?.cls || ''}`}>
                 {po.status}
               </span></>
             )}
           </h3>
           {isCreate && (
-            <button onClick={h.cancelCreate} className="p-1 text-zinc-400 hover:text-zinc-600"><X className="w-4 h-4" /></button>
+            <button onClick={h.cancelCreate} className="p-1.5 text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
           )}
         </div>
 
         {/* Meta fields */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {isCreate ? (<>
             <div>
-              <label className="text-[10px] text-zinc-500 block mb-0.5">Category</label>
+              <label className="text-xs text-zinc-500 block mb-1">Category</label>
               <select value={h.createForm.po_category} onChange={e => h.setCreateForm(p => ({ ...p, po_category: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
                 {h.poCategories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-[10px] text-zinc-500 block mb-0.5">Type</label>
+              <label className="text-xs text-zinc-500 block mb-1">Type</label>
               <select value={h.createForm.po_type} onChange={e => h.setCreateForm(p => ({ ...p, po_type: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
                 <option value="RESTOCK">Restock</option>
                 <option value="NEW_PRODUCT">New Product</option>
               </select>
             </div>
             <div>
-              <label className="text-[10px] text-zinc-500 block mb-0.5">Priority</label>
+              <label className="text-xs text-zinc-500 block mb-1">Priority</label>
               <select value={h.createForm.priority} onChange={e => h.setCreateForm(p => ({ ...p, priority: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
                 <option value="STANDARD">Standard</option>
                 <option value="HIGH">High</option>
               </select>
             </div>
             <div>
-              <label className="text-[10px] text-zinc-500 block mb-0.5">Supplier</label>
+              <label className="text-xs text-zinc-500 block mb-1">Supplier</label>
               <input value={h.createForm.supplier_name} onChange={e => h.setCreateForm(p => ({ ...p, supplier_name: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" placeholder="Supplier name" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" placeholder="Supplier name" />
             </div>
             <div>
-              <label className="text-[10px] text-zinc-500 block mb-0.5">Expected Arrival</label>
+              <label className="text-xs text-zinc-500 block mb-1">Expected Arrival</label>
               <input type="date" value={h.createForm.expected_arrival_date} onChange={e => h.setCreateForm(p => ({ ...p, expected_arrival_date: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
             </div>
             <div>
-              <label className="text-[10px] text-zinc-500 block mb-0.5">Notes</label>
+              <label className="text-xs text-zinc-500 block mb-1">Notes</label>
               <input value={h.createForm.notes} onChange={e => h.setCreateForm(p => ({ ...p, notes: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" placeholder="Notes" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" placeholder="Notes" />
             </div>
           </>) : (<>
-            <div className="text-xs"><span className="text-zinc-500">Category:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{catConfig.label || po.po_category}</span></div>
-            <div className="text-xs"><span className="text-zinc-500">Type:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.po_type}</span></div>
-            <div className="text-xs"><span className="text-zinc-500">Priority:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.priority}</span></div>
-            {po.supplier_name && <div className="text-xs"><span className="text-zinc-500">Supplier:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.supplier_name}</span></div>}
-            {po.expected_arrival_date && <div className="text-xs"><span className="text-zinc-500">ETA:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.expected_arrival_date}</span></div>}
-            {po.notes && <div className="text-xs col-span-2 italic text-zinc-400">📝 {po.notes}</div>}
+            <div className="text-sm"><span className="text-zinc-500">Category:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{catConfig.label || po.po_category}</span></div>
+            <div className="text-sm"><span className="text-zinc-500">Type:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.po_type}</span></div>
+            <div className="text-sm"><span className="text-zinc-500">Priority:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.priority}</span></div>
+            {po.supplier_name && <div className="text-sm"><span className="text-zinc-500">Supplier:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.supplier_name}</span></div>}
+            {po.expected_arrival_date && <div className="text-sm"><span className="text-zinc-500">ETA:</span> <span className="font-medium text-zinc-700 dark:text-zinc-300">{po.expected_arrival_date}</span></div>}
+            {po.notes && <div className="text-sm col-span-2 italic text-zinc-400">📝 {po.notes}</div>}
           </>)}
         </div>
 
         {/* TOM Sync Bar (detail mode — always visible for APPROVED+ POs) */}
         {!isCreate && (
-          <div className="mt-3 flex items-center gap-2 flex-wrap p-2 rounded-lg bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-500/5 dark:to-indigo-500/5 border border-sky-200 dark:border-sky-500/20">
-            <span className="text-[9px] font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider">TOM</span>
+          <div className="mt-4 flex items-center gap-3 flex-wrap p-3 rounded-lg bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-500/5 dark:to-indigo-500/5 border border-sky-200 dark:border-sky-500/20">
+            <span className="text-xs font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider">TOM</span>
             {hasTom ? (
-              <span className={`text-[10px] font-mono font-semibold ${TOM_CLS[po.tom_status] || 'text-zinc-400'}`}>
+              <span className={`text-sm font-mono font-semibold ${TOM_CLS[po.tom_status] || 'text-zinc-400'}`}>
                 {po.tom_number} · {po.tom_status || '?'}
               </span>
-            ) : <span className="text-[10px] text-zinc-400">Not sent</span>}
-            <div className="ml-auto flex items-center gap-1">
+            ) : <span className="text-sm text-zinc-400">Not sent</span>}
+            <div className="ml-auto flex items-center gap-2">
               {po.status === 'APPROVED' && !hasTom && (
                 <button onClick={() => h.tomAction(po.id, 'send')} disabled={!!h.tomBusy}
-                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg disabled:opacity-40">
-                  {h.tomBusy === 'send' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Send to TOM
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg disabled:opacity-40">
+                  {h.tomBusy === 'send' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send to TOM
                 </button>
               )}
               {hasTom && (
                 <button onClick={() => h.tomAction(po.id, 'refresh')} disabled={!!h.tomBusy}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
-                  {h.tomBusy === 'refresh' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />} Refresh
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
+                  {h.tomBusy === 'refresh' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />} Refresh
                 </button>
               )}
               {hasTom && !['CANCELLED', 'DELIVERED'].includes(po.tom_status) && (<>
                 <button onClick={() => h.tomAction(po.id, 'amend')} disabled={!!h.tomBusy}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40">
-                  {h.tomBusy === 'amend' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <PenLine className="w-3 h-3" />} Amend
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40">
+                  {h.tomBusy === 'amend' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PenLine className="w-4 h-4" />} Amend
                 </button>
                 <button onClick={() => h.tomAction(po.id, 'cancel')} disabled={!!h.tomBusy}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg disabled:opacity-40">
-                  {h.tomBusy === 'cancel' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />} Cancel
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg disabled:opacity-40">
+                  {h.tomBusy === 'cancel' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />} Cancel
                 </button>
               </>)}
             </div>
@@ -179,47 +194,64 @@ export default function PODetail({ h }) {
       )}
 
       {/* ═══ ITEMS TABLE ═══ */}
-      <div className="flex-1 overflow-auto px-4 py-3">
+      <div className="flex-1 overflow-auto px-5 py-4">
         {items.length === 0 ? (
-          <div className="text-center py-8 text-zinc-400 text-xs">
+          <div className="text-center py-12 text-zinc-400 text-sm">
             {isCreate ? 'Click "Search & Add Products" to populate this PO' : 'No items'}
           </div>
-        ) : (
-          <div className="rounded-lg border border-zinc-200 dark:border-zinc-600 overflow-hidden">
-            <table className="w-full text-xs">
+        ) : (<>
+          {/* Search & Filter Bar */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <input value={itemSearch} onChange={e => setItemSearch(e.target.value)}
+                placeholder="Search by product name or SKU..."
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white placeholder-zinc-400" />
+            </div>
+            <select value={itemPriorityFilter} onChange={e => setItemPriorityFilter(e.target.value)}
+              className="px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
+              <option value="">All Priorities</option>
+              <option value="STANDARD">Standard</option>
+              <option value="HIGH">High</option>
+            </select>
+            <span className="text-xs text-zinc-400 whitespace-nowrap">{filteredItems.length}/{items.length}</span>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-600 overflow-hidden">
+            <table className="w-full text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                 <tr className="text-zinc-500">
-                  <th className="px-2 py-2 text-left font-medium">Product</th>
-                  <th className="px-2 py-2 text-left font-medium">SKU</th>
-                  <th className="px-2 py-2 text-center font-medium">Priority</th>
-                  <th className="px-2 py-2 text-right font-medium">Qty</th>
-                  <th className="px-2 py-2 text-right font-medium">Unit Cost</th>
-                  <th className="px-2 py-2 text-right font-medium">Total</th>
-                  {!isCreate && <th className="px-2 py-2 text-right font-medium">Received</th>}
-                  {!isCreate && isTomEnabled && <th className="px-2 py-2 text-center font-medium">TOM</th>}
-                  {isCreate && <th className="px-2 py-2 w-8"></th>}
+                  <th className="px-3 py-2.5 text-left font-medium">Product</th>
+                  <th className="px-3 py-2.5 text-left font-medium">SKU</th>
+                  <th className="px-3 py-2.5 text-center font-medium">Priority</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Qty</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Unit Cost</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Total</th>
+                  {!isCreate && <th className="px-3 py-2.5 text-right font-medium">Received</th>}
+                  {!isCreate && isTomEnabled && <th className="px-3 py-2.5 text-center font-medium">TOM</th>}
+                  {isCreate && <th className="px-3 py-2.5 w-10"></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                {items.map(item => (
+                {filteredItems.map(item => (
                   <tr key={item.sku || item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/20">
-                    <td className="px-2 py-1.5">
-                      <div className="flex items-center gap-1.5">
-                        {item.product_image ? <img src={item.product_image} className="w-6 h-6 rounded object-cover" /> : <Package className="w-5 h-5 text-zinc-400" />}
-                        <span className="text-zinc-700 dark:text-zinc-300 truncate max-w-[140px]">{item.product_name || '—'}</span>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {item.product_image ? <img src={item.product_image} className="w-8 h-8 rounded object-cover" /> : <Package className="w-6 h-6 text-zinc-400" />}
+                        <span className="text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">{item.product_name || '—'}</span>
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 font-mono text-zinc-600 dark:text-zinc-400">{item.sku}</td>
-                    <td className="px-2 py-1.5 text-center">
+                    <td className="px-3 py-2.5 font-mono font-semibold text-zinc-600 dark:text-zinc-400">{item.sku}</td>
+                    <td className="px-3 py-2.5 text-center">
                       {isCreate ? (
                         <select value={item.priority || ''} onChange={e => h.updateItem(item.sku, 'priority', e.target.value || null)}
-                          className="w-20 px-1 py-0.5 text-[10px] rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                          className="w-24 px-2 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
                           <option value="">Inherit</option>
                           <option value="STANDARD">Standard</option>
                           <option value="HIGH">High</option>
                         </select>
                       ) : (
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           (item.priority || po?.priority) === 'HIGH'
                             ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-600'
                             : 'bg-zinc-50 dark:bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-600'
@@ -228,79 +260,79 @@ export default function PODetail({ h }) {
                         </span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-3 py-2.5 text-right">
                       {isCreate ? (
                         <input type="number" min="1" value={item.quantity} onChange={e => h.updateItem(item.sku, 'quantity', parseInt(e.target.value) || 0)}
-                          className="w-16 px-1.5 py-0.5 text-xs text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                          className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                       ) : <span className="font-semibold text-zinc-900 dark:text-white">{fmt(item.quantity)}</span>}
                     </td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-3 py-2.5 text-right">
                       {isCreate ? (
                         <input type="number" min="0" step="0.01" value={item.unit_cost} onChange={e => h.updateItem(item.sku, 'unit_cost', parseFloat(e.target.value) || 0)}
-                          className="w-16 px-1.5 py-0.5 text-xs text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                          className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                       ) : <span className="text-zinc-500">{fmtCur(item.unit_cost)}</span>}
                     </td>
-                    <td className="px-2 py-1.5 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                    <td className="px-3 py-2.5 text-right font-medium text-zinc-700 dark:text-zinc-300">
                       {fmtCur((item.quantity || 0) * (item.unit_cost || 0))}
                     </td>
                     {!isCreate && (
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="px-3 py-2.5 text-right">
                         {item.received_qty > 0 ? <span className="text-green-600 font-medium">{fmt(item.received_qty)}</span> : <span className="text-zinc-400">0</span>}
                       </td>
                     )}
                     {!isCreate && isTomEnabled && (
-                      <td className="px-2 py-1.5 text-center">
-                        {item.tom_status ? <span className={`text-[10px] font-medium ${TOM_CLS[item.tom_status] || 'text-zinc-400'}`}>{item.tom_status}</span> : <span className="text-zinc-400">—</span>}
+                      <td className="px-3 py-2.5 text-center">
+                        {item.tom_status ? <span className={`text-xs font-medium ${TOM_CLS[item.tom_status] || 'text-zinc-400'}`}>{item.tom_status}</span> : <span className="text-zinc-400">—</span>}
                       </td>
                     )}
                     {isCreate && (
-                      <td className="px-2 py-1.5"><button onClick={() => h.removeItem(item.sku)}><X className="w-3.5 h-3.5 text-red-400 hover:text-red-600" /></button></td>
+                      <td className="px-3 py-2.5"><button onClick={() => h.removeItem(item.sku)}><X className="w-4 h-4 text-red-400 hover:text-red-600" /></button></td>
                     )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
+        </>)}
       </div>
 
       {/* ═══ FOOTER / ACTION BAR ═══ */}
-      <div className="p-3 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80">
+      <div className="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80">
         {/* Summary */}
-        <div className="text-xs text-zinc-500 mb-2">
+        <div className="text-sm text-zinc-500 mb-3">
           {items.length} items · {fmt(totalQty)} units · <span className="font-semibold text-zinc-900 dark:text-white">{fmtCur(totalCost)}</span>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           {isCreate ? (<>
-            <button onClick={h.cancelCreate} className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
+            <button onClick={h.cancelCreate} className="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
             <button onClick={h.submitCreate} disabled={h.saving || items.length === 0}
-              className="flex items-center gap-1 px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
-              {h.saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Create PO
+              className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
+              {h.saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create PO
             </button>
           </>) : (<>
             {po.status === 'DRAFT' && (<>
-              <button onClick={() => h.updateStatus(po.id, 'APPROVED')} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+              <button onClick={() => h.updateStatus(po.id, 'APPROVED')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+                <CheckCircle2 className="w-4 h-4" /> Approve
               </button>
-              <button onClick={() => h.deletePO(po.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
+              <button onClick={() => h.deletePO(po.id)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
+                <Trash2 className="w-4 h-4" /> Delete
               </button>
             </>)}
             {po.status === 'APPROVED' && (
-              <button onClick={() => h.receivePO(po.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg">
-                <Check className="w-3.5 h-3.5" /> Receive All
+              <button onClick={() => h.receivePO(po.id)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg">
+                <Check className="w-4 h-4" /> Receive All
               </button>
             )}
             {po.status === 'PARTIALLY_RECEIVED' && (
-              <button onClick={() => h.updateStatus(po.id, 'COMPLETED')} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg">
-                <Check className="w-3.5 h-3.5" /> Complete
+              <button onClick={() => h.updateStatus(po.id, 'COMPLETED')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg">
+                <Check className="w-4 h-4" /> Complete
               </button>
             )}
             {!['COMPLETED', 'CANCELLED'].includes(po.status) && (
-              <button onClick={() => h.updateStatus(po.id, 'CANCELLED')} className="flex items-center gap-1 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
-                <XCircle className="w-3.5 h-3.5" /> Cancel
+              <button onClick={() => h.updateStatus(po.id, 'CANCELLED')} className="flex items-center gap-1.5 px-4 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
+                <XCircle className="w-4 h-4" /> Cancel
               </button>
             )}
           </>)}
