@@ -12,6 +12,7 @@ const fmtCur = n => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { m
 
 export default function PODetail({ h }) {
   const [showLog, setShowLog] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
   const isCreate = h.mode === 'create'
   const po = isCreate ? null : h.selectedPO
   const items = isCreate ? h.createForm.items : (po?.items || [])
@@ -151,21 +152,37 @@ export default function PODetail({ h }) {
         )}
       </div>
 
-      {/* ═══ PRODUCT SEARCH (create mode) — persistent grid with multi-select ═══ */}
+      {/* ═══ ADD PRODUCTS BUTTON (create mode) ═══ */}
       {isCreate && (
         <div className="px-4 pt-3">
-          <POProductPicker
-            existingSkus={h.createForm.items.map(i => i.sku)}
-            onAddProducts={h.addProducts}
-          />
+          <button onClick={() => setShowPicker(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold 
+              text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 
+              hover:bg-indigo-100 dark:hover:bg-indigo-500/15 
+              border-2 border-dashed border-indigo-300 dark:border-indigo-500/30
+              rounded-xl transition-all hover:scale-[1.01]">
+            <Plus className="w-5 h-5" />
+            Search & Add Products
+            {items.length > 0 && <span className="text-xs font-normal text-zinc-400">({items.length} in PO)</span>}
+          </button>
         </div>
+      )}
+
+      {/* Product picker modal */}
+      {showPicker && (
+        <POProductPicker
+          existingSkus={h.createForm.items.map(i => i.sku)}
+          onAddProducts={h.addProducts}
+          onClose={() => setShowPicker(false)}
+          categories={h.poCategories}
+        />
       )}
 
       {/* ═══ ITEMS TABLE ═══ */}
       <div className="flex-1 overflow-auto px-4 py-3">
         {items.length === 0 ? (
           <div className="text-center py-8 text-zinc-400 text-xs">
-            {isCreate ? 'Search and add products above' : 'No items'}
+            {isCreate ? 'Click "Search & Add Products" to populate this PO' : 'No items'}
           </div>
         ) : (
           <div className="rounded-lg border border-zinc-200 dark:border-zinc-600 overflow-hidden">

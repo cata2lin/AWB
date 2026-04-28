@@ -385,14 +385,24 @@ async def delete_po(po_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/products/picker")
 async def product_picker(
     search: Optional[str] = Query(None),
+    store_names: Optional[str] = Query(None, description="Comma-separated store names to filter by (e.g. 'nocturna.ro,nocturnalux.ro')"),
     limit: int = Query(100, le=300),
     db: AsyncSession = Depends(get_db),
 ):
     """Return active products for adding to a PO line item.
     Excludes Grandia store products (has its own PO engine).
     Exact SKU/barcode matches are prioritized first.
+    Optionally filters by store names (used for category-based product selection).
     """
     GRANDIA_STORE_UID = "n12w89-yy"
+
+    # Resolve store name filter → UIDs
+    filter_store_uids = None
+    if store_names:
+        names = [n.strip() for n in store_names.split(",") if n.strip()]
+        if names:
+            store_r = await db.execute(select(Store).where(Store.name.in_(names)))
+            filter_store_uids = {s.uid for s in store_r.scalars().all()}
 
     query = select(Product).where(Product.state.in_(["active", None]))
     exact_match_uid = None
@@ -417,17 +427,34 @@ async def product_picker(
             (func.lower(Product.title_1).like(sl)) |
             (func.lower(Product.barcode).like(sl))
         )
+    if not search and not filter_store_uids:
+        return {"products": [], "exact_match_uid": None}
 
-    query = query.order_by(Product.title_1).limit(limit + 50)
+    # Over-fetch more when browsing by store (no text search = more results expected)
+    over_fetch = limit + 300 if filter_store_uids and not search else limit + 100
+    query = query.order_by(Product.title_1).limit(over_fetch)
     result = await db.execute(query)
     products = result.scalars().all()
 
-    # Filter out products that are ONLY on Grandia
+    # Filter out products that are ONLY on Grandia, and apply store filter
     filtered = []
+    seen_skus = set()  # Deduplicate by SKU for unique products
     for p in products:
         stores = p.store_uids or []
         if isinstance(stores, list) and len(stores) == 1 and GRANDIA_STORE_UID in stores:
             continue
+
+        # Store filter: product must be listed on at least one of the requested stores
+        if filter_store_uids:
+            product_store_set = set(stores) if isinstance(stores, list) else set()
+            if not product_store_set.intersection(filter_store_uids):
+                continue
+
+        # Deduplicate by SKU (multi-store listings appear once)
+        if p.sku in seen_skus:
+            continue
+        seen_skus.add(p.sku)
+
         filtered.append(p)
 
     # Sort: exact match first, then alphabetical
