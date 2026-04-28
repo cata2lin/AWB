@@ -34,6 +34,7 @@ import PrintHistoryTab from '../components/PrintHistoryTab'
 import MultiSelectFilter from '../components/MultiSelectFilter'
 import ContributionMarginPnl from '../components/ContributionMarginPnl'
 import DetailedPnl from '../components/DetailedPnl'
+import SkuPickerModal from '../components/SkuPickerModal'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -163,8 +164,10 @@ export default function Analytics() {
     const [velocityTrendMinPct, setVelocityTrendMinPct] = useState('')
     const [velocityTrendMaxPct, setVelocityTrendMaxPct] = useState('')
     const [velocityExcludeStores, setVelocityExcludeStores] = useState([])
-    const [velocitySkuInclude, setVelocitySkuInclude] = useState('') // comma-separated partial SKU patterns to include
-    const [velocitySkuExclude, setVelocitySkuExclude] = useState('') // comma-separated partial SKU patterns to exclude
+    const [velocitySkuInclude, setVelocitySkuInclude] = useState([]) // array of SKU strings to include
+    const [velocitySkuExclude, setVelocitySkuExclude] = useState([]) // array of SKU strings to exclude
+    const [showSkuIncludePicker, setShowSkuIncludePicker] = useState(false)
+    const [showSkuExcludePicker, setShowSkuExcludePicker] = useState(false)
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
     // Custom saved views
     const [savedViews, setSavedViews] = useState(() => {
@@ -2111,15 +2114,13 @@ export default function Analytics() {
                                     const productStoreUids = (p.store_uid || '').split('|')
                                     if (productStoreUids.every(uid => velocityExcludeStores.includes(uid))) return false
                                 }
-                                // SKU include patterns (comma-separated, partial match, ANY must match)
-                                if (velocitySkuInclude.trim()) {
-                                    const patterns = velocitySkuInclude.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
-                                    if (patterns.length > 0 && !patterns.some(pat => p.sku.toLowerCase().includes(pat))) return false
+                                // SKU include list (exact SKU match from picker)
+                                if (velocitySkuInclude.length > 0) {
+                                    if (!velocitySkuInclude.includes(p.sku)) return false
                                 }
-                                // SKU exclude patterns (comma-separated, partial match, NONE must match)
-                                if (velocitySkuExclude.trim()) {
-                                    const patterns = velocitySkuExclude.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
-                                    if (patterns.some(pat => p.sku.toLowerCase().includes(pat))) return false
+                                // SKU exclude list (exact SKU match from picker)
+                                if (velocitySkuExclude.length > 0) {
+                                    if (velocitySkuExclude.includes(p.sku)) return false
                                 }
                                 return true
                             })
@@ -2244,8 +2245,8 @@ export default function Analytics() {
                             setVelocityTrendMinPct(view.trendMinPct ?? '')
                             setVelocityTrendMaxPct(view.trendMaxPct ?? '')
                             setVelocitySearch(view.search ?? '')
-                            setVelocitySkuInclude(view.skuInclude ?? '')
-                            setVelocitySkuExclude(view.skuExclude ?? '')
+                            setVelocitySkuInclude(view.skuInclude ?? [])
+                            setVelocitySkuExclude(view.skuExclude ?? [])
                             setActiveViewName(view.name)
                         }
                         const deleteView = (name) => {
@@ -2257,12 +2258,12 @@ export default function Analytics() {
                         const hasActiveFilters = velocityMaxUnits !== '' || velocityMinRevenue !== '' || velocityMaxRevenue !== '' ||
                             velocityMinStock !== '' || velocityMaxStock !== '' || velocityTrendFilter !== '' ||
                             velocityTrendMinPct !== '' || velocityTrendMaxPct !== '' || velocityExcludeStores.length > 0 ||
-                            velocitySkuInclude.trim() !== '' || velocitySkuExclude.trim() !== ''
+                            velocitySkuInclude.length > 0 || velocitySkuExclude.length > 0
                         const clearAdvancedFilters = () => {
                             setVelocityMaxUnits(''); setVelocityMinRevenue(''); setVelocityMaxRevenue('')
                             setVelocityMinStock(''); setVelocityMaxStock(''); setVelocityTrendFilter('')
                             setVelocityTrendMinPct(''); setVelocityTrendMaxPct(''); setVelocityExcludeStores([])
-                            setVelocitySkuInclude(''); setVelocitySkuExclude('')
+                            setVelocitySkuInclude([]); setVelocitySkuExclude([])
                             setActiveViewName('')
                         }
 
@@ -2406,13 +2407,19 @@ export default function Analytics() {
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Include SKU</label>
-                                                    <input type="text" value={velocitySkuInclude} onChange={e => setVelocitySkuInclude(e.target.value)}
-                                                        placeholder="ex: BON,SET" title="Comma-separated partial SKU patterns to include" className={advInput + ' w-28'} />
+                                                    <button onClick={() => setShowSkuIncludePicker(true)}
+                                                        className={`${advInput} w-28 text-left truncate flex items-center gap-1 ${velocitySkuInclude.length > 0 ? 'border-emerald-400 dark:border-emerald-600' : ''}`}>
+                                                        <Search className="w-3 h-3 flex-shrink-0" />
+                                                        {velocitySkuInclude.length > 0 ? `${velocitySkuInclude.length} SKU` : 'Selectează'}
+                                                    </button>
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Exclude SKU</label>
-                                                    <input type="text" value={velocitySkuExclude} onChange={e => setVelocitySkuExclude(e.target.value)}
-                                                        placeholder="ex: TEST,OLD" title="Comma-separated partial SKU patterns to exclude" className={advInput + ' w-28'} />
+                                                    <button onClick={() => setShowSkuExcludePicker(true)}
+                                                        className={`${advInput} w-28 text-left truncate flex items-center gap-1 ${velocitySkuExclude.length > 0 ? 'border-red-400 dark:border-red-600' : ''}`}>
+                                                        <Search className="w-3 h-3 flex-shrink-0" />
+                                                        {velocitySkuExclude.length > 0 ? `${velocitySkuExclude.length} SKU` : 'Selectează'}
+                                                    </button>
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Exclude Magazine</label>
@@ -2439,6 +2446,27 @@ export default function Analytics() {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* SKU Include Picker Modal */}
+                                {showSkuIncludePicker && (
+                                    <SkuPickerModal
+                                        title="Include SKU \u2014 doar aceste produse"
+                                        accent="emerald"
+                                        selected={velocitySkuInclude}
+                                        onChange={setVelocitySkuInclude}
+                                        onClose={() => setShowSkuIncludePicker(false)}
+                                    />
+                                )}
+                                {/* SKU Exclude Picker Modal */}
+                                {showSkuExcludePicker && (
+                                    <SkuPickerModal
+                                        title="Exclude SKU \u2014 ascunde aceste produse"
+                                        accent="red"
+                                        selected={velocitySkuExclude}
+                                        onChange={setVelocitySkuExclude}
+                                        onClose={() => setShowSkuExcludePicker(false)}
+                                    />
+                                )}
 
                                 {velocityLoading && (
                                     <div className="flex items-center justify-center py-12">
