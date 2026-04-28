@@ -172,7 +172,7 @@ export default function Analytics() {
     const [newViewName, setNewViewName] = useState('')
     const [showSaveViewInput, setShowSaveViewInput] = useState(false)
     // Product selection for PO generation
-    const [selectedSkus, setSelectedSkus] = useState(new Set())
+    const [velocitySelectedSkus, setVelocitySelectedSkus] = useState(new Set())
     const [restockDays, setRestockDays] = useState(30)
 
 
@@ -2518,10 +2518,10 @@ export default function Analytics() {
                                                             <tr>
                                                                 <th className="px-2 py-2.5 w-8 bg-zinc-50 dark:bg-zinc-900">
                                                                     <input type="checkbox"
-                                                                        checked={selectedSkus.size > 0 && selectedSkus.size === sortedProducts.length}
+                                                                        checked={velocitySelectedSkus.size > 0 && velocitySelectedSkus.size === sortedProducts.length}
                                                                         onChange={e => {
-                                                                            if (e.target.checked) setSelectedSkus(new Set(sortedProducts.map(p => `${p.sku}::${p.store_uid || ''}`)))
-                                                                            else setSelectedSkus(new Set())
+                                                                            if (e.target.checked) setVelocitySelectedSkus(new Set(sortedProducts.map(p => `${p.sku}::${p.store_uid || ''}`)))
+                                                                            else setVelocitySelectedSkus(new Set())
                                                                         }}
                                                                         className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-emerald-600 focus:ring-emerald-500" />
                                                                 </th>
@@ -2551,14 +2551,14 @@ export default function Analytics() {
                                                                 const rowKey = `${p.sku}::${p.store_uid || ''}`
                                                                 return (
                                                                 <Fragment key={rowKey}>
-                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === rowKey ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''} ${selectedSkus.has(rowKey) ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''}`}
+                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === rowKey ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''} ${velocitySelectedSkus.has(rowKey) ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''}`}
                                                                         onClick={() => setVelocityExpanded(velocityExpanded === rowKey ? null : rowKey)}>
                                                                         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                                                                            <input type="checkbox" checked={selectedSkus.has(rowKey)}
+                                                                            <input type="checkbox" checked={velocitySelectedSkus.has(rowKey)}
                                                                                 onChange={e => {
-                                                                                    const next = new Set(selectedSkus)
+                                                                                    const next = new Set(velocitySelectedSkus)
                                                                                     e.target.checked ? next.add(rowKey) : next.delete(rowKey)
-                                                                                    setSelectedSkus(next)
+                                                                                    setVelocitySelectedSkus(next)
                                                                                 }}
                                                                                 className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-emerald-600 focus:ring-emerald-500" />
                                                                         </td>
@@ -2671,9 +2671,9 @@ export default function Analytics() {
                                         )}
 
                                         {/* Floating PO Generation Bar */}
-                                        {selectedSkus.size > 0 && (
+                                        {velocitySelectedSkus.size > 0 && (
                                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 dark:bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl px-6 py-3 flex items-center gap-5">
-                                                <span className="text-white text-sm font-medium">{selectedSkus.size} produse selectate</span>
+                                                <span className="text-white text-sm font-medium">{velocitySelectedSkus.size} produse selectate</span>
                                                 <div className="flex items-center gap-2">
                                                     <label className="text-xs text-zinc-400">Zile restock:</label>
                                                     <input type="number" value={restockDays} onChange={e => setRestockDays(Number(e.target.value) || 30)} min={1}
@@ -2681,7 +2681,7 @@ export default function Analytics() {
                                                 </div>
                                                 <button onClick={() => {
                                                     const items = sortedProducts
-                                                        .filter(p => selectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
+                                                        .filter(p => velocitySelectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
                                                         .map(p => ({
                                                             sku: p.sku,
                                                             product_name: p.product_name || p.sku,
@@ -2696,7 +2696,7 @@ export default function Analytics() {
                                                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5">
                                                     <Plus className="w-4 h-4" /> Generează PO
                                                 </button>
-                                                <button onClick={() => setSelectedSkus(new Set())}
+                                                <button onClick={() => setVelocitySelectedSkus(new Set())}
                                                     className="text-zinc-400 hover:text-white transition-colors">
                                                     <X className="w-4 h-4" />
                                                 </button>
