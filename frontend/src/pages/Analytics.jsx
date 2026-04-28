@@ -163,6 +163,8 @@ export default function Analytics() {
     const [velocityTrendMinPct, setVelocityTrendMinPct] = useState('')
     const [velocityTrendMaxPct, setVelocityTrendMaxPct] = useState('')
     const [velocityExcludeStores, setVelocityExcludeStores] = useState([])
+    const [velocitySkuInclude, setVelocitySkuInclude] = useState('') // comma-separated partial SKU patterns to include
+    const [velocitySkuExclude, setVelocitySkuExclude] = useState('') // comma-separated partial SKU patterns to exclude
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
     // Custom saved views
     const [savedViews, setSavedViews] = useState(() => {
@@ -2109,6 +2111,16 @@ export default function Analytics() {
                                     const productStoreUids = (p.store_uid || '').split('|')
                                     if (productStoreUids.every(uid => velocityExcludeStores.includes(uid))) return false
                                 }
+                                // SKU include patterns (comma-separated, partial match, ANY must match)
+                                if (velocitySkuInclude.trim()) {
+                                    const patterns = velocitySkuInclude.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+                                    if (patterns.length > 0 && !patterns.some(pat => p.sku.toLowerCase().includes(pat))) return false
+                                }
+                                // SKU exclude patterns (comma-separated, partial match, NONE must match)
+                                if (velocitySkuExclude.trim()) {
+                                    const patterns = velocitySkuExclude.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+                                    if (patterns.some(pat => p.sku.toLowerCase().includes(pat))) return false
+                                }
                                 return true
                             })
                             : []
@@ -2207,6 +2219,7 @@ export default function Analytics() {
                                 trendFilter: velocityTrendFilter,
                                 trendMinPct: velocityTrendMinPct, trendMaxPct: velocityTrendMaxPct,
                                 search: velocitySearch,
+                                skuInclude: velocitySkuInclude, skuExclude: velocitySkuExclude,
                             }
                             const updated = [...savedViews.filter(v => v.name !== view.name), view]
                             setSavedViews(updated)
@@ -2231,6 +2244,8 @@ export default function Analytics() {
                             setVelocityTrendMinPct(view.trendMinPct ?? '')
                             setVelocityTrendMaxPct(view.trendMaxPct ?? '')
                             setVelocitySearch(view.search ?? '')
+                            setVelocitySkuInclude(view.skuInclude ?? '')
+                            setVelocitySkuExclude(view.skuExclude ?? '')
                             setActiveViewName(view.name)
                         }
                         const deleteView = (name) => {
@@ -2241,11 +2256,13 @@ export default function Analytics() {
                         }
                         const hasActiveFilters = velocityMaxUnits !== '' || velocityMinRevenue !== '' || velocityMaxRevenue !== '' ||
                             velocityMinStock !== '' || velocityMaxStock !== '' || velocityTrendFilter !== '' ||
-                            velocityTrendMinPct !== '' || velocityTrendMaxPct !== '' || velocityExcludeStores.length > 0
+                            velocityTrendMinPct !== '' || velocityTrendMaxPct !== '' || velocityExcludeStores.length > 0 ||
+                            velocitySkuInclude.trim() !== '' || velocitySkuExclude.trim() !== ''
                         const clearAdvancedFilters = () => {
                             setVelocityMaxUnits(''); setVelocityMinRevenue(''); setVelocityMaxRevenue('')
                             setVelocityMinStock(''); setVelocityMaxStock(''); setVelocityTrendFilter('')
                             setVelocityTrendMinPct(''); setVelocityTrendMaxPct(''); setVelocityExcludeStores([])
+                            setVelocitySkuInclude(''); setVelocitySkuExclude('')
                             setActiveViewName('')
                         }
 
@@ -2386,6 +2403,16 @@ export default function Analytics() {
                                                 <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Trend Max%</label>
                                                     <input type="number" value={velocityTrendMaxPct} onChange={e => setVelocityTrendMaxPct(e.target.value)} placeholder="+∞" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Include SKU</label>
+                                                    <input type="text" value={velocitySkuInclude} onChange={e => setVelocitySkuInclude(e.target.value)}
+                                                        placeholder="ex: BON,SET" title="Comma-separated partial SKU patterns to include" className={advInput + ' w-28'} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Exclude SKU</label>
+                                                    <input type="text" value={velocitySkuExclude} onChange={e => setVelocitySkuExclude(e.target.value)}
+                                                        placeholder="ex: TEST,OLD" title="Comma-separated partial SKU patterns to exclude" className={advInput + ' w-28'} />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Exclude Magazine</label>
