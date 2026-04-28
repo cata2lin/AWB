@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle, Copy } from 'lucide-react'
+import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle, Copy, FileText } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
     { path: '/duplicates', icon: Copy, label: 'Duplicates', indent: true },
     { path: '/rules', icon: Layers, label: 'Rules' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+    { path: '/purchase-orders', icon: FileText, label: 'Purchase Orders' },
     { path: '/history', icon: History, label: 'History' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/logs', icon: Activity, label: 'System Monitor' },

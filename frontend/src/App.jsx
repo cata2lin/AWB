@@ -9,6 +9,7 @@ import Rules from './pages/Rules'
 import Settings from './pages/Settings'
 import History from './pages/History'
 import Analytics from './pages/Analytics'
+import PurchaseOrders from './pages/PurchaseOrders'
 import Logs from './pages/Logs'
 import Login from './pages/Login'
 import { Loader } from 'lucide-react'
@@ -41,6 +42,7 @@ function AppContent() {
               <Route path="/duplicates" element={<Duplicates />} />
               <Route path="/rules" element={<Rules />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/history" element={<History />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />
