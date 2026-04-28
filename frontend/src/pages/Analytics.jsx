@@ -37,11 +37,11 @@ import DetailedPnl from '../components/DetailedPnl'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
-    'RO': 'ðŸ‡·ðŸ‡´', 'BG': 'ðŸ‡§ðŸ‡¬', 'HU': 'ðŸ‡­ðŸ‡º', 'DE': 'ðŸ‡©ðŸ‡ª', 'FR': 'ðŸ‡«ðŸ‡·',
-    'IT': 'ðŸ‡®ðŸ‡¹', 'ES': 'ðŸ‡ªðŸ‡¸', 'PL': 'ðŸ‡µðŸ‡±', 'AT': 'ðŸ‡¦ðŸ‡¹', 'GR': 'ðŸ‡¬ðŸ‡·',
-    'NL': 'ðŸ‡³ðŸ‡±', 'BE': 'ðŸ‡§ðŸ‡ª', 'PT': 'ðŸ‡µðŸ‡¹', 'SE': 'ðŸ‡¸ðŸ‡ª', 'GB': 'ðŸ‡¬ðŸ‡§',
-    'CZ': 'ðŸ‡¨ðŸ‡¿', 'SK': 'ðŸ‡¸ðŸ‡°', 'HR': 'ðŸ‡­ðŸ‡·', 'SI': 'ðŸ‡¸ðŸ‡®', 'MD': 'ðŸ‡²ðŸ‡©',
-    'UA': 'ðŸ‡ºðŸ‡¦', 'RS': 'ðŸ‡·ðŸ‡¸', 'IE': 'ðŸ‡®ðŸ‡ª'
+    'RO': '🇷🇴', 'BG': '🇧🇬', 'HU': '🇭🇺', 'DE': '🇩🇪', 'FR': '🇫🇷',
+    'IT': '🇮🇹', 'ES': '🇪🇸', 'PL': '🇵🇱', 'AT': '🇦🇹', 'GR': '🇬🇷',
+    'NL': '🇳🇱', 'BE': '🇧🇪', 'PT': '🇵🇹', 'SE': '🇸🇪', 'GB': '🇬🇧',
+    'CZ': '🇨🇿', 'SK': '🇸🇰', 'HR': '🇭🇷', 'SI': '🇸🇮', 'MD': '🇲🇩',
+    'UA': '🇺🇦', 'RS': '🇷🇸', 'IE': '🇮🇪'
 }
 
 // Color palette for charts
@@ -191,7 +191,7 @@ export default function Analytics() {
     }, [])
 
     // Fetch analytics data
-    // Compute effective date range key â€” only changes when BOTH dates are set
+    // Compute effective date range key — only changes when BOTH dates are set
     // This prevents double-reload when user sets one date at a time
     const effectiveDateRange = (customDateFrom && customDateTo) ? `${customDateFrom}_${customDateTo}` : null
 
@@ -227,7 +227,7 @@ export default function Analytics() {
                 setPrintAnalytics(printRes)
                 setIsLoading(false)
 
-                // Profitability is NOT auto-fetched â€” user must click "Analizează"
+                // Profitability is NOT auto-fetched — user must click "Analizează"
             } catch (err) {
                 console.error('Failed to fetch analytics:', err)
                 setIsLoading(false)
@@ -235,6 +235,21 @@ export default function Analytics() {
         }
         fetchData()
     }, [selectedStores, days, effectiveDateRange])
+
+    // Auto-load velocity data when tab is first activated (with default 30-day period)
+    useEffect(() => {
+        if (activeTab === 'salesVelocity' && !velocityData && !velocityLoading) {
+            const autoFetch = async () => {
+                setVelocityLoading(true)
+                try {
+                    const data = await analyticsApi.getSalesVelocity({ days: velocityDays, min_units: velocityMinUnits })
+                    setVelocityData(data)
+                } catch (e) { console.error('Auto-load velocity error:', e) }
+                finally { setVelocityLoading(false) }
+            }
+            autoFetch()
+        }
+    }, [activeTab])
 
     // --- Livrabilitate dedicated fetch ---
     const fetchDeliverability = async (period, customFrom, customTo) => {
@@ -721,7 +736,7 @@ export default function Analytics() {
                                         <input type="date" value={delivDateFrom}
                                             onChange={(e) => setDelivDateFrom(e.target.value)}
                                             className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
-                                        <span className="text-zinc-400">â†’</span>
+                                        <span className="text-zinc-400">→</span>
                                         <input type="date" value={delivDateTo}
                                             onChange={(e) => setDelivDateTo(e.target.value)}
                                             className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
@@ -841,7 +856,7 @@ export default function Analytics() {
                                                             {c.label}
                                                             <ArrowUpDown className={`w-3 h-3 ${delivSort.col === c.field ? 'text-indigo-500' : 'opacity-40'}`} />
                                                             {delivSort.col === c.field && (
-                                                                <span className="text-[9px] text-indigo-500">{delivSort.dir === 'asc' ? 'â†‘' : 'â†“'}</span>
+                                                                <span className="text-[9px] text-indigo-500">{delivSort.dir === 'asc' ? '↑' : '↓'}</span>
                                                             )}
                                                         </span>
                                                     </th>
@@ -923,7 +938,7 @@ export default function Analytics() {
                     {/* Profitability Tab */}
                     {activeTab === 'profitability' && (
                         <div className="space-y-6">
-                            {/* â•â•â• CONTRIBUTION MARGIN P&L â•â•â• */}
+                            {/* ═══ CONTRIBUTION MARGIN P&L ═══ */}
                             <ContributionMarginPnl authFetch={authFetch} />
 
 
@@ -1049,10 +1064,10 @@ export default function Analytics() {
                                                                         {/* Currency conversion notice */}
                                                                         {order.original_currency && order.original_currency !== 'RON' && (
                                                                             <div className="mb-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800 text-sm">
-                                                                                <span className="font-medium text-amber-800 dark:text-amber-300">ðŸ’± Currency conversion:</span>
+                                                                                <span className="font-medium text-amber-800 dark:text-amber-300">💱 Currency conversion:</span>
                                                                                 <span className="text-amber-700 dark:text-amber-400 ml-1">
                                                                                     Original order in {order.original_currency} ({formatMoney(order.original_total_price)} {order.original_currency})
-                                                                                    â†’ converted at {order.exchange_rate} {order.original_currency}/RON
+                                                                                    → converted at {order.exchange_rate} {order.original_currency}/RON
                                                                                 </span>
                                                                             </div>
                                                                         )}
@@ -1099,7 +1114,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ“‹ Packaging</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">📋 Packaging</div>
                                                                                         <div className="text-[11px] text-zinc-400">Fixed {formatMoney(profitabilityData?.config?.packaging_cost_per_order)} RON/order</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.packaging_cost)} RON</div>
@@ -1107,14 +1122,14 @@ export default function Analytics() {
 
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ‘¤ GT Commission</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">👤 GT Commission</div>
                                                                                         <div className="text-[11px] text-zinc-400">{profitabilityData?.config?.gt_commission_pct}% × {formatMoney(order.total_price)} (GT store only)</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.gt_commission)} RON</div>
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">ðŸ’³ Payment Processing</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">💳 Payment Processing</div>
                                                                                         <div className="text-[11px] text-zinc-400">{profitabilityData?.config?.payment_processing_pct}% × {formatMoney(order.total_price)} + {formatMoney(profitabilityData?.config?.payment_processing_fixed)} fixed</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.payment_fee)} RON</div>
@@ -1128,7 +1143,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div>
-                                                                                        <div className="text-zinc-700 dark:text-white">ðŸšš Shipping Cost</div>
+                                                                                        <div className="text-zinc-700 dark:text-white">🚚 Shipping Cost</div>
                                                                                         <div className="text-[11px] text-zinc-400">Total Price − Subtotal (courier delivery cost)</div>
                                                                                     </div>
                                                                                     <div className="font-medium text-red-600 dark:text-red-400">{formatMoney(order.shipping_cost)} RON</div>
@@ -1243,7 +1258,7 @@ export default function Analytics() {
                                 )}
                             </div>
 
-                            {/* â•â•â• CSV IMPORT COVERAGE GAPS â•â•â• */}
+                            {/* ═══ CSV IMPORT COVERAGE GAPS ═══ */}
                             <div className="bg-white dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-6">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
@@ -1308,7 +1323,7 @@ export default function Analytics() {
                                                                         <Calendar className="w-4 h-4 text-zinc-400" />
                                                                         <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
                                                                             {new Date(gap.date_from).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                                                            {' â†’ '}
+                                                                            {' → '}
                                                                             {new Date(gap.date_to).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                                                                         </span>
                                                                         <span className="text-xs text-zinc-400">({gap.weeks} {gap.weeks === 1 ? 'week' : 'weeks'})</span>
@@ -1623,7 +1638,7 @@ export default function Analytics() {
                                                                 />
                                                             ) : (
                                                                 <span className={sku.cost === 0 ? 'text-amber-500 font-medium' : ''}>
-                                                                    {sku.cost === 0 ? 'âš  0 RON' : `${sku.cost} RON`}
+                                                                    {sku.cost === 0 ? '⚠ 0 RON' : `${sku.cost} RON`}
                                                                 </span>
                                                             )}
                                                         </td>
@@ -1675,7 +1690,7 @@ export default function Analytics() {
                     }
 
 
-                    {/* â”€â”€ SKU Risk & Shipping Anomalies Tab â”€â”€ */}
+                    {/* ══ SKU Risk & Shipping Anomalies Tab ══ */}
                     {activeTab === 'skuRisk' && (() => {
                         const fetchSkuRisk = async () => {
                             setSkuRiskLoading(true)
@@ -1725,7 +1740,7 @@ export default function Analytics() {
                                 onClick={() => setSkuRiskSort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
                                 title={tip || ''}
                             >
-                                {label} {skuRiskSort.col === col ? (skuRiskSort.dir === 'desc' ? 'â†“' : 'â†‘') : ''}
+                                {label} {skuRiskSort.col === col ? (skuRiskSort.dir === 'desc' ? '↓' : '↑') : ''}
                             </th>
                         )
 
@@ -1785,8 +1800,8 @@ export default function Analytics() {
                                     {skuRiskData?.meta && (
                                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
                                             <span>📦 {skuRiskData.meta.filtered_orders.toLocaleString()} comenzi</span>
-                                            <span>ðŸ·️ {skuRiskData.meta.unique_skus} SKU-uri ({skuRiskData.meta.skus_passing_volume} cu volum suficient)</span>
-                                            <span>ðŸšš Acoperire shipping: {skuRiskData.meta.shipping_coverage_pct}%</span>
+                                            <span>🏷️ {skuRiskData.meta.unique_skus} SKU-uri ({skuRiskData.meta.skus_passing_volume} cu volum suficient)</span>
+                                            <span>🚚 Acoperire shipping: {skuRiskData.meta.shipping_coverage_pct}%</span>
                                         </div>
                                     )}
                                 </div>
@@ -1805,7 +1820,7 @@ export default function Analytics() {
                                             <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
                                                 <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                     <AlertTriangle className="w-4 h-4 text-red-500" />
-                                                    SKU-uri problematice â€” Ranked by Risk Score
+                                                    SKU-uri problematice — Ranked by Risk Score
                                                 </h3>
                                             </div>
                                             <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
@@ -1843,14 +1858,14 @@ export default function Analytics() {
                                                                     </td>
                                                                     <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.units_sold}</td>
                                                                     <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.orders_with_sku}</td>
-                                                                    <td className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400">{s.problem_units || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400">{s.problem_units || '—'}</td>
                                                                     <td className="px-3 py-2 text-sm font-semibold"><span className={s.problem_rate > 15 ? 'text-red-600' : s.problem_rate > 5 ? 'text-amber-600' : 'text-green-600'}>{s.problem_rate}%</span></td>
                                                                     <td className="px-3 py-2 text-sm"><span className={s.contamination_rate > 15 ? 'text-red-600' : s.contamination_rate > 5 ? 'text-amber-600' : 'text-zinc-600 dark:text-zinc-300'}>{s.contamination_rate}%</span></td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_back_to_sender || 'â€”'}</td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_cancelled || 'â€”'}</td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_refused || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_back_to_sender || '—'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_cancelled || '—'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_refused || '—'}</td>
                                                                     <td className="px-3 py-2 text-sm"><span className={s.shipping_anomaly_rate > 10 ? 'text-red-600' : 'text-zinc-600 dark:text-zinc-400'}>{s.shipping_anomaly_rate}%</span></td>
-                                                                    <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.avg_ship_cost_per_unit > 0 ? `${s.avg_ship_cost_per_unit} RON` : 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.avg_ship_cost_per_unit > 0 ? `${s.avg_ship_cost_per_unit} RON` : '—'}</td>
                                                                     <td className="px-3 py-2">
                                                                         {s.risk_score !== null ? (
                                                                             <span className={`text-sm font-bold ${riskColor(s.risk_score)} px-2 py-0.5 rounded-md ${riskBg(s.risk_score)}`}>{s.risk_score}</span>
@@ -1878,7 +1893,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 {/* Outcome breakdown */}
                                                                                 <div>
-                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸ“Š Outcome Breakdown</h5>
+                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Outcome Breakdown</h5>
                                                                                     <div className="space-y-1 text-xs">
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Back to Sender</span><span className="font-medium text-zinc-900 dark:text-white">{s.units_back_to_sender} u</span></div>
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Anulate</span><span className="font-medium text-zinc-900 dark:text-white">{s.units_cancelled} u</span></div>
@@ -1889,7 +1904,7 @@ export default function Analytics() {
                                                                                 </div>
                                                                                 {/* Financial */}
                                                                                 <div>
-                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸ’° Financial</h5>
+                                                                                    <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">💰 Financial</h5>
                                                                                     <div className="space-y-1 text-xs">
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Revenue total</span><span className="font-medium text-zinc-900 dark:text-white">{s.revenue_total.toLocaleString()} RON</span></div>
                                                                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-900 dark:text-white">{s.cogs_total.toLocaleString()} RON</span></div>
@@ -1944,17 +1959,17 @@ export default function Analytics() {
                                                                 <tr key={ao.uid} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
                                                                     <td className="px-3 py-2 text-xs font-mono text-zinc-700 dark:text-zinc-300">{ao.order_number || ao.uid?.slice(0, 8)}</td>
                                                                     <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.store_name}</td>
-                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.date ? new Date(ao.date).toLocaleDateString() : 'â€”'}</td>
-                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.courier_name || 'â€”'}</td>
-                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.country_code || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.date ? new Date(ao.date).toLocaleDateString() : '—'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.courier_name || '—'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">{ao.country_code || '—'}</td>
                                                                     <td className="px-3 py-2 text-xs text-right text-zinc-700 dark:text-zinc-300">{ao.order_total?.toFixed(2)}</td>
-                                                                    <td className="px-3 py-2 text-xs text-right text-zinc-700 dark:text-zinc-300">{ao.shipping_charged?.toFixed(2) ?? 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-xs text-right text-zinc-700 dark:text-zinc-300">{ao.shipping_charged?.toFixed(2) ?? '—'}</td>
                                                                     <td className="px-3 py-2 text-xs text-right font-medium text-zinc-900 dark:text-white">{ao.real_shipping_cost?.toFixed(2)}</td>
                                                                     <td className={`px-3 py-2 text-xs text-right font-semibold ${ao.shipping_margin < 0 ? 'text-red-600' : 'text-green-600'}`}>{ao.shipping_margin?.toFixed(2)}</td>
                                                                     <td className={`px-3 py-2 text-xs text-right ${ao.shipping_cost_pct > 25 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>{ao.shipping_cost_pct}%</td>
                                                                     <td className="px-3 py-2"><span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${ao.final_outcome === 'DELIVERED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : ao.final_outcome === 'BACK_TO_SENDER' || ao.final_outcome === 'REFUSED' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'}`}>{ao.final_outcome}</span></td>
                                                                     <td className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 max-w-[200px]">
-                                                                        {ao.anomaly_reasons?.map((r, i) => <div key={i}>âš  {r}</div>)}
+                                                                        {ao.anomaly_reasons?.map((r, i) => <div key={i}>⚠ {r}</div>)}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-xs text-zinc-500 max-w-[150px] truncate" title={ao.skus?.join(', ')}>{ao.skus?.join(', ')}</td>
                                                                 </tr>
@@ -1968,7 +1983,7 @@ export default function Analytics() {
                                                             className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">â† Prev</button>
                                                         <span className="text-xs text-zinc-500">{skuRiskAnomalyPage + 1} / {anomalyTotalPages}</span>
                                                         <button onClick={() => setSkuRiskAnomalyPage(p => Math.min(anomalyTotalPages - 1, p + 1))} disabled={skuRiskAnomalyPage >= anomalyTotalPages - 1}
-                                                            className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">Next â†’</button>
+                                                            className="px-3 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 disabled:opacity-50">Next →</button>
                                                     </div>
                                                 )}
                                             </div>
@@ -2026,7 +2041,7 @@ export default function Analytics() {
                         )
                     })()}
 
-                    {/* â”€â”€ Sales Velocity & Product Analytics Tab â”€â”€ */}
+                    {/* ══ Sales Velocity & Product Analytics Tab ══ */}
                     {activeTab === 'salesVelocity' && (() => {
                         const fetchVelocity = async () => {
                             setVelocityLoading(true)
@@ -2068,7 +2083,7 @@ export default function Analytics() {
                                 onClick={() => setVelocitySort(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }))}
                                 title={tip || ''}
                             >
-                                {label} {velocitySort.col === col ? (velocitySort.dir === 'desc' ? 'â†“' : 'â†‘') : ''}
+                                {label} {velocitySort.col === col ? (velocitySort.dir === 'desc' ? '↓' : '↑') : ''}
                             </th>
                         )
 
@@ -2124,8 +2139,8 @@ export default function Analytics() {
                                                             <rect x={Math.min(x - 10, w - 140)} y={Math.max(5, h - 30 - barH - 68)} width={130} height={60} rx={6} fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
                                                             <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 16} fontSize="10" fill="#e4e4e7" fontWeight="600">{t.date}</text>
                                                             <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 30} fontSize="9" fill="#10b981">📦 {t.units.toLocaleString()} unități</text>
-                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 43} fontSize="9" fill="#60a5fa">ðŸ’° {t.revenue.toLocaleString()} RON</text>
-                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 55} fontSize="9" fill="#fbbf24">ðŸ“‹ {t.orders} comenzi</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 43} fontSize="9" fill="#60a5fa">💰 {t.revenue.toLocaleString()} RON</text>
+                                                            <text x={Math.min(x - 10, w - 140) + 8} y={Math.max(5, h - 30 - barH - 68) + 55} fontSize="9" fill="#fbbf24">📋 {t.orders} comenzi</text>
                                                         </g>
                                                     )}
                                                 </g>
@@ -2187,8 +2202,8 @@ export default function Analytics() {
                                     {velocityData?.meta && (
                                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
                                             <span>📦 {velocityData.meta.total_orders?.toLocaleString()} comenzi totale</span>
-                                            <span>ðŸ“… {velocityData.meta.period_days} zile</span>
-                                            <span>ðŸ·️ {velocityData.kpis?.unique_skus} SKU-uri active</span>
+                                            <span>📅 {velocityData.meta.period_days} zile</span>
+                                            <span>🏷️ {velocityData.kpis?.unique_skus} SKU-uri active</span>
                                         </div>
                                     )}
                                 </div>
@@ -2244,7 +2259,7 @@ export default function Analytics() {
                                                 <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                                         <TrendingUp className="w-4 h-4 text-emerald-500" />
-                                                        Performanță Produse â€” {sortedProducts.length} SKU-uri
+                                                        Performanță Produse — {sortedProducts.length} SKU-uri
                                                     </h3>
                                                     <div className="flex items-center gap-2">
                                                         <Search className="w-4 h-4 text-zinc-400" />
@@ -2338,7 +2353,7 @@ export default function Analytics() {
                                                                             </div>
                                                                         </td>
                                                                         <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                                                                            {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : 'â€”'}
+                                                                            {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
                                                                         </td>
                                                                         <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
@@ -2395,11 +2410,11 @@ export default function Analytics() {
                                                                                                         <span className="font-medium text-zinc-700 dark:text-zinc-200">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
                                                                                                     </div>
                                                                                                 ))}
-                                                                                                {p.by_country.length === 0 && <div className="text-zinc-400">â€”</div>}
+                                                                                                {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
                                                                                             </div>
                                                                                         </div>
                                                                                         <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸ“Š Detalii</h5>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
                                                                                             <div className="space-y-1 text-xs">
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.cogs.toLocaleString()} RON</span></div>
@@ -2430,7 +2445,7 @@ export default function Analytics() {
                                                 <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-4 flex items-center gap-2">
                                                         <BarChart3 className="w-4 h-4 text-emerald-500" />
-                                                        Trend Zilnic â€” Unități Vândute
+                                                        Trend Zilnic — Unități Vândute
                                                     </h3>
                                                     <TrendChart trends={velocityData.trends} />
                                                 </div>
@@ -2439,7 +2454,7 @@ export default function Analytics() {
                                                 <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
                                                     <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-4 flex items-center gap-2">
                                                         <TrendingUp className="w-4 h-4 text-emerald-500" />
-                                                        Top 10 â€” Cele mai rapide SKU-uri (u/zi)
+                                                        Top 10 — Cele mai rapide SKU-uri (u/zi)
                                                     </h3>
                                                     <div className="space-y-2">
                                                         {filteredProducts.slice(0, 10).map((p, i) => {
@@ -2459,7 +2474,7 @@ export default function Analytics() {
                                                     </div>
                                                 </div>
 
-                                                {/* Growth vs Decline â€” Full tables with search/sort */}
+                                                {/* Growth vs Decline — Full tables with search/sort */}
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     {/* Growing */}
                                                     {(() => {
@@ -2486,7 +2501,7 @@ export default function Analytics() {
                                                                         <div key={p.sku} className="flex items-center justify-between text-xs border-b border-zinc-100 dark:border-zinc-700/50 pb-1">
                                                                             <span className="text-zinc-700 dark:text-zinc-300 truncate mr-2" title={p.product_name}>{p.sku}</span>
                                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                                <span className="text-zinc-400">{p.prev_velocity} â†’ {p.velocity}</span>
+                                                                                <span className="text-zinc-400">{p.prev_velocity} → {p.velocity}</span>
                                                                                 <span className="font-bold text-emerald-600">+{p.velocity_change_pct}%</span>
                                                                             </div>
                                                                         </div>
@@ -2521,7 +2536,7 @@ export default function Analytics() {
                                                                         <div key={p.sku} className="flex items-center justify-between text-xs border-b border-zinc-100 dark:border-zinc-700/50 pb-1">
                                                                             <span className="text-zinc-700 dark:text-zinc-300 truncate mr-2" title={p.product_name}>{p.sku}</span>
                                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                                <span className="text-zinc-400">{p.prev_velocity} â†’ {p.velocity}</span>
+                                                                                <span className="text-zinc-400">{p.prev_velocity} → {p.velocity}</span>
                                                                                 <span className="font-bold text-red-600">{p.velocity_change_pct}%</span>
                                                                             </div>
                                                                         </div>
@@ -2533,7 +2548,7 @@ export default function Analytics() {
                                                     })()}
                                                 </div>
 
-                                                {/* Store Comparison â€” Expandable */}
+                                                {/* Store Comparison — Expandable */}
                                                 {velocityData.store_comparison?.length > 0 && (
                                                     <div>
                                                         <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-3 flex items-center gap-2">
@@ -2763,8 +2778,8 @@ export default function Analytics() {
                         }
 
                         const sortIcon = (col) => {
-                            if (skuProfitSort.col !== col) return 'â†•'
-                            return skuProfitSort.dir === 'asc' ? 'â†‘' : 'â†“'
+                            if (skuProfitSort.col !== col) return '↕'
+                            return skuProfitSort.dir === 'asc' ? '↑' : '↓'
                         }
 
                         const marginColor = (pct) => {
@@ -2892,7 +2907,7 @@ export default function Analytics() {
                                                 <div className="text-xs text-zinc-500 dark:text-zinc-400">Marjă Medie</div>
                                                 <div className={`text-2xl font-bold mt-1 ${marginColor(summary.avg_margin || 0)}`}>{summary.avg_margin || 0}%</div>
                                                 {summary.products_without_cost > 0 && (
-                                                    <div className="text-xs text-amber-500 mt-1">âš  {summary.products_without_cost} fără cost</div>
+                                                    <div className="text-xs text-amber-500 mt-1">⚠ {summary.products_without_cost} fără cost</div>
                                                 )}
                                             </div>
                                         </div>
@@ -2965,7 +2980,7 @@ export default function Analytics() {
                                                                         <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${skuProfitExpanded === p.sku ? 'rotate-180' : ''}`} />
                                                                     </td>
                                                                     <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300 font-medium">{p.sku}</td>
-                                                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300 text-xs max-w-[200px] truncate">{p.name || 'â€”'}</td>
+                                                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
                                                                     <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">{formatNumber(p.units_sold)}</td>
                                                                     <td className="px-3 py-2 text-right font-medium text-zinc-800 dark:text-zinc-200">{formatNumber(Math.round(p.revenue))}</td>
                                                                     <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(p.cogs))}</td>
@@ -3022,7 +3037,7 @@ export default function Analytics() {
                                                                                 {/* Per-store breakdown */}
                                                                                 {p.per_store && p.per_store.length > 0 && (
                                                                                     <div>
-                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">ðŸ“Š Per Magazin</h4>
+                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">📊 Per Magazin</h4>
                                                                                         <div className="overflow-x-auto">
                                                                                             <table className="w-full text-xs">
                                                                                                 <thead className="bg-zinc-100 dark:bg-zinc-800">
@@ -3065,7 +3080,7 @@ export default function Analytics() {
                                                                                 {/* Marketing costs for this SKU */}
                                                                                 <div>
                                                                                     <div className="flex items-center justify-between mb-2">
-                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">ðŸ’° Costuri Marketing</h4>
+                                                                                        <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">💰 Costuri Marketing</h4>
                                                                                         <button onClick={(e) => { e.stopPropagation(); setAddingMktFor(addingMktFor === p.sku ? null : p.sku) }}
                                                                                             className="text-xs px-2 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors">
                                                                                             <Plus className="w-3 h-3 inline mr-1" />Adaugă
@@ -3153,7 +3168,7 @@ export default function Analytics() {
                                                         <div key={p.sku} className="flex items-center justify-between bg-white/50 dark:bg-zinc-800/50 rounded-lg px-3 py-2 text-xs">
                                                             <div className="flex items-center gap-3">
                                                                 <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{p.sku}</span>
-                                                                <span className="text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.name || 'â€”'}</span>
+                                                                <span className="text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.name || '—'}</span>
                                                             </div>
                                                             <div className="flex items-center gap-2">
                                                                 {!p.has_cost && <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">Cost Lipsă</span>}

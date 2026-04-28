@@ -191,6 +191,7 @@ export default function PODetail({ h }) {
                 <tr className="text-zinc-500">
                   <th className="px-2 py-2 text-left font-medium">Product</th>
                   <th className="px-2 py-2 text-left font-medium">SKU</th>
+                  <th className="px-2 py-2 text-center font-medium">Priority</th>
                   <th className="px-2 py-2 text-right font-medium">Qty</th>
                   <th className="px-2 py-2 text-right font-medium">Unit Cost</th>
                   <th className="px-2 py-2 text-right font-medium">Total</th>
@@ -209,6 +210,24 @@ export default function PODetail({ h }) {
                       </div>
                     </td>
                     <td className="px-2 py-1.5 font-mono text-zinc-600 dark:text-zinc-400">{item.sku}</td>
+                    <td className="px-2 py-1.5 text-center">
+                      {isCreate ? (
+                        <select value={item.priority || ''} onChange={e => h.updateItem(item.sku, 'priority', e.target.value || null)}
+                          className="w-20 px-1 py-0.5 text-[10px] rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
+                          <option value="">Inherit</option>
+                          <option value="STANDARD">Standard</option>
+                          <option value="HIGH">High</option>
+                        </select>
+                      ) : (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                          (item.priority || po?.priority) === 'HIGH'
+                            ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-600'
+                            : 'bg-zinc-50 dark:bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-600'
+                        }`}>
+                          {item.priority || po?.priority || 'STD'}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-right">
                       {isCreate ? (
                         <input type="number" min="1" value={item.quantity} onChange={e => h.updateItem(item.sku, 'quantity', parseInt(e.target.value) || 0)}
