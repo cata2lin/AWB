@@ -48,6 +48,11 @@ export const printApi = {
         const { data } = await api.get(`/print/history/${batchId}`)
         return data
     },
+    /** Get direct download URL for a single order AWB reprint (GET endpoint) */
+    getReprintOrderUrl: (orderUid) => {
+        const token = localStorage.getItem('awb_token')
+        return `${API_BASE_URL}/print/reprint-order/${orderUid}${token ? `?token=${token}` : ''}`
+    },
     /** Reprint a single order (re-download AWB, no status change) */
     reprintOrder: (orderUid) => {
         const token = localStorage.getItem('awb_token')

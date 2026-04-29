@@ -856,7 +856,7 @@ async def reprint_batch(batch_id: int, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/reprint-order/{order_uid}")
+@router.get("/reprint-order/{order_uid}")
 async def reprint_single_order(order_uid: str, db: AsyncSession = Depends(get_db)):
     """
     Reprint a single order's AWB from stored URL.

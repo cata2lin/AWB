@@ -382,13 +382,17 @@ export default function PrintHistoryTab() {
                                                                                         {item.tracking_number || '—'}
                                                                                     </td>
                                                                                     <td className="py-2 text-right">
-                                                                                        <button
-                                                                                            onClick={() => printApi.reprintOrder(item.order_uid)}
-                                                                                            className="p-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
-                                                                                            title={`Reprint ${item.order_number}`}
+                                                                                        <a
+                                                                                            href={printApi.getReprintOrderUrl(item.order_uid)}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                                                                                            title={`Download AWB for ${item.order_number}`}
+                                                                                            onClick={e => e.stopPropagation()}
                                                                                         >
-                                                                                            <Printer className="w-3.5 h-3.5 text-indigo-500" />
-                                                                                        </button>
+                                                                                            <Download className="w-3 h-3" />
+                                                                                            AWB
+                                                                                        </a>
                                                                                     </td>
                                                                                 </tr>
                                                                             ))}

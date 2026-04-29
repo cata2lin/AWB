@@ -1291,6 +1291,22 @@ export default function Orders() {
                                                                     <p className="text-[10px] text-zinc-400 mb-2 uppercase tracking-wider font-medium">Acțiuni AWB</p>
                                                                     {(() => { const hasAwb = !!(order.awb_pdf_url || order.tracking_number); return (<>
                                                                     <div className="flex gap-2">
+                                                                        {/* Download existing AWB (no status change, no regeneration) */}
+                                                                        <a
+                                                                            href={hasAwb ? printApi.getReprintOrderUrl(order.uid) : '#'}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                                                                                !hasAwb
+                                                                                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed pointer-events-none'
+                                                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                                                            }`}
+                                                                            onClick={e => { if (!hasAwb) e.preventDefault() }}
+                                                                        >
+                                                                            <Download className="w-3.5 h-3.5" />
+                                                                            Descarcă AWB
+                                                                        </a>
+
                                                                         {/* Print AWB button */}
                                                                         <button
                                                                             disabled={!hasAwb || (printingOrder?.uid === order.uid)}
