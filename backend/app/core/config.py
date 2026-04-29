@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     tom_hmac_secret: str = ""
     tom_source_code: str = "VIGO"
     
+    # Inventory Sync DB (external stock source — same PG server, different database)
+    inventory_sync_db_url: str = "postgresql://scraper:Scraper123%23@38.242.226.83/InventorySync"
+    
     def get_org_tokens(self) -> List[Dict[str, str]]:
         """
         Parse and return all organization tokens.

@@ -66,6 +66,12 @@ export default function Orders() {
     // Per-order print/regenerate loading state
     const [printingOrder, setPrintingOrder] = useState(null)  // { uid, action: 'print'|'regen' }
 
+    // AWB history state
+    const [awbHistory, setAwbHistory] = useState({}) // { [orderUid]: { loading: boolean, data: array } }
+    
+    // Regenerate modal state
+    const [regenerateModal, setRegenerateModal] = useState({ show: false, orderUid: null, packageCount: 1 })
+
     // Export state
     const [isExporting, setIsExporting] = useState(false)
 
@@ -209,7 +215,8 @@ export default function Orders() {
             return
         }
         setExpandedOrderUid(orderUid)
-        // Fetch AWBs if not cached
+        
+        // Fetch AWB items if not cached
         if (!awbCache[orderUid]) {
             setAwbLoading(prev => ({ ...prev, [orderUid]: true }))
             try {
@@ -219,6 +226,18 @@ export default function Orders() {
                 console.error('Failed to fetch AWBs:', err)
             } finally {
                 setAwbLoading(prev => ({ ...prev, [orderUid]: false }))
+            }
+        }
+        
+        // Fetch AWB Print History if not cached
+        if (!awbHistory[orderUid]) {
+            setAwbHistory(prev => ({ ...prev, [orderUid]: { loading: true, data: [] } }))
+            try {
+                const data = await printApi.getOrderAwbHistory(orderUid)
+                setAwbHistory(prev => ({ ...prev, [orderUid]: { loading: false, data } }))
+            } catch (err) {
+                console.error('Failed to fetch AWB history:', err)
+                setAwbHistory(prev => ({ ...prev, [orderUid]: { loading: false, data: [] } }))
             }
         }
     }
@@ -1289,23 +1308,47 @@ export default function Orders() {
                                                                 {/* ═══ Per-Order Print Actions ═══ */}
                                                                 <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
                                                                     <p className="text-[10px] text-zinc-400 mb-2 uppercase tracking-wider font-medium">Acțiuni AWB</p>
-                                                                    {(() => { const hasAwb = !!(order.awb_pdf_url || order.tracking_number); return (<>
+                                                                    {(() => { 
+                                                                        const hasAwb = !!(order.awb_pdf_url || order.tracking_number); 
+                                                                        const historyState = awbHistory[order.uid] || { loading: false, data: [] };
+                                                                        
+                                                                        return (<>
+                                                                        
+                                                                        {/* AWB History List */}
+                                                                        {historyState.data.length > 0 && (
+                                                                            <div className="mb-3">
+                                                                                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                                                                                    <FileText className="w-3.5 h-3.5" />
+                                                                                    Istoric AWB-uri ({historyState.data.length})
+                                                                                </p>
+                                                                                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                                                                    {historyState.data.map((batch, idx) => (
+                                                                                        <div key={idx} className="flex items-center justify-between bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded p-2 text-xs">
+                                                                                            <div>
+                                                                                                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                                                                                    {new Date(batch.created_at).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                                                                </p>
+                                                                                                <p className="text-zinc-500 dark:text-zinc-400">
+                                                                                                    {batch.status === 'regenerated' ? 'Regenerat Individual' : 'Generat în Batch'} 
+                                                                                                    <span className="opacity-50"> • {(batch.file_size / 1024).toFixed(0)} KB</span>
+                                                                                                </p>
+                                                                                            </div>
+                                                                                            <a
+                                                                                                href={printApi.getDownloadUrl(batch.batch_id)}
+                                                                                                target="_blank"
+                                                                                                rel="noopener noreferrer"
+                                                                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded font-medium transition-colors"
+                                                                                            >
+                                                                                                <Download className="w-3 h-3" />
+                                                                                                PDF
+                                                                                            </a>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                        
                                                                     <div className="flex gap-2">
-                                                                        {/* Download existing AWB (no status change, no regeneration) */}
-                                                                        <a
-                                                                            href={hasAwb ? printApi.getReprintOrderUrl(order.uid) : '#'}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
-                                                                                !hasAwb
-                                                                                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed pointer-events-none'
-                                                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                                                                            }`}
-                                                                            onClick={e => { if (!hasAwb) e.preventDefault() }}
-                                                                        >
-                                                                            <Download className="w-3.5 h-3.5" />
-                                                                            Descarcă AWB
-                                                                        </a>
 
                                                                         {/* Print AWB button */}
                                                                         <button
@@ -1353,29 +1396,17 @@ export default function Orders() {
                                                                         {/* Regenerate AWB button */}
                                                                         <button
                                                                             disabled={!hasAwb || (printingOrder?.uid === order.uid)}
-                                                                            onClick={async () => {
-                                                                                setPrintingOrder({ uid: order.uid, action: 'regen' })
-                                                                                try {
-                                                                                    const result = await printApi.regenerate(order.uid)
-                                                                                    // Trigger PDF download
-                                                                                    const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                                                                                    const link = document.createElement('a')
-                                                                                    link.href = downloadUrl
-                                                                                    link.download = `${order.order_number || order.uid}_regen.pdf`
-                                                                                    document.body.appendChild(link)
-                                                                                    link.click()
-                                                                                    document.body.removeChild(link)
-                                                                                } catch (err) {
-                                                                                    console.error('Regenerate failed:', err)
-                                                                                    alert('Eroare la regenerare: ' + (err.response?.data?.detail || err.message))
-                                                                                } finally {
-                                                                                    setPrintingOrder(null)
-                                                                                }
+                                                                            onClick={() => {
+                                                                                setRegenerateModal({
+                                                                                    show: true,
+                                                                                    orderUid: order.uid,
+                                                                                    packageCount: order.package_count || 1
+                                                                                })
                                                                             }}
-                                                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                                                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors border ${
                                                                                 !hasAwb
-                                                                                    ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed'
-                                                                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                                                    ? 'bg-transparent border-zinc-200 dark:border-zinc-700 text-zinc-400 cursor-not-allowed'
+                                                                                    : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
                                                                             }`}
                                                                         >
                                                                             {printingOrder?.uid === order.uid && printingOrder?.action === 'regen'
@@ -1383,7 +1414,7 @@ export default function Orders() {
                                                                                 : <RefreshCw className="w-3.5 h-3.5" />
                                                                             }
                                                                             {printingOrder?.uid === order.uid && printingOrder?.action === 'regen'
-                                                                                ? 'Se regenerează...'
+                                                                                ? 'Se regenera...'
                                                                                 : 'Regenerează AWB'
                                                                             }
                                                                         </button>
@@ -1447,6 +1478,83 @@ export default function Orders() {
                         </button>
                     </div>
                 </>
+            )}
+
+            {/* AWB Regeneration Modal */}
+            {regenerateModal.show && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                        <div className="flex justify-between items-center p-4 border-b border-zinc-100 dark:border-zinc-800">
+                            <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
+                                <RefreshCw className="w-4 h-4 text-indigo-500" />
+                                Regenerare AWB
+                            </h3>
+                            <button
+                                onClick={() => setRegenerateModal({ show: false, orderUid: null, packageCount: 1 })}
+                                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                                Va fi generat un nou AWB la curier, iar order-ul va fi actualizat cu ultimele date. AWB-urile anterioare rămân vizibile în istoric.
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                                    Număr colete
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    value={regenerateModal.packageCount}
+                                    onChange={(e) => setRegenerateModal(prev => ({ ...prev, packageCount: parseInt(e.target.value) || 1 }))}
+                                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
+                            <button
+                                onClick={() => setRegenerateModal({ show: false, orderUid: null, packageCount: 1 })}
+                                className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                            >
+                                Anulare
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const { orderUid, packageCount } = regenerateModal
+                                    setRegenerateModal({ show: false, orderUid: null, packageCount: 1 })
+                                    setPrintingOrder({ uid: orderUid, action: 'regen' })
+                                    try {
+                                        const result = await printApi.regenerate(orderUid, packageCount)
+                                        // Trigger PDF download
+                                        const downloadUrl = printApi.getDownloadUrl(result.batch_id)
+                                        const link = document.createElement('a')
+                                        link.href = downloadUrl
+                                        link.download = `${result.order_number || orderUid}_regen.pdf`
+                                        document.body.appendChild(link)
+                                        link.click()
+                                        document.body.removeChild(link)
+                                        
+                                        // Refresh history
+                                        const data = await printApi.getOrderAwbHistory(orderUid)
+                                        setAwbHistory(prev => ({ ...prev, [orderUid]: { loading: false, data } }))
+                                    } catch (err) {
+                                        console.error('Regenerate failed:', err)
+                                        alert('Eroare la regenerare: ' + (err.response?.data?.detail || err.message))
+                                    } finally {
+                                        setPrintingOrder(null)
+                                    }
+                                }}
+                                className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                                Confirmă
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )

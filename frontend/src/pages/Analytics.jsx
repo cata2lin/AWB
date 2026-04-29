@@ -163,6 +163,9 @@ export default function Analytics() {
     const [velocityTrendFilter, setVelocityTrendFilter] = useState('')
     const [velocityTrendMinPct, setVelocityTrendMinPct] = useState('')
     const [velocityTrendMaxPct, setVelocityTrendMaxPct] = useState('')
+    const [velocityMinDaysLeft, setVelocityMinDaysLeft] = useState('')
+    const [velocityMaxDaysLeft, setVelocityMaxDaysLeft] = useState('')
+    const [velocityTargetCoverage, setVelocityTargetCoverage] = useState(30)
     const [velocityExcludeStores, setVelocityExcludeStores] = useState([])
     const [velocitySkuInclude, setVelocitySkuInclude] = useState([]) // array of SKU strings to include
     const [velocitySkuExclude, setVelocitySkuExclude] = useState([]) // array of SKU strings to exclude
@@ -179,6 +182,7 @@ export default function Analytics() {
     // Product selection for PO generation
     const [velocitySelectedSkus, setVelocitySelectedSkus] = useState(new Set())
     const [restockDays, setRestockDays] = useState(30)
+    const [selectedVariantOrders, setSelectedVariantOrders] = useState(null)
 
 
     // SKU Profitability state
@@ -1970,7 +1974,7 @@ export default function Analytics() {
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Magazin</th>
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Data</th>
                                                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Curier</th>
-                                                                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Èšară</th>
+                                                                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Țară</th>
                                                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Total</th>
                                                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Ship. Taxat</th>
                                                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Cost Real</th>
@@ -2094,7 +2098,8 @@ export default function Analytics() {
                                 // Text search
                                 if (velocitySearch) {
                                     const q = velocitySearch.toLowerCase()
-                                    if (!p.sku.toLowerCase().includes(q) && !(p.product_name || '').toLowerCase().includes(q)) return false
+                                    const hasVariantMatch = p.by_variant?.some(v => v.sku.toLowerCase().includes(q))
+                                    if (!p.sku.toLowerCase().includes(q) && !(p.product_name || '').toLowerCase().includes(q) && !hasVariantMatch) return false
                                 }
                                 // Min/Max units
                                 if (velocityMaxUnits !== '' && p.gross_units > Number(velocityMaxUnits)) return false
@@ -2104,6 +2109,9 @@ export default function Analytics() {
                                 // Stock range
                                 if (velocityMinStock !== '' && (p.stock_available ?? 0) < Number(velocityMinStock)) return false
                                 if (velocityMaxStock !== '' && (p.stock_available ?? 0) > Number(velocityMaxStock)) return false
+                                // Days Left range
+                                if (velocityMinDaysLeft !== '' && (p.days_left_of_stock ?? 9999) < Number(velocityMinDaysLeft)) return false
+                                if (velocityMaxDaysLeft !== '' && (p.days_left_of_stock ?? 0) > Number(velocityMaxDaysLeft)) return false
                                 // Trend direction
                                 if (velocityTrendFilter && p.velocity_trend !== velocityTrendFilter) return false
                                 // Trend % range
@@ -2126,7 +2134,10 @@ export default function Analytics() {
                             })
                             : []
 
-                        const sortedProducts = [...filteredProducts].sort((a, b) => {
+                        const sortedProducts = [...filteredProducts].map(p => ({
+                            ...p,
+                            necesar_recomandat: Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - (p.stock_available || 0)))
+                        })).sort((a, b) => {
                             const col = velocitySort.col
                             const av = a[col] ?? -1, bv = b[col] ?? -1
                             if (typeof av === 'string') return velocitySort.dir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv)
@@ -2217,6 +2228,8 @@ export default function Analytics() {
                                 minUnits: velocityMinUnits, maxUnits: velocityMaxUnits,
                                 minRevenue: velocityMinRevenue, maxRevenue: velocityMaxRevenue,
                                 minStock: velocityMinStock, maxStock: velocityMaxStock,
+                                minDaysLeft: velocityMinDaysLeft, maxDaysLeft: velocityMaxDaysLeft,
+                                targetCoverage: velocityTargetCoverage,
                                 trendFilter: velocityTrendFilter,
                                 trendMinPct: velocityTrendMinPct, trendMaxPct: velocityTrendMaxPct,
                                 search: velocitySearch,
@@ -2241,6 +2254,9 @@ export default function Analytics() {
                             setVelocityMaxRevenue(view.maxRevenue ?? '')
                             setVelocityMinStock(view.minStock ?? '')
                             setVelocityMaxStock(view.maxStock ?? '')
+                            setVelocityMinDaysLeft(view.minDaysLeft ?? '')
+                            setVelocityMaxDaysLeft(view.maxDaysLeft ?? '')
+                            setVelocityTargetCoverage(view.targetCoverage ?? 30)
                             setVelocityTrendFilter(view.trendFilter ?? '')
                             setVelocityTrendMinPct(view.trendMinPct ?? '')
                             setVelocityTrendMaxPct(view.trendMaxPct ?? '')
@@ -2256,12 +2272,12 @@ export default function Analytics() {
                             if (activeViewName === name) setActiveViewName('')
                         }
                         const hasActiveFilters = velocityMaxUnits !== '' || velocityMinRevenue !== '' || velocityMaxRevenue !== '' ||
-                            velocityMinStock !== '' || velocityMaxStock !== '' || velocityTrendFilter !== '' ||
+                            velocityMinStock !== '' || velocityMaxStock !== '' || velocityMinDaysLeft !== '' || velocityMaxDaysLeft !== '' || velocityTrendFilter !== '' ||
                             velocityTrendMinPct !== '' || velocityTrendMaxPct !== '' || velocityExcludeStores.length > 0 ||
                             velocitySkuInclude.length > 0 || velocitySkuExclude.length > 0
                         const clearAdvancedFilters = () => {
                             setVelocityMaxUnits(''); setVelocityMinRevenue(''); setVelocityMaxRevenue('')
-                            setVelocityMinStock(''); setVelocityMaxStock(''); setVelocityTrendFilter('')
+                            setVelocityMinStock(''); setVelocityMaxStock(''); setVelocityMinDaysLeft(''); setVelocityMaxDaysLeft(''); setVelocityTrendFilter('')
                             setVelocityTrendMinPct(''); setVelocityTrendMaxPct(''); setVelocityExcludeStores([])
                             setVelocitySkuInclude([]); setVelocitySkuExclude([])
                             setActiveViewName('')
@@ -2406,6 +2422,18 @@ export default function Analytics() {
                                                     <input type="number" value={velocityTrendMaxPct} onChange={e => setVelocityTrendMaxPct(e.target.value)} placeholder="+∞" className={advInput} />
                                                 </div>
                                                 <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Min Zile Stoc</label>
+                                                    <input type="number" value={velocityMinDaysLeft} onChange={e => setVelocityMinDaysLeft(e.target.value)} placeholder="0" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Max Zile Stoc</label>
+                                                    <input type="number" value={velocityMaxDaysLeft} onChange={e => setVelocityMaxDaysLeft(e.target.value)} placeholder="∞" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-medium text-emerald-600 dark:text-emerald-400 mb-0.5">Zile Acoperire Țintă</label>
+                                                    <input type="number" value={velocityTargetCoverage} onChange={e => setVelocityTargetCoverage(Number(e.target.value))} placeholder="30" className={`${advInput} border-emerald-200 dark:border-emerald-800 focus:border-emerald-500`} />
+                                                </div>
+                                                <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Include SKU</label>
                                                     <button onClick={() => setShowSkuIncludePicker(true)}
                                                         className={`${advInput} w-28 text-left truncate flex items-center gap-1 ${velocitySkuInclude.length > 0 ? 'border-emerald-400 dark:border-emerald-600' : ''}`}>
@@ -2530,15 +2558,16 @@ export default function Analytics() {
                                                         />
                                                         <button
                                                             onClick={() => {
-                                                                const headers = ['SKU', 'Produs', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'COGS', 'Marjă', 'Marjă %', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
+                                                                const headers = ['SKU', 'Produs', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'Zile Stoc Rămas', 'Necesar Recomandat', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
                                                                 const rows = sortedProducts.map(p => [
                                                                     p.sku, p.product_name || '',
                                                                     p.gross_units || 0, p.gross_revenue || 0,
                                                                     p.units_sold, p.revenue,
-                                                                    p.cogs, p.margin, p.margin_pct,
                                                                     p.orders, p.gross_velocity || 0, p.velocity,
                                                                     p.velocity_change_pct,
                                                                     p.days_since_last_sale ?? '', p.stock_available || 0,
+                                                                    p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock,
+                                                                    Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - (p.stock_available || 0))),
                                                                     p.inventory_value || 0, p.revenue_share, p.delivery_rate
                                                                 ])
                                                                 const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -2578,13 +2607,13 @@ export default function Analytics() {
                                                                 <VSort col="units_sold" label="Net" tip="Unități livrate (doar DELIVERED)" />
                                                                 <VSort col="gross_revenue" label="Rev. Brut" tip="Revenue din toate comenzile" />
                                                                 <VSort col="revenue" label="Rev. Net" tip="Revenue doar din livrări" />
-                                                                <VSort col="margin" label="Marjă" tip="Revenue net − COGS" />
-                                                                <VSort col="margin_pct" label="Marjă %" />
                                                                 <VSort col="orders" label="Comenzi" />
                                                                 <VSort col="velocity" label="V. Net (u/zi)" tip="Unități livrate pe zi" />
                                                                 <VSort col="velocity_change_pct" label="Trend" tip="Schimbare față de perioada anterioară" />
                                                                 <VSort col="days_since_last_sale" label="Zile fără" tip="Zile de la ultima vânzare" />
                                                                 <VSort col="stock_available" label="Stoc" tip="Stoc disponibil curent" />
+                                                                <VSort col="days_left_of_stock" label="Zile Stoc Rămas" tip="Acoperire stoc curent bazat pe viteza de vânzare" />
+                                                                <VSort col="necesar_recomandat" label="Necesar Recomandat" tip="Zile Acoperire Țintă * Viteză - Stoc" />
                                                                 <VSort col="revenue_share" label="Share %" tip="% din revenue total" />
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900">Sparkline</th>
                                                             </tr>
@@ -2618,8 +2647,6 @@ export default function Analytics() {
                                                                         <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_revenue || 0).toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{p.revenue.toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
-                                                                        <td className={`px-3 py-2 text-sm font-medium ${p.margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{p.margin.toLocaleString()}</td>
-                                                                        <td className={`px-3 py-2 text-sm ${p.margin_pct >= 30 ? 'text-emerald-600' : p.margin_pct >= 10 ? 'text-amber-600' : 'text-red-600'}`}>{p.margin_pct}%</td>
                                                                         <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{p.orders}</td>
                                                                         <td className="px-3 py-2 text-sm font-bold text-emerald-600 dark:text-emerald-400">{p.velocity}</td>
                                                                         <td className="px-3 py-2">
@@ -2634,6 +2661,12 @@ export default function Analytics() {
                                                                             {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
                                                                         </td>
                                                                         <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>
+                                                                        <td className={`px-3 py-2 text-sm ${p.days_left_of_stock !== null && p.days_left_of_stock <= 7 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                                                                            {p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}
+                                                                        </td>
+                                                                        <td className={`px-3 py-2 text-sm font-medium ${p.necesar_recomandat > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-500'}`}>
+                                                                            {p.necesar_recomandat}
+                                                                        </td>
                                                                         <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
                                                                         <td className="px-3 py-2"><Sparkline data={p.daily_series} /></td>
                                                                     </tr>
@@ -2642,13 +2675,14 @@ export default function Analytics() {
                                                                         <tr className="bg-zinc-50 dark:bg-zinc-900/40">
                                                                             <td colSpan={16} className="px-4 py-4">
                                                                                 <div className="space-y-4">
-                                                                                    {/* Per-Store Breakdown */}
-                                                                                    {p.by_store && p.by_store.length > 0 && (
+                                                                                    {/* Per-Variant Breakdown */}
+                                                                                    {p.by_variant && p.by_variant.length > 0 && (
                                                                                         <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸª Per Magazin</h5>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📦 Variante & Magazine</h5>
                                                                                             <table className="w-full text-xs">
                                                                                                 <thead>
                                                                                                     <tr className="text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
+                                                                                                        <th className="text-left py-1.5 pr-3">Variantă (SKU)</th>
                                                                                                         <th className="text-left py-1.5 pr-3">Magazin</th>
                                                                                                         <th className="text-right py-1.5 px-2">Brut</th>
                                                                                                         <th className="text-right py-1.5 px-2">Net</th>
@@ -2660,18 +2694,25 @@ export default function Analytics() {
                                                                                                     </tr>
                                                                                                 </thead>
                                                                                                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                                                                                                    {p.by_store.map(st => (
-                                                                                                        <tr key={st.store_uid} className="hover:bg-zinc-100 dark:hover:bg-zinc-800/50">
+                                                                                                    {p.by_variant.map(var_data => (
+                                                                                                        <tr key={var_data.variant_key} 
+                                                                                                            className="hover:bg-zinc-100 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
+                                                                                                            onClick={() => setSelectedVariantOrders({ sku: var_data.sku, orders: var_data.orders_list || [] })}
+                                                                                                            title="Click pentru a vedea comenzile componente"
+                                                                                                        >
                                                                                                             <td className="py-1.5 pr-3">
-                                                                                                                <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{st.store_name}</span>
+                                                                                                                <span className="font-medium text-emerald-600 dark:text-emerald-400 border-b border-emerald-600/30 border-dashed">{var_data.sku}</span>
                                                                                                             </td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{st.gross_units.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 font-medium text-zinc-700 dark:text-zinc-300">{st.units_sold.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{st.gross_revenue.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-700 dark:text-zinc-300">{st.revenue.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-600 dark:text-zinc-400">{st.orders}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 font-bold text-emerald-600 dark:text-emerald-400">{st.velocity}</td>
-                                                                                                            <td className="py-1.5 pl-3"><Sparkline data={st.daily_series} /></td>
+                                                                                                            <td className="py-1.5 pr-3">
+                                                                                                                <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{var_data.store_name}</span>
+                                                                                                            </td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{var_data.gross_units.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 font-medium text-zinc-700 dark:text-zinc-300">{var_data.units_sold.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{var_data.gross_revenue.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-700 dark:text-zinc-300">{var_data.revenue.toLocaleString()}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-600 dark:text-zinc-400">{var_data.orders}</td>
+                                                                                                            <td className="text-right py-1.5 px-2 font-bold text-emerald-600 dark:text-emerald-400">{var_data.velocity}</td>
+                                                                                                            <td className="py-1.5 pl-3"><Sparkline data={var_data.daily_series} /></td>
                                                                                                         </tr>
                                                                                                     ))}
                                                                                                 </tbody>
@@ -2680,7 +2721,7 @@ export default function Analytics() {
                                                                                     )}
                                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                                         <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">ðŸŒ Per Èšară</h5>
+                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
                                                                                             <div className="space-y-1 text-xs">
                                                                                                 {p.by_country.map(bc => (
                                                                                                     <div key={bc.country} className="flex justify-between">
@@ -2695,7 +2736,8 @@ export default function Analytics() {
                                                                                             <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
                                                                                             <div className="space-y-1 text-xs">
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">COGS total</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.cogs.toLocaleString()} RON</span></div>
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Zile Stoc Rămas</span><span className={`font-medium ${p.days_left_of_stock <= 7 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-200'}`}>{p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}</span></div>
+                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Necesar Recomandat</span><span className="font-medium text-amber-600 dark:text-amber-400">{Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - (p.stock_available || 0)))}</span></div>
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.delivery_rate}%</span></div>
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.prev_velocity} u/zi</span></div>
                                                                                                 <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>
@@ -2721,23 +2763,26 @@ export default function Analytics() {
                                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 dark:bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl px-6 py-3 flex items-center gap-5">
                                                 <span className="text-white text-sm font-medium">{velocitySelectedSkus.size} produse selectate</span>
                                                 <div className="flex items-center gap-2">
-                                                    <label className="text-xs text-zinc-400">Zile restock:</label>
-                                                    <input type="number" value={restockDays} onChange={e => setRestockDays(Number(e.target.value) || 30)} min={1}
-                                                        className="w-16 px-2 py-1 text-sm rounded-lg border border-zinc-600 bg-zinc-800 dark:bg-zinc-700 text-white text-center" />
+                                                    <label className="text-xs text-zinc-400">Zile acoperire:</label>
+                                                    <span className="text-sm text-emerald-400 font-bold">{velocityTargetCoverage}</span>
                                                 </div>
                                                 <button onClick={() => {
                                                     const items = sortedProducts
                                                         .filter(p => velocitySelectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
-                                                        .map(p => ({
-                                                            sku: p.sku,
-                                                            product_name: p.product_name || p.sku,
-                                                            unit_cost: p.unit_cost || 0,
-                                                            quantity: Math.max(1, Math.ceil((p.velocity || 0) * restockDays) - (p.stock_available || 0)),
-                                                            velocity: p.velocity,
-                                                            stock: p.stock_available,
-                                                        }))
+                                                        .map(p => {
+                                                            const necesarRecomandat = Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - (p.stock_available || 0)))
+                                                            return {
+                                                                sku: p.sku,
+                                                                product_name: p.product_name || p.sku,
+                                                                unit_cost: p.unit_cost || 0,
+                                                                quantity: necesarRecomandat > 0 ? necesarRecomandat : Math.max(1, Math.ceil((p.velocity || 0) * velocityTargetCoverage)),
+                                                                velocity: p.velocity,
+                                                                stock: p.stock_available,
+                                                                days_left: p.days_left_of_stock,
+                                                            }
+                                                        })
                                                     sessionStorage.setItem('po_prefill', JSON.stringify(items))
-                                                    window.location.href = '/purchase-orders?action=create&from=velocity'
+                                                    window.location.href = '/purchase-orders/new'
                                                 }}
                                                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5">
                                                     <Plus className="w-4 h-4" /> Generează PO
@@ -3504,6 +3549,57 @@ export default function Analytics() {
                 </>
             )
             }
+        {selectedVariantOrders && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col border border-zinc-200 dark:border-zinc-800">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                        <h2 className="text-lg font-bold text-zinc-800 dark:text-white flex items-center gap-2">
+                            <Package className="w-5 h-5 text-emerald-500" />
+                            Comenzi pentru SKU: {selectedVariantOrders.sku}
+                        </h2>
+                        <button onClick={() => setSelectedVariantOrders(null)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors text-zinc-500">
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-auto p-6">
+                        {selectedVariantOrders.orders.length === 0 ? (
+                            <div className="text-center py-12 text-zinc-500">Nicio comandă găsită pentru acest SKU.</div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead className="bg-zinc-50 dark:bg-zinc-800/50 sticky top-0">
+                                    <tr className="text-zinc-500 dark:text-zinc-400">
+                                        <th className="text-left px-4 py-3 font-semibold">Comandă</th>
+                                        <th className="text-left px-4 py-3 font-semibold">Dată</th>
+                                        <th className="text-left px-4 py-3 font-semibold">Magazin</th>
+                                        <th className="text-left px-4 py-3 font-semibold">Status</th>
+                                        <th className="text-left px-4 py-3 font-semibold">Produs Line Item</th>
+                                        <th className="text-right px-4 py-3 font-semibold">Cant.</th>
+                                        <th className="text-right px-4 py-3 font-semibold">Preț</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    {selectedVariantOrders.orders.map((o, i) => (
+                                        <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                                            <td className="px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{o.order_number}</td>
+                                            <td className="px-4 py-2.5 text-zinc-600 dark:text-zinc-400">{o.date ? o.date.slice(0, 16).replace('T', ' ') : '—'}</td>
+                                            <td className="px-4 py-2.5 text-zinc-600 dark:text-zinc-400">{o.store_name}</td>
+                                            <td className="px-4 py-2.5">
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                                                    {o.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={o.item_name}>{o.item_name}</td>
+                                            <td className="px-4 py-2.5 text-right font-medium text-zinc-900 dark:text-zinc-100">{o.qty}</td>
+                                            <td className="px-4 py-2.5 text-right text-zinc-600 dark:text-zinc-400">{o.price.toLocaleString()} RON</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
         </div >
     )
 }

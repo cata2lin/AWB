@@ -20,7 +20,10 @@ async def get_analytics(
 ):
     """Get analytics data for the dashboard."""
     
-    start_date = datetime.utcnow() - timedelta(days=days)
+    from app.core.timezone import romania_now, UTC_TZ
+    now_buc = romania_now()
+    start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
     
     # Total print batches
     batch_count_result = await db.execute(

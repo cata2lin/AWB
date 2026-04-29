@@ -54,7 +54,10 @@ async def get_sku_profitability(
         conditions.append(Order.frisbo_created_at >= date_str_to_utc_start(date_from))
         conditions.append(Order.frisbo_created_at <= date_str_to_utc_end(date_to))
     elif days:
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        from app.core.timezone import romania_now, UTC_TZ
+        now_buc = romania_now()
+        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+        cutoff = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
         conditions.append(Order.frisbo_created_at >= cutoff)
 
     # Determine date range for marketing cost query
@@ -64,11 +67,11 @@ async def get_sku_profitability(
     elif days:
         now = romania_today()
         mkt_date_to = now.strftime('%Y-%m')
-        mkt_date_from = (datetime.combine(now, datetime.min.time()) - timedelta(days=days)).strftime('%Y-%m')
+        mkt_date_from = (datetime.combine(now, datetime.min.time()) - timedelta(days=max(0, days - 1))).strftime('%Y-%m')
     else:
         now = romania_today()
         mkt_date_to = now.strftime('%Y-%m')
-        mkt_date_from = (datetime.combine(now, datetime.min.time()) - timedelta(days=30)).strftime('%Y-%m')
+        mkt_date_from = (datetime.combine(now, datetime.min.time()) - timedelta(days=max(0, 30 - 1))).strftime('%Y-%m')
 
     # --- Fetch data ---
     query = select(Order)
@@ -119,7 +122,10 @@ async def get_sku_profitability(
     config = await get_or_create_config(db)
 
     # --- Transport cost fallback caches ---
-    cutoff_30d = datetime.utcnow() - timedelta(days=30)
+    from app.core.timezone import romania_now, UTC_TZ
+    now_buc = romania_now()
+    start_buc_30d = (now_buc - timedelta(days=max(0, 30 - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff_30d = start_buc_30d.astimezone(UTC_TZ).replace(tzinfo=None)
     fallback_result = await db.execute(
         select(Order)
         .where(and_(

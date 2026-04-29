@@ -563,9 +563,11 @@ async def print_single_order(order_uid: str, db: AsyncSession = Depends(get_db))
         "order_number": order.order_number,
     }
 
+class RegenerateRequest(BaseModel):
+    parcel_count: Optional[int] = None
 
 @router.post("/regenerate/{order_uid}")
-async def regenerate_order_awb(order_uid: str, db: AsyncSession = Depends(get_db)):
+async def regenerate_order_awb(order_uid: str, db: AsyncSession = Depends(get_db), body: Optional[RegenerateRequest] = None):
     """
     Regenerate an order's AWB — creates a brand new label with the courier.
     
@@ -595,7 +597,25 @@ async def regenerate_order_awb(order_uid: str, db: AsyncSession = Depends(get_db
     for token_cfg in org_tokens:
         try_client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
         try:
-            regen_response = await try_client.regenerate_shipment(order.uid, parcel_count=order.package_count or 1)
+            # Pre-sync: fetch live order to ensure we have the latest data before regenerating
+            try:
+                raw_order = await try_client.get_order(order.uid)
+                if isinstance(raw_order, dict) and "data" in raw_order:
+                    raw_data = raw_order["data"]
+                    if isinstance(raw_data, dict) and "order" in raw_data:
+                        raw_data = raw_data["order"]
+                    parsed = parse_frisbo_order(raw_data)
+                    order.shipping_address = parsed.get("shipping_address") or order.shipping_address
+                    order.item_count = parsed.get("item_count") or order.item_count
+                    order.package_count = parsed.get("package_count") or order.package_count
+                    await db.commit()
+                    logger.info(f"Pre-synced order {order.uid} before regeneration")
+            except Exception as e:
+                logger.warning(f"Failed to pre-sync order {order.uid} before regeneration: {e}")
+
+            # Use requested parcel count or fallback to order's package count or 1
+            parcel_count = (body.parcel_count if body and body.parcel_count is not None else order.package_count) or 1
+            regen_response = await try_client.regenerate_shipment(order.uid, parcel_count=parcel_count)
             logger.info(f"regenerate_shipment [{token_cfg.get('name')}] response: {str(regen_response)[:300]}")
             client = try_client
             break
@@ -659,6 +679,16 @@ async def regenerate_order_awb(order_uid: str, db: AsyncSession = Depends(get_db
         status="regenerated"
     )
     db.add(batch)
+    await db.flush()  # To get batch.id
+    
+    # Create PrintBatchItem to link the batch to the order for AWB history
+    batch_item = PrintBatchItem(
+        batch_id=batch.id,
+        order_uid=order.uid,
+        group_name="Regenerated",
+        group_position=1
+    )
+    db.add(batch_item)
     await db.commit()
     
     return {
@@ -833,6 +863,28 @@ async def get_batch_details(batch_id: int, db: AsyncSession = Depends(get_db)):
             for item in items
         ]
     }
+
+@router.get("/history/order/{order_uid}")
+async def get_order_awb_history(order_uid: str, db: AsyncSession = Depends(get_db)):
+    """Get the full history of generated AWBs for a specific order."""
+    result = await db.execute(
+        select(PrintBatch)
+        .join(PrintBatchItem, PrintBatch.id == PrintBatchItem.batch_id)
+        .where(PrintBatchItem.order_uid == order_uid)
+        .order_by(PrintBatch.created_at.desc())
+    )
+    batches = result.scalars().all()
+    
+    return [
+        {
+            "batch_id": batch.id,
+            "batch_number": batch.batch_number,
+            "status": batch.status,
+            "created_at": batch.created_at.isoformat(),
+            "file_size": batch.file_size
+        }
+        for batch in batches
+    ]
 
 
 @router.get("/reprint/{batch_id}")

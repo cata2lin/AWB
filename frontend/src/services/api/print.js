@@ -19,9 +19,15 @@ export const printApi = {
         const { data } = await api.post(`/print/single/${orderUid}`)
         return data
     },
-    /** Re-download AWB without changing status — for reprinting */
-    regenerate: async (orderUid) => {
-        const { data } = await api.post(`/print/regenerate/${orderUid}`)
+    /** Regenerate AWB with Courier — generates new label and tracking number */
+    regenerate: async (orderUid, parcelCount = null) => {
+        const payload = parcelCount ? { parcel_count: parcelCount } : {}
+        const { data } = await api.post(`/print/regenerate/${orderUid}`, payload)
+        return data
+    },
+    /** Fetch AWB generation history for a specific order */
+    getOrderAwbHistory: async (orderUid) => {
+        const { data } = await api.get(`/print/history/order/${orderUid}`)
         return data
     },
     getDownloadUrl: (batchId) => {

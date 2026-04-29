@@ -62,11 +62,17 @@ async def get_sku_risk(
             dt_from = date_str_to_utc_start(date_from)
             dt_to = date_str_to_utc_end(date_to)
         except ValueError:
-            dt_from = datetime.utcnow() - timedelta(days=days)
+            from app.core.timezone import romania_now, UTC_TZ
+            now_buc = romania_now()
+            start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+            dt_from = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
             dt_to = datetime.utcnow()
     else:
+        from app.core.timezone import romania_now, UTC_TZ
+        now_buc = romania_now()
+        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+        dt_from = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
         dt_to = datetime.utcnow()
-        dt_from = dt_to - timedelta(days=days)
 
     # ── 2. Query orders ───────────────────────────────────────────────────
     query = select(Order).where(

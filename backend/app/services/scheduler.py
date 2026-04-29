@@ -49,6 +49,20 @@ def setup_sync_jobs():
     )
     logger.info("📅 Scheduled 45-day window sync every 6 hours")
 
+    # ── Job 3: Inventory stock sync (every 15 minutes) ──
+    # Pulls real stock from InventorySync external database
+    # and updates products.stock_available in AWBprint
+    from app.services.stock_sync_service import sync_stock_from_inventory
+    scheduler.add_job(
+        sync_stock_from_inventory,
+        trigger=IntervalTrigger(minutes=15),
+        id="inventory_stock_sync",
+        name="Inventory stock sync (InventorySync DB)",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("📅 Scheduled inventory stock sync every 15 minutes")
+
 
 # Setup jobs when module loads
 setup_sync_jobs()

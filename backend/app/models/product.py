@@ -26,9 +26,9 @@ class Product(Base):
     title_1: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Product name
     title_2: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Variant name
     sku: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    barcode: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    barcode: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     hs_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Harmonized system code
-    state: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="active")  # active/draft/archived/deleted/replaced
+    state: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="active", index=True)  # active/draft/archived/deleted/replaced
     
     # Dimensions
     weight: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # grams

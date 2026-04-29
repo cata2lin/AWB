@@ -108,7 +108,10 @@ async def get_overall_profitability(
         conditions.append(Order.frisbo_created_at >= date_str_to_utc_start(date_from))
         conditions.append(Order.frisbo_created_at <= date_str_to_utc_end(date_to))
     elif days:
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        from app.core.timezone import romania_now, UTC_TZ
+        now_buc = romania_now()
+        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+        cutoff = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
         conditions.append(Order.frisbo_created_at >= cutoff)
     
     # Build query for all orders matching conditions
@@ -153,7 +156,10 @@ async def get_overall_profitability(
     store_avg_transport = {}
     
     # Build SKU hash fallback: query delivered orders with transport_cost set
-    cutoff_30d = datetime.utcnow() - timedelta(days=30)
+    from app.core.timezone import romania_now, UTC_TZ
+    now_buc = romania_now()
+    start_buc_30d = (now_buc - timedelta(days=max(0, 30 - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff_30d = start_buc_30d.astimezone(UTC_TZ).replace(tzinfo=None)
     fallback_result = await db.execute(
         select(Order)
         .where(and_(
@@ -490,10 +496,10 @@ async def get_overall_profitability(
             mkt_date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
         elif days:
             mkt_date_to = romania_today()
-            mkt_date_from = mkt_date_to - timedelta(days=days)
+            mkt_date_from = mkt_date_to - timedelta(days=max(0, days - 1))
         else:
             mkt_date_to = romania_today()
-            mkt_date_from = mkt_date_to - timedelta(days=30)
+            mkt_date_from = mkt_date_to - timedelta(days=max(0, 30 - 1))
         
         marketing_costs = await get_marketing_costs(mkt_date_from, mkt_date_to, db=db)
         marketing_total = marketing_costs.get('__total__', {'facebook': 0, 'tiktok': 0, 'google': 0, 'total': 0})

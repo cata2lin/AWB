@@ -14,7 +14,7 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     uid: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     order_number: Mapped[str] = mapped_column(String(100), index=True)
-    store_uid: Mapped[str] = mapped_column(String(100), ForeignKey("stores.uid"))
+    store_uid: Mapped[str] = mapped_column(String(100), ForeignKey("stores.uid"), index=True)
     
     # Order details
     customer_name: Mapped[str] = mapped_column(String(255))
@@ -58,7 +58,7 @@ class Order(Base):
     currency: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default="RON")
     
     # Timestamps
-    frisbo_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    frisbo_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     fulfilled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # When order was fulfilled
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

@@ -225,3 +225,23 @@ async def trigger_product_sync(
         "message": "Product sync triggered successfully",
         "sync_id": sync_id,
     }
+
+
+@router.post("/stock-from-inventory")
+async def trigger_inventory_stock_sync(background_tasks: BackgroundTasks):
+    """
+    Manually trigger stock sync from the InventorySync external database.
+
+    Reads stock levels from InventorySync (source of truth for Shopify stock)
+    and updates products.stock_available in AWBprint by barcode/SKU match.
+    """
+    from app.services.stock_sync_service import sync_stock_from_inventory
+    from dataclasses import asdict
+
+    result = await sync_stock_from_inventory()
+
+    return {
+        "message": "Inventory stock sync completed",
+        **asdict(result),
+    }
+

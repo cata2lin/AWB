@@ -21,35 +21,34 @@ export default function PurchaseOrders() {
 
   // Sync URL → state on mount and URL changes
   useEffect(() => {
-    // Handle velocity prefill: ?action=create&from=velocity
-    const action = searchParams.get('action')
-    const from = searchParams.get('from')
-    if (action === 'create' && from === 'velocity' && h.mode !== 'create') {
-      h.startCreate()
-      try {
-        const raw = sessionStorage.getItem('po_prefill')
-        if (raw) {
-          const items = JSON.parse(raw)
-          if (Array.isArray(items) && items.length > 0) {
-            // Add velocity items to the create form
-            h.addProducts(items.map(item => ({
-              sku: item.sku,
-              product_name: item.product_name,
-              unit_cost: item.unit_cost,
-              suggested_qty: item.quantity,
-            })))
+    if (poNumber === 'new') {
+      if (h.mode !== 'create') {
+        h.startCreate()
+        
+        // Check for prefill data immediately when starting create mode
+        try {
+          const raw = sessionStorage.getItem('po_prefill')
+          if (raw) {
+            const items = JSON.parse(raw)
+            if (Array.isArray(items) && items.length > 0) {
+              // Add velocity items to the create form
+              // We need a slight delay to ensure startCreate's EMPTY_FORM is applied first
+              setTimeout(() => {
+                h.addProducts(items.map(item => ({
+                  sku: item.sku,
+                  product_name: item.product_name,
+                  unit_cost: item.unit_cost,
+                  suggested_qty: item.quantity,
+                })))
+              }, 50)
+            }
+            sessionStorage.removeItem('po_prefill')
           }
-          sessionStorage.removeItem('po_prefill')
-        }
-      } catch (e) { console.error('Prefill parse error:', e) }
-      navigate('/purchase-orders/new', { replace: true })
+        } catch (e) { console.error('Prefill parse error:', e) }
+      }
       return
     }
 
-    if (poNumber === 'new') {
-      if (h.mode !== 'create') h.startCreate()
-      return
-    }
     if (poNumber) {
       // Find the PO by po_number and select it
       const po = h.orders.find(o => o.po_number === poNumber)

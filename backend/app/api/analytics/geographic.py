@@ -39,7 +39,10 @@ async def get_geographic_stats(
         conditions.append(Order.frisbo_created_at >= date_str_to_utc_start(date_from))
         conditions.append(Order.frisbo_created_at <= date_str_to_utc_end(date_to))
     elif days:
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        from app.core.timezone import romania_now, UTC_TZ
+        now_buc = romania_now()
+        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+        cutoff = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
         conditions.append(Order.frisbo_created_at >= cutoff)
     
     # Query all orders with shipping addresses
