@@ -2,11 +2,14 @@
 PDF Service for generating print batches.
 
 Handles:
-- Downloading AWB PDFs from Frisbo
+- Downloading AWB PDFs from Frisbo (concurrent, connection-pooled)
 - Generating A6 separator pages
 - Merging PDFs into a single batch
 """
 import os
+import asyncio
+import logging
+import time
 from io import BytesIO
 from typing import List, Dict, Any, Tuple
 
@@ -17,7 +20,11 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 
 from app.core.config import settings
-from app.services.frisbo_client import frisbo_client
+
+logger = logging.getLogger(__name__)
+
+# Concurrency limit for parallel AWB downloads
+MAX_CONCURRENT_DOWNLOADS = 10
 
 
 class PDFService:
@@ -27,37 +34,102 @@ class PDFService:
         self.storage_path = settings.pdf_storage_path
         os.makedirs(self.storage_path, exist_ok=True)
     
+    async def _download_awb(
+        self,
+        client: "httpx.AsyncClient",
+        order: Any,
+        semaphore: asyncio.Semaphore,
+        base_url: str,
+        auth_headers: Dict[str, str],
+    ) -> Tuple[Any, bytes]:
+        """
+        Download a single AWB PDF with concurrency control.
+        
+        Returns:
+            Tuple of (order, pdf_bytes). pdf_bytes is None on failure.
+        """
+        async with semaphore:
+            url = order.awb_pdf_url
+            # Only add auth headers for Frisbo API URLs, not S3 pre-signed
+            headers = auth_headers if base_url in url else {}
+            try:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                return (order, resp.content)
+            except Exception as e:
+                logger.warning(f"[PDF] AWB download failed for {order.order_number}: {e}")
+                return (order, None)
+    
     async def generate_batch_pdf(
         self,
         groups: List[Dict[str, Any]],
         batch_number: str
     ) -> Tuple[str, int]:
         """
-        Generate a merged batch PDF.
+        Generate a merged batch PDF with concurrent AWB downloads.
         
-        Args:
-            groups: List of groups with orders
-            batch_number: Unique batch identifier
-            
-        Returns:
-            Tuple of (file_path, file_size)
+        Downloads all AWBs in parallel (up to MAX_CONCURRENT_DOWNLOADS at once),
+        then merges them in the correct group/order sequence.
         """
-        writer = PdfWriter()
+        import httpx
+        from app.services.frisbo_client import frisbo_client
         
+        t0 = time.time()
+        
+        # Flatten all orders while preserving group/position for merge order
+        all_orders = []
         for group in groups:
-            # Download and append each order's AWB (no separator sheets)
             for order in group["orders"]:
                 if order.awb_pdf_url:
+                    all_orders.append(order)
+        
+        logger.info(f"[PDF] Starting concurrent download of {len(all_orders)} AWBs (max {MAX_CONCURRENT_DOWNLOADS} parallel)")
+        
+        # Download all AWBs concurrently with a shared client (connection pooling)
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+        base_url = frisbo_client.base_url
+        auth_headers = frisbo_client._get_headers()
+        
+        async with httpx.AsyncClient(timeout=60.0, limits=httpx.Limits(max_connections=MAX_CONCURRENT_DOWNLOADS)) as client:
+            tasks = [
+                self._download_awb(client, order, semaphore, base_url, auth_headers)
+                for order in all_orders
+            ]
+            results = await asyncio.gather(*tasks)
+        
+        # Build lookup: order uid → pdf bytes
+        pdf_map = {order.uid: pdf_bytes for order, pdf_bytes in results}
+        
+        t_download = time.time()
+        downloaded = sum(1 for _, b in results if b is not None)
+        failed = sum(1 for _, b in results if b is None)
+        logger.info(
+            f"[PDF] Downloads complete: {downloaded} OK, {failed} failed "
+            f"({t_download - t0:.1f}s)"
+        )
+        
+        # Merge PDFs in the original group/order sequence
+        writer = PdfWriter()
+        for group in groups:
+            for order in group["orders"]:
+                pdf_bytes = pdf_map.get(order.uid)
+                if pdf_bytes:
                     try:
-                        awb_pdf = await frisbo_client.download_awb_pdf(order.awb_pdf_url)
-                        writer.append(PdfReader(BytesIO(awb_pdf)))
+                        writer.append(PdfReader(BytesIO(pdf_bytes)))
                     except Exception as e:
-                        # If download fails, add an error page instead
+                        logger.warning(f"[PDF] Failed to parse PDF for {order.order_number}: {e}")
                         error_pdf = self._generate_error_page(
                             order_number=order.order_number,
-                            error=str(e)
+                            error=f"PDF parse error: {str(e)[:80]}"
                         )
                         writer.append(PdfReader(BytesIO(error_pdf)))
+                else:
+                    # Download failed — insert error page
+                    error_pdf = self._generate_error_page(
+                        order_number=order.order_number,
+                        error="AWB download failed"
+                    )
+                    writer.append(PdfReader(BytesIO(error_pdf)))
         
         # Write to file
         file_path = os.path.join(self.storage_path, f"{batch_number}.pdf")
@@ -68,6 +140,13 @@ class PDFService:
         
         with open(file_path, "wb") as f:
             f.write(pdf_bytes)
+        
+        t_total = time.time()
+        logger.info(
+            f"[PDF] Batch {batch_number} complete: {len(all_orders)} AWBs, "
+            f"{len(pdf_bytes)/1024:.0f} KB, "
+            f"download={t_download - t0:.1f}s merge={t_total - t_download:.1f}s total={t_total - t0:.1f}s"
+        )
         
         return file_path, len(pdf_bytes)
     
