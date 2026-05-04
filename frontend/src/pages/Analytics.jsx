@@ -18,7 +18,8 @@ const authFetch = (url, opts = {}) => {
         },
     })
 }
-import { useState, useEffect, useMemo, Fragment } from 'react'
+import { useState, useEffect, useMemo, Fragment, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
     Globe2, TrendingUp, Package, Truck, XCircle, RotateCcw,
     ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
@@ -27,8 +28,9 @@ import {
     Eye, EyeOff, Settings2, Download, ArrowUpDown, Bookmark, X
 } from 'lucide-react'
 import { exportPnlToExcel } from '../utils/pnlExport'
-import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi } from '../services/api'
+import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi, purchaseOrdersMgmtApi } from '../services/api'
 import ProductsTab from '../components/ProductsTab'
+import VelocityRow from '../components/VelocityRow'
 import PrintHistoryTab from '../components/PrintHistoryTab'
 
 import MultiSelectFilter from '../components/MultiSelectFilter'
@@ -63,7 +65,26 @@ export default function Analytics() {
     const [comparisonData, setComparisonData] = useState(null)
     const [printAnalytics, setPrintAnalytics] = useState(null)
     const [isLoading, setIsLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState('deliverability')
+    const [searchParams, setSearchParams] = useSearchParams()
+    const [activeTab, _setActiveTab] = useState(() => searchParams.get('tab') || 'deliverability')
+    const setActiveTab = useCallback((tab) => {
+        _setActiveTab(tab)
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev)
+            if (tab === 'deliverability') next.delete('tab')
+            else next.set('tab', tab)
+            return next
+        }, { replace: true })
+    }, [setSearchParams])
+
+    // Sync tab from URL on back/forward navigation
+    useEffect(() => {
+        const urlTab = searchParams.get('tab') || 'deliverability'
+        _setActiveTab(urlTab)
+    }, [searchParams])
+
+    // Helper: returns true for all columns (column visibility is always on)
+    const isColVisible = useCallback(() => true, [])
     const [showComparison, setShowComparison] = useState(false)
 
     // SKU Costs state
@@ -154,6 +175,31 @@ export default function Analytics() {
     const [expandedStoreUid, setExpandedStoreUid] = useState(null)
     const [alertSearch, setAlertSearch] = useState('')
     const [hoveredTrendBar, setHoveredTrendBar] = useState(null)
+    
+    // Draft POs state
+    const [draftPOs, setDraftPOs] = useState([])
+    const [selectedDraftPo, setSelectedDraftPo] = useState('')
+
+    useEffect(() => {
+        if (activeTab === 'salesVelocity') {
+            purchaseOrdersMgmtApi.list({ status: 'draft' })
+                .then(res => setDraftPOs(res.orders || []))
+                .catch(err => console.error('Failed to fetch draft POs', err))
+        }
+    }, [activeTab])
+
+    const handleToggleSelect = useCallback((rowKey, checked) => {
+        setVelocitySelectedSkus(prev => {
+            const next = new Set(prev)
+            if (checked) next.add(rowKey)
+            else next.delete(rowKey)
+            return next
+        })
+    }, [])
+
+    const handleToggleExpand = useCallback((rowKey) => {
+        setVelocityExpanded(prev => prev === rowKey ? null : rowKey)
+    }, [])
     // Advanced velocity filters
     const [velocityMaxUnits, setVelocityMaxUnits] = useState('')
     const [velocityMinRevenue, setVelocityMinRevenue] = useState('')
@@ -606,8 +652,9 @@ export default function Analytics() {
 
             {/* Tab Navigation */}
             <div className="flex flex-wrap gap-1 bg-zinc-100 dark:bg-zinc-800/60 p-1.5 rounded-xl w-fit border border-zinc-200 dark:border-zinc-700/50">
-                <button
-                    onClick={() => setActiveTab('deliverability')}
+                <a
+                    href="/analytics"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('deliverability') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'deliverability'
                         ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -615,9 +662,10 @@ export default function Analytics() {
                 >
                     <TrendingUp className="w-4 h-4 inline mr-2" />
                     Livrabilitate
-                </button>
-                <button
-                    onClick={() => setActiveTab('profitability')}
+                </a>
+                <a
+                    href="/analytics?tab=profitability"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('profitability') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'profitability'
                         ? 'bg-white dark:bg-zinc-700 text-green-600 dark:text-green-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -625,9 +673,10 @@ export default function Analytics() {
                 >
                     <DollarSign className="w-4 h-4 inline mr-2" />
                     Profitabilitate
-                </button>
-                <button
-                    onClick={() => setActiveTab('pnlDetailed')}
+                </a>
+                <a
+                    href="/analytics?tab=pnlDetailed"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('pnlDetailed') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'pnlDetailed'
                         ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -635,9 +684,10 @@ export default function Analytics() {
                 >
                     <BarChart3 className="w-4 h-4 inline mr-2" />
                     P&L Detaliat
-                </button>
-                <button
-                    onClick={() => setActiveTab('skuCosts')}
+                </a>
+                <a
+                    href="/analytics?tab=skuCosts"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('skuCosts') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'skuCosts'
                         ? 'bg-white dark:bg-zinc-700 text-purple-600 dark:text-purple-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -645,10 +695,11 @@ export default function Analytics() {
                 >
                     <Tag className="w-4 h-4 inline mr-2" />
                     Costuri SKU
-                </button>
+                </a>
 
-                <button
-                    onClick={() => setActiveTab('print')}
+                <a
+                    href="/analytics?tab=print"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('print') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'print'
                         ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -656,10 +707,11 @@ export default function Analytics() {
                 >
                     <Printer className="w-4 h-4 inline mr-2" />
                     Print Analytics
-                </button>
+                </a>
 
-                <button
-                    onClick={() => setActiveTab('skuRisk')}
+                <a
+                    href="/analytics?tab=skuRisk"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('skuRisk') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'skuRisk'
                         ? 'bg-white dark:bg-zinc-700 text-red-600 dark:text-red-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -667,9 +719,10 @@ export default function Analytics() {
                 >
                     <AlertTriangle className="w-4 h-4 inline mr-2" />
                     SKU Risk
-                </button>
-                <button
-                    onClick={() => setActiveTab('salesVelocity')}
+                </a>
+                <a
+                    href="/analytics?tab=salesVelocity"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('salesVelocity') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'salesVelocity'
                         ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -677,9 +730,10 @@ export default function Analytics() {
                 >
                     <TrendingUp className="w-4 h-4 inline mr-2" />
                     Viteză Vânzări
-                </button>
-                <button
-                    onClick={() => setActiveTab('skuProfit')}
+                </a>
+                <a
+                    href="/analytics?tab=skuProfit"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('skuProfit') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'skuProfit'
                         ? 'bg-white dark:bg-zinc-700 text-amber-600 dark:text-amber-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -687,9 +741,10 @@ export default function Analytics() {
                 >
                     <PieChart className="w-4 h-4 inline mr-2" />
                     Profitabilitate SKU
-                </button>
-                <button
-                    onClick={() => setActiveTab('products')}
+                </a>
+                <a
+                    href="/analytics?tab=products"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('products') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'products'
                         ? 'bg-white dark:bg-zinc-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
@@ -697,7 +752,7 @@ export default function Analytics() {
                 >
                     <Package className="w-4 h-4 inline mr-2" />
                     Produse
-                </button>
+                </a>
             </div>
 
             {/* Loading State */}
@@ -2624,131 +2679,26 @@ export default function Analytics() {
                                                             )}
                                                             {sortedProducts.map((p, i) => {
                                                                 const rowKey = `${p.sku}::${p.store_uid || ''}`
+                                                                const isSelected = velocitySelectedSkus.has(rowKey)
+                                                                const isExpanded = velocityExpanded === rowKey
+                                                                
                                                                 return (
-                                                                <Fragment key={rowKey}>
-                                                                    <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${velocityExpanded === rowKey ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''} ${velocitySelectedSkus.has(rowKey) ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''}`}
-                                                                        onClick={() => setVelocityExpanded(velocityExpanded === rowKey ? null : rowKey)}>
-                                                                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                                                                            <input type="checkbox" checked={velocitySelectedSkus.has(rowKey)}
-                                                                                onChange={e => {
-                                                                                    const next = new Set(velocitySelectedSkus)
-                                                                                    e.target.checked ? next.add(rowKey) : next.delete(rowKey)
-                                                                                    setVelocitySelectedSkus(next)
-                                                                                }}
-                                                                                className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-emerald-600 focus:ring-emerald-500" />
-                                                                        </td>
-                                                                        <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
-                                                                        <td className="px-3 py-2">
-                                                                            <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
-                                                                            {p.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.product_name}</div>}
-                                                                        </td>
-
-                                                                        <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_units || 0).toLocaleString()}</td>
-                                                                        <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{p.units_sold.toLocaleString()}</td>
-                                                                        <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_revenue || 0).toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
-                                                                        <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{p.revenue.toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
-                                                                        <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{p.orders}</td>
-                                                                        <td className="px-3 py-2 text-sm font-bold text-emerald-600 dark:text-emerald-400">{p.velocity}</td>
-                                                                        <td className="px-3 py-2">
-                                                                            <div className="flex items-center gap-1">
-                                                                                {trendIcon(p.velocity_trend)}
-                                                                                <span className={`text-xs font-medium ${p.velocity_change_pct > 0 ? 'text-emerald-600' : p.velocity_change_pct < 0 ? 'text-red-600' : 'text-zinc-400'}`}>
-                                                                                    {p.velocity_change_pct > 0 ? '+' : ''}{p.velocity_change_pct}%
-                                                                                </span>
-                                                                            </div>
-                                                                        </td>
-                                                                        <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                                                                            {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
-                                                                        </td>
-                                                                        <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>
-                                                                        <td className={`px-3 py-2 text-sm ${p.days_left_of_stock !== null && p.days_left_of_stock <= 7 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                                                                            {p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}
-                                                                        </td>
-                                                                        <td className={`px-3 py-2 text-sm font-medium ${p.necesar_recomandat > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-500'}`}>
-                                                                            {p.necesar_recomandat}
-                                                                        </td>
-                                                                        <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
-                                                                        <td className="px-3 py-2"><Sparkline data={p.daily_series} /></td>
-                                                                    </tr>
-                                                                    {/* Expanded detail */}
-                                                                    {velocityExpanded === rowKey && (
-                                                                        <tr className="bg-zinc-50 dark:bg-zinc-900/40">
-                                                                            <td colSpan={16} className="px-4 py-4">
-                                                                                <div className="space-y-4">
-                                                                                    {/* Per-Variant Breakdown */}
-                                                                                    {p.by_variant && p.by_variant.length > 0 && (
-                                                                                        <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📦 Variante & Magazine</h5>
-                                                                                            <table className="w-full text-xs">
-                                                                                                <thead>
-                                                                                                    <tr className="text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
-                                                                                                        <th className="text-left py-1.5 pr-3">Variantă (SKU)</th>
-                                                                                                        <th className="text-left py-1.5 pr-3">Magazin</th>
-                                                                                                        <th className="text-right py-1.5 px-2">Brut</th>
-                                                                                                        <th className="text-right py-1.5 px-2">Net</th>
-                                                                                                        <th className="text-right py-1.5 px-2">Rev. Brut</th>
-                                                                                                        <th className="text-right py-1.5 px-2">Rev. Net</th>
-                                                                                                        <th className="text-right py-1.5 px-2">Comenzi</th>
-                                                                                                        <th className="text-right py-1.5 px-2">V (u/zi)</th>
-                                                                                                        <th className="text-left py-1.5 pl-3 w-[120px]">Trend</th>
-                                                                                                    </tr>
-                                                                                                </thead>
-                                                                                                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                                                                                                    {p.by_variant.map(var_data => (
-                                                                                                        <tr key={var_data.variant_key} 
-                                                                                                            className="hover:bg-zinc-100 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
-                                                                                                            onClick={() => setSelectedVariantOrders({ sku: var_data.sku, orders: var_data.orders_list || [] })}
-                                                                                                            title="Click pentru a vedea comenzile componente"
-                                                                                                        >
-                                                                                                            <td className="py-1.5 pr-3">
-                                                                                                                <span className="font-medium text-emerald-600 dark:text-emerald-400 border-b border-emerald-600/30 border-dashed">{var_data.sku}</span>
-                                                                                                            </td>
-                                                                                                            <td className="py-1.5 pr-3">
-                                                                                                                <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{var_data.store_name}</span>
-                                                                                                            </td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{var_data.gross_units.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 font-medium text-zinc-700 dark:text-zinc-300">{var_data.units_sold.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{var_data.gross_revenue.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-700 dark:text-zinc-300">{var_data.revenue.toLocaleString()}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 text-zinc-600 dark:text-zinc-400">{var_data.orders}</td>
-                                                                                                            <td className="text-right py-1.5 px-2 font-bold text-emerald-600 dark:text-emerald-400">{var_data.velocity}</td>
-                                                                                                            <td className="py-1.5 pl-3"><Sparkline data={var_data.daily_series} /></td>
-                                                                                                        </tr>
-                                                                                                    ))}
-                                                                                                </tbody>
-                                                                                            </table>
-                                                                                        </div>
-                                                                                    )}
-                                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                                        <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">🌍 Per Țară</h5>
-                                                                                            <div className="space-y-1 text-xs">
-                                                                                                {p.by_country.map(bc => (
-                                                                                                    <div key={bc.country} className="flex justify-between">
-                                                                                                        <span className="text-zinc-600 dark:text-zinc-400">{COUNTRY_FLAGS[bc.country] || 'ðŸ³️'} {bc.country}</span>
-                                                                                                        <span className="font-medium text-zinc-700 dark:text-zinc-200">{bc.units} u | {bc.revenue.toLocaleString()} RON</span>
-                                                                                                    </div>
-                                                                                                ))}
-                                                                                                {p.by_country.length === 0 && <div className="text-zinc-400">—</div>}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <h5 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">📊 Detalii</h5>
-                                                                                            <div className="space-y-1 text-xs">
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Zile Stoc Rămas</span><span className={`font-medium ${p.days_left_of_stock <= 7 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-200'}`}>{p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}</span></div>
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Necesar Recomandat</span><span className="font-medium text-amber-600 dark:text-amber-400">{Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - (p.stock_available || 0)))}</span></div>
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.delivery_rate}%</span></div>
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.prev_velocity} u/zi</span></div>
-                                                                                                <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </td>
-                                                                        </tr>
-                                                                    )}
-                                                                </Fragment>
+                                                                    <VelocityRow 
+                                                                        key={rowKey}
+                                                                        p={p}
+                                                                        i={i}
+                                                                        rowKey={rowKey}
+                                                                        isSelected={isSelected}
+                                                                        isExpanded={isExpanded}
+                                                                        velocityMetricsType={velocityMetricsType}
+                                                                        velocityTargetCoverage={velocityTargetCoverage}
+                                                                        isColVisible={isColVisible}
+                                                                        onToggleSelect={handleToggleSelect}
+                                                                        onToggleExpand={handleToggleExpand}
+                                                                        COUNTRY_FLAGS={COUNTRY_FLAGS}
+                                                                        Sparkline={Sparkline}
+                                                                        setSelectedVariantOrders={setSelectedVariantOrders}
+                                                                    />
                                                                 )
                                                             })}
                                                         </tbody>
@@ -2766,7 +2716,35 @@ export default function Analytics() {
                                                     <label className="text-xs text-zinc-400">Zile acoperire:</label>
                                                     <span className="text-sm text-emerald-400 font-bold">{velocityTargetCoverage}</span>
                                                 </div>
-                                                <button onClick={() => {
+                                                <div className="flex items-center gap-2 ml-4">
+                                                    <select value={selectedDraftPo} onChange={e => setSelectedDraftPo(e.target.value)}
+                                                        className="px-3 py-1.5 text-sm rounded-lg border border-zinc-600 bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                                        <option value="">-- Creare PO Nou --</option>
+                                                        {draftPOs.map(po => (
+                                                            <option key={po.id} value={po.id}>{po.po_number} {po.supplier_name ? `(${po.supplier_name})` : ''}</option>
+                                                        ))}
+                                                    </select>
+                                                    {selectedDraftPo && (
+                                                        <button 
+                                                            onClick={async () => {
+                                                                if (!window.confirm("Ești sigur că vrei să ștergi acest PO?")) return;
+                                                                try {
+                                                                    await purchaseOrdersMgmtApi.delete(selectedDraftPo);
+                                                                    setDraftPOs(prev => prev.filter(p => p.id !== parseInt(selectedDraftPo)));
+                                                                    setSelectedDraftPo('');
+                                                                } catch (e) {
+                                                                    console.error("Failed to delete PO", e);
+                                                                    alert("Eroare la ștergerea PO-ului: " + (e.response?.data?.detail || e.message));
+                                                                }
+                                                            }}
+                                                            title="Șterge PO Selectat"
+                                                            className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded-lg transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <button onClick={async () => {
                                                     const items = sortedProducts
                                                         .filter(p => velocitySelectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
                                                         .map(p => {
@@ -2781,11 +2759,47 @@ export default function Analytics() {
                                                                 days_left: p.days_left_of_stock,
                                                             }
                                                         })
-                                                    sessionStorage.setItem('po_prefill', JSON.stringify(items))
-                                                    window.location.href = '/purchase-orders/new'
+
+                                                    if (selectedDraftPo) {
+                                                        try {
+                                                            const targetPo = draftPOs.find(p => p.id === parseInt(selectedDraftPo))
+                                                            if (!targetPo) return
+
+                                                            const poDetails = await purchaseOrdersMgmtApi.get(targetPo.id)
+                                                            const existingItems = poDetails.items || []
+
+                                                            const mergedMap = new Map()
+                                                            existingItems.forEach(i => mergedMap.set(i.sku, { ...i, quantity: i.quantity || 0 }))
+
+                                                            items.forEach(newItem => {
+                                                                if (mergedMap.has(newItem.sku)) {
+                                                                    const existing = mergedMap.get(newItem.sku)
+                                                                    existing.quantity += newItem.quantity
+                                                                    mergedMap.set(newItem.sku, existing)
+                                                                } else {
+                                                                    mergedMap.set(newItem.sku, {
+                                                                        sku: newItem.sku,
+                                                                        product_name: newItem.product_name,
+                                                                        unit_cost: newItem.unit_cost,
+                                                                        quantity: newItem.quantity
+                                                                    })
+                                                                }
+                                                            })
+
+                                                            const mergedItemsList = Array.from(mergedMap.values())
+                                                            await purchaseOrdersMgmtApi.update(targetPo.id, { items: mergedItemsList })
+                                                            window.location.href = `/purchase-orders/${targetPo.po_number}`
+                                                        } catch (e) {
+                                                            console.error("Failed to append to existing PO", e)
+                                                            alert("Eroare la adăugarea în PO: " + (e.response?.data?.detail || e.message))
+                                                        }
+                                                    } else {
+                                                        sessionStorage.setItem('po_prefill', JSON.stringify(items))
+                                                        window.location.href = '/purchase-orders/new'
+                                                    }
                                                 }}
-                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5">
-                                                    <Plus className="w-4 h-4" /> Generează PO
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5 ml-2">
+                                                    <Plus className="w-4 h-4" /> {selectedDraftPo ? 'Adaugă la PO' : 'Generează PO'}
                                                 </button>
                                                 <button onClick={() => setVelocitySelectedSkus(new Set())}
                                                     className="text-zinc-400 hover:text-white transition-colors">

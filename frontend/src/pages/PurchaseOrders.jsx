@@ -57,14 +57,12 @@ export default function PurchaseOrders() {
       }
       return
     }
-    // List mode — sync filters from URL
+    // List mode — sync filters from URL (search is local-only, not synced to URL)
     const urlStatus = searchParams.get('status') || ''
     const urlCategory = searchParams.get('category') || ''
-    const urlSearch = searchParams.get('search') || ''
     if (urlStatus !== h.statusFilter) h.setStatusFilter(urlStatus)
     if (urlCategory !== h.categoryFilter) h.setCategoryFilter(urlCategory)
-    if (urlSearch !== h.search) h.setSearch(urlSearch)
-  }, [poNumber, searchParams, h.orders.length])
+  }, [poNumber, searchParams])
 
   // Wrap navigation helpers to update URL
   const wrappedH = {

@@ -170,11 +170,21 @@ async def list_purchase_orders(
     search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(PurchaseOrder).order_by(PurchaseOrder.created_at.desc())
+    query = select(PurchaseOrder).outerjoin(PurchaseOrderItem).order_by(PurchaseOrder.created_at.desc()).distinct()
     if status:
         query = query.where(PurchaseOrder.status == status)
     if category:
         query = query.where(PurchaseOrder.po_category == category)
+    if search:
+        sl = f"%{search.lower()}%"
+        query = query.where(
+            func.lower(PurchaseOrder.po_number).like(sl) |
+            func.lower(PurchaseOrder.title).like(sl) |
+            func.lower(PurchaseOrder.supplier_name).like(sl) |
+            func.lower(PurchaseOrder.tom_number).like(sl) |
+            func.lower(PurchaseOrderItem.sku).like(sl) |
+            func.lower(PurchaseOrderItem.product_name).like(sl)
+        )
 
     result = await db.execute(query)
     orders = result.scalars().all()
@@ -191,11 +201,6 @@ async def list_purchase_orders(
 
     po_list = []
     for po in orders:
-        if search:
-            sl = search.lower()
-            if not (sl in (po.po_number or "").lower() or sl in (po.title or "").lower()
-                    or sl in (po.supplier_name or "").lower() or sl in (po.tom_number or "").lower()):
-                continue
         info = items_map.get(po.id, {"count": 0, "qty": 0, "recv": 0})
         po_list.append({
             "id": po.id, "po_number": po.po_number, "title": po.title,

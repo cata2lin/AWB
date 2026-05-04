@@ -65,4 +65,14 @@ export const printApi = {
         const url = `${API_BASE_URL}/print/reprint-order/${orderUid}${token ? `?token=${token}` : ''}`
         window.open(url, '_blank')
     },
+    /** Release a single order from print hold */
+    releaseHold: async (orderUid) => {
+        const { data } = await api.post(`/print/release-hold/${orderUid}`)
+        return data
+    },
+    /** Release multiple orders from print hold */
+    releaseHoldBulk: async (orderUids) => {
+        const { data } = await api.post('/print/release-hold-bulk', orderUids)
+        return data
+    },
 }

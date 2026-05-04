@@ -3,7 +3,7 @@
  * Unified layout for both modes with inline product search.
  */
 import { useState, useMemo } from 'react'
-import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter } from 'lucide-react'
+import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { STATUS_CFG, TOM_CLS } from './POList'
 import POProductPicker from './POProductPicker'
 
@@ -15,6 +15,8 @@ export default function PODetail({ h }) {
   const [showPicker, setShowPicker] = useState(false)
   const [itemSearch, setItemSearch] = useState('')
   const [itemPriorityFilter, setItemPriorityFilter] = useState('')
+  const [sortCol, setSortCol] = useState(null)
+  const [sortDir, setSortDir] = useState('asc')
   const isCreate = h.mode === 'create'
   const po = isCreate ? null : h.selectedPO
   const items = isCreate ? h.createForm.items : (po?.items || [])
@@ -37,8 +39,60 @@ export default function PODetail({ h }) {
     if (itemPriorityFilter) {
       result = result.filter(i => (i.priority || po?.priority || 'STANDARD') === itemPriorityFilter)
     }
+    if (sortCol) {
+      result = [...result].sort((a, b) => {
+        let valA, valB;
+        switch (sortCol) {
+          case 'product_name':
+            valA = (a.product_name || '').toLowerCase(); valB = (b.product_name || '').toLowerCase();
+            break;
+          case 'sku':
+            valA = (a.sku || '').toLowerCase(); valB = (b.sku || '').toLowerCase();
+            break;
+          case 'priority':
+            valA = (a.priority || po?.priority || 'STANDARD'); valB = (b.priority || po?.priority || 'STANDARD');
+            break;
+          case 'quantity':
+            valA = a.quantity || 0; valB = b.quantity || 0;
+            break;
+          case 'unit_cost':
+            valA = a.unit_cost || 0; valB = b.unit_cost || 0;
+            break;
+          case 'total':
+            valA = (a.quantity || 0) * (a.unit_cost || 0); valB = (b.quantity || 0) * (b.unit_cost || 0);
+            break;
+          case 'received':
+            valA = a.received_qty || 0; valB = b.received_qty || 0;
+            break;
+          case 'tom':
+            valA = a.tom_status || ''; valB = b.tom_status || '';
+            break;
+          default:
+            valA = a[sortCol]; valB = b[sortCol];
+        }
+        if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      })
+    }
     return result
-  }, [items, itemSearch, itemPriorityFilter, po?.priority])
+  }, [items, itemSearch, itemPriorityFilter, po?.priority, sortCol, sortDir])
+
+  const SortHeader = ({ col, label, className }) => {
+    const isActive = sortCol === col
+    return (
+      <th className={`px-3 py-2.5 font-medium cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors select-none ${className}`} 
+          onClick={() => {
+            if (isActive) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+            else { setSortCol(col); setSortDir('asc') }
+          }}>
+        <div className={`flex items-center gap-1 ${className.includes('text-right') ? 'justify-end' : className.includes('text-center') ? 'justify-center' : ''}`}>
+          {label}
+          {isActive ? (sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-500" /> : <ArrowDown className="w-3 h-3 text-indigo-500" />) : <ArrowUpDown className="w-3 h-3 text-zinc-300 dark:text-zinc-600" />}
+        </div>
+      </th>
+    )
+  }
 
   // Empty state
   if (!isCreate && !po) {
@@ -221,14 +275,14 @@ export default function PODetail({ h }) {
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                 <tr className="text-zinc-500">
-                  <th className="px-3 py-2.5 text-left font-medium">Product</th>
-                  <th className="px-3 py-2.5 text-left font-medium">SKU</th>
-                  <th className="px-3 py-2.5 text-center font-medium">Priority</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Qty</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Unit Cost</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Total</th>
-                  {!isCreate && <th className="px-3 py-2.5 text-right font-medium">Received</th>}
-                  {!isCreate && isTomEnabled && <th className="px-3 py-2.5 text-center font-medium">TOM</th>}
+                  <SortHeader col="product_name" label="Product" className="text-left" />
+                  <SortHeader col="sku" label="SKU" className="text-left" />
+                  <SortHeader col="priority" label="Priority" className="text-center" />
+                  <SortHeader col="quantity" label="Qty" className="text-right" />
+                  <SortHeader col="unit_cost" label="Unit Cost" className="text-right" />
+                  <SortHeader col="total" label="Total" className="text-right" />
+                  {!isCreate && <SortHeader col="received" label="Received" className="text-right" />}
+                  {!isCreate && isTomEnabled && <SortHeader col="tom" label="TOM" className="text-center" />}
                   {isCreate && <th className="px-3 py-2.5 w-10"></th>}
                 </tr>
               </thead>

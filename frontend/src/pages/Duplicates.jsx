@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useStores } from '../hooks/useApi'
-import { ordersApi } from '../services/api'
+import { ordersApi, printApi } from '../services/api'
 import MultiSelectFilter from '../components/MultiSelectFilter'
 import {
     Search, Package, ChevronDown, AlertTriangle, Users, Globe, X, Loader2,
     ExternalLink, Mail, MapPin, Phone, Calendar, Truck, Copy, Filter,
-    DollarSign, Tag, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown
+    DollarSign, Tag, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
+    Unlock, ShieldAlert
 } from 'lucide-react'
 
 const STATUS_CONFIG = {
@@ -106,25 +107,26 @@ export default function Duplicates() {
     // Compute effective dates: backend defaults to 14 days when no dates sent
     const hasCustomDates = dateFrom || dateTo
 
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true)
-            setError(null)
-            try {
-                const params = { page, limit: 20, window_days: windowDays, sort_by: sortBy, sort_dir: sortDir }
-                if (dateFrom) params.date_from = dateFrom
-                if (dateTo) params.date_to = dateTo
-                if (selectedStores.length) params.store_uids = selectedStores
-                if (dupType !== 'all') params.dup_type = dupType
-                if (debouncedSearch) params.search = debouncedSearch
-                if (debouncedPhone) params.phone_search = debouncedPhone
-                const d = await ordersApi.getDuplicates(params)
-                setData(d)
-            } catch (e) { setError(e) }
-            finally { setLoading(false) }
-        }
-        fetchData()
+    const fetchData = useCallback(async () => {
+        setLoading(true)
+        setError(null)
+        try {
+            const params = { page, limit: 20, window_days: windowDays, sort_by: sortBy, sort_dir: sortDir }
+            if (dateFrom) params.date_from = dateFrom
+            if (dateTo) params.date_to = dateTo
+            if (selectedStores.length) params.store_uids = selectedStores
+            if (dupType !== 'all') params.dup_type = dupType
+            if (debouncedSearch) params.search = debouncedSearch
+            if (debouncedPhone) params.phone_search = debouncedPhone
+            const d = await ordersApi.getDuplicates(params)
+            setData(d)
+        } catch (e) { setError(e) }
+        finally { setLoading(false) }
     }, [page, dupType, dateFrom, dateTo, selectedStores, windowDays, sortBy, sortDir, debouncedSearch, debouncedPhone])
+
+    useEffect(() => {
+        fetchData()
+    }, [fetchData])
 
     const storeOptions = stores.map(s => ({ value: s.uid, label: s.name, color: s.color_code }))
 
@@ -365,6 +367,11 @@ export default function Duplicates() {
                                                                             <div className="flex items-center justify-between">
                                                                                 <span className="text-zinc-500">Status</span>
                                                                                 <StatusBadge status={o.aggregated_status} />
+                                                                    {o.print_hold && (
+                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 animate-pulse">
+                                                                            <ShieldAlert className="w-3 h-3" /> Print Hold
+                                                                        </span>
+                                                                    )}
                                                                             </div>
                                                                             {o.courier_name && <div className="flex items-center justify-between">
                                                                                 <span className="text-zinc-500">Courier</span>
@@ -390,6 +397,24 @@ export default function Duplicates() {
                                                                                     <ExternalLink className="w-3.5 h-3.5" /> View in Shopify
                                                                                 </a>
                                                                             ) : null}
+                                                                    {o.print_hold && (
+                                                                        <button
+                                                                            onClick={async (e) => {
+                                                                                e.stopPropagation()
+                                                                                try {
+                                                                                    await printApi.releaseHold(o.uid)
+                                                                                    // Refresh data
+                                                                                    fetchData()
+                                                                                } catch (err) {
+                                                                                    console.error('Release hold failed:', err)
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 text-[10px] font-medium hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+                                                                            title="Release print hold"
+                                                                        >
+                                                                            <Unlock className="w-3 h-3" /> Release Hold
+                                                                        </button>
+                                                                    )}
                                                                         </div>
                                                                     </div>
                                                                 </div>

@@ -39,6 +39,7 @@ class Order(Base):
     shipment_status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)  # not_created, created_awb, etc.
     aggregated_status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)  # not_fulfilled, waiting_for_courier, etc.
     is_printed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    print_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # Held due to duplicate detection
     
     # Multi-AWB support (max 10 per order)
     awb_count: Mapped[int] = mapped_column(Integer, default=1)  # Number of AWB labels (1-10)

@@ -74,6 +74,7 @@ async def get_overall_profitability(
     cutoff_date = datetime(2025, 8, 1)
     # Load profitability config
     config = await get_or_create_config(db)
+    db.expunge(config)
     dynamic_vat_rate = 0.19 if ref_date < cutoff_date else (config.vat_rate or 0.21)
     """
     Calculate profitability based on order prices, SKU costs, and operational costs.

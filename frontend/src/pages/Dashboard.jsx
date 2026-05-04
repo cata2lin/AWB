@@ -432,6 +432,11 @@ export default function Dashboard() {
                         <p className="text-sm text-green-600 dark:text-green-500">
                             Batch #{printResult.batch_number}: {printResult.order_count} orders in {printResult.group_count} groups
                         </p>
+                        {printResult.held_duplicates > 0 && (
+                            <p className="text-sm text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                                ⚠️ {printResult.held_duplicates} duplicate order(s) were put on hold — review in Duplicates tab
+                            </p>
+                        )}
                         <a
                             href={printApi.getDownloadUrl(printResult.batch_id)}
                             target="_blank"

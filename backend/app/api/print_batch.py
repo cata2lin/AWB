@@ -42,6 +42,7 @@ async def get_print_preview(
     # fulfillment = "ready_for_picking", shipment = "generated_awb", aggregated = "ready_for_picking"
     query = select(Order).where(
         (Order.is_printed == False)
+        & (Order.print_hold == False)
         & (Order.fulfillment_status == "ready_for_picking")
         & (Order.shipment_status == "generated_awb")
         & (Order.aggregated_status == "ready_for_picking")
@@ -179,11 +180,31 @@ async def generate_print_batch(
     
     logger.info(f"[BATCH PRINT] Processing {len(order_uids)} order UIDs: {order_uids[:5]}{'...' if len(order_uids) > 5 else ''}")
     
-    # Fetch orders
+    # Fetch orders (exclude any that are on print_hold)
     result = await db.execute(
-        select(Order).where(Order.uid.in_(order_uids))
+        select(Order).where(
+            Order.uid.in_(order_uids),
+            Order.print_hold == False
+        )
     )
     orders = result.scalars().all()
+    
+    # --- Duplicate detection: hold duplicates found in this batch ---
+    held_duplicates = 0
+    try:
+        held_duplicates = await _detect_and_hold_duplicates(db, orders)
+        if held_duplicates > 0:
+            # Re-fetch orders without the ones just put on hold
+            result2 = await db.execute(
+                select(Order).where(
+                    Order.uid.in_(order_uids),
+                    Order.print_hold == False
+                )
+            )
+            orders = result2.scalars().all()
+            logger.info(f"[BATCH PRINT] Held {held_duplicates} duplicate orders from batch")
+    except Exception as e:
+        logger.warning(f"[BATCH PRINT] Duplicate detection failed (non-critical): {e}")
     
     logger.info(f"[BATCH PRINT] Found {len(orders)} orders in DB for {len(order_uids)} requested UIDs")
     
@@ -362,7 +383,8 @@ async def generate_print_batch(
         "batch_number": batch_number,
         "file_path": file_path,
         "order_count": len(orders),
-        "group_count": len(groups)
+        "group_count": len(groups),
+        "held_duplicates": held_duplicates
     }
 
 
@@ -959,3 +981,117 @@ async def reprint_single_order(order_uid: str, db: AsyncSession = Depends(get_db
         filename=f"reprint_{order.order_number}.pdf"
     )
 
+
+# ────────────────────────────────────────────────────────────────
+# Duplicate detection helper for batch generation
+# ────────────────────────────────────────────────────────────────
+
+def _sku_fingerprint(line_items) -> str:
+    """Create a deterministic fingerprint from an order's SKU set."""
+    if not line_items or not isinstance(line_items, list):
+        return ""
+    skus = []
+    for item in line_items:
+        if isinstance(item, dict):
+            inv = item.get('inventory_item', {})
+            if isinstance(inv, dict) and inv.get('sku'):
+                qty = item.get('quantity', 1)
+                skus.append(f"{inv['sku']}x{qty}")
+    return "|".join(sorted(skus))
+
+
+def _customer_key(order) -> str:
+    """Create a customer identity key from phone/email/name."""
+    addr = order.shipping_address or {}
+    phone = (addr.get('phone') or '').strip().replace(' ', '')
+    email = (order.customer_email or '').strip().lower()
+    name = (order.customer_name or '').strip().lower()
+    # Primary key: phone if available, else email, else name
+    return phone or email or name or ''
+
+
+async def _detect_and_hold_duplicates(db: AsyncSession, orders: list) -> int:
+    """
+    Detect duplicate orders within a batch and mark extras as print_hold.
+
+    Duplicates are defined as orders from the same customer (phone/email)
+    with the same SKU fingerprint. Only the first occurrence is kept;
+    subsequent duplicates are held.
+
+    Returns the number of orders held.
+    """
+    if not orders or len(orders) < 2:
+        return 0
+
+    # Group by (customer_key, sku_fingerprint)
+    groups = {}
+    for order in orders:
+        ckey = _customer_key(order)
+        if not ckey:
+            continue
+        sfp = _sku_fingerprint(order.line_items)
+        if not sfp:
+            continue
+        group_key = f"{ckey}::{sfp}"
+        if group_key not in groups:
+            groups[group_key] = []
+        groups[group_key].append(order)
+
+    held = 0
+    for group_key, group_orders in groups.items():
+        if len(group_orders) <= 1:
+            continue
+        # Sort by creation date — keep the oldest (first order)
+        group_orders.sort(key=lambda o: o.frisbo_created_at or datetime.min)
+        for dup_order in group_orders[1:]:
+            dup_order.print_hold = True
+            held += 1
+            logger.info(
+                f"[DUP HOLD] Held order {dup_order.order_number} (uid={dup_order.uid}) — "
+                f"duplicate of {group_orders[0].order_number}"
+            )
+
+    if held > 0:
+        await db.commit()
+
+    return held
+
+
+@router.post("/release-hold/{order_uid}")
+async def release_print_hold(order_uid: str, db: AsyncSession = Depends(get_db)):
+    """Release a single order from print hold, allowing it to be printed."""
+    result = await db.execute(select(Order).where(Order.uid == order_uid))
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    order.print_hold = False
+    await db.commit()
+
+    return {"ok": True, "uid": order_uid, "order_number": order.order_number}
+
+
+@router.post("/release-hold-bulk")
+async def release_print_hold_bulk(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Release multiple orders from print hold."""
+    body = await request.json()
+    uids = body if isinstance(body, list) else body.get("order_uids", [])
+
+    if not uids:
+        raise HTTPException(status_code=400, detail="No order UIDs provided")
+
+    result = await db.execute(
+        select(Order).where(Order.uid.in_(uids), Order.print_hold == True)
+    )
+    orders = result.scalars().all()
+
+    for order in orders:
+        order.print_hold = False
+
+    await db.commit()
+
+    return {"ok": True, "released": len(orders)}

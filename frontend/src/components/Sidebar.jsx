@@ -1,19 +1,102 @@
 import { Link, useLocation } from 'react-router-dom'
-import { useEffect, useRef } from 'react'
-import { LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon, RefreshCw, BarChart3, Activity, LogOut, StopCircle, Copy, FileText } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import {
+    LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon,
+    RefreshCw, BarChart3, Activity, LogOut, StopCircle, Copy, FileText,
+    Printer, ChevronDown, ChevronRight, Package, Percent, ShoppingCart
+} from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
-const navItems = [
-    { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/orders', icon: ListOrdered, label: 'Orders' },
-    { path: '/duplicates', icon: Copy, label: 'Duplicates', indent: true },
-    { path: '/rules', icon: Layers, label: 'Rules' },
-    { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-    { path: '/purchase-orders', icon: FileText, label: 'Purchase Orders' },
-    { path: '/history', icon: History, label: 'History' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
-    { path: '/logs', icon: Activity, label: 'System Monitor' },
+/**
+ * Sidebar navigation structure with grouped sections.
+ * type: 'link' = single nav link
+ * type: 'group' = collapsible section with children
+ * type: 'divider' = visual separator
+ */
+const navStructure = [
+    {
+        type: 'group',
+        icon: Printer,
+        label: 'Print',
+        defaultOpen: true,
+        children: [
+            { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+            { path: '/rules', icon: Layers, label: 'Rules' },
+            { path: '/history', icon: History, label: 'History' },
+        ],
+    },
+    { type: 'divider' },
+    {
+        type: 'group',
+        icon: ShoppingCart,
+        label: 'Orders',
+        children: [
+            { path: '/orders', icon: ListOrdered, label: 'All Orders' },
+            { path: '/duplicates', icon: Copy, label: 'Duplicates' },
+        ],
+    },
+    { type: 'link', path: '/analytics', icon: BarChart3, label: 'Reports' },
+    { type: 'link', path: '/purchase-orders', icon: FileText, label: 'Purchase Orders' },
+    { type: 'divider' },
+    { type: 'link', path: '/comision-agentie', icon: Percent, label: 'Comision Agenție' },
+    { type: 'divider' },
+    { type: 'link', path: '/settings', icon: Settings, label: 'Settings' },
+    { type: 'link', path: '/logs', icon: Activity, label: 'System Monitor' },
 ]
+
+/**
+ * Collapsible navigation group with child links.
+ * Auto-opens if any child route is currently active.
+ */
+function NavGroup({ item, pathname }) {
+    const isChildActive = item.children.some(c => pathname === c.path)
+    const [isOpen, setIsOpen] = useState(item.defaultOpen || isChildActive)
+
+    // Keep open if a child becomes active (e.g. via direct URL navigation)
+    useEffect(() => {
+        if (isChildActive && !isOpen) setIsOpen(true)
+    }, [isChildActive])
+
+    return (
+        <div>
+            <button
+                onClick={() => setIsOpen(o => !o)}
+                className={`w-full flex items-center gap-3 rounded-lg font-medium transition-all duration-150 px-3 py-2.5 text-sm ${
+                    isChildActive
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+            >
+                <item.icon className={`w-5 h-5 ${isChildActive ? 'text-indigo-500' : ''}`} />
+                <span className="flex-1 text-left">{item.label}</span>
+                {isOpen
+                    ? <ChevronDown className="w-4 h-4 text-zinc-400" />
+                    : <ChevronRight className="w-4 h-4 text-zinc-400" />
+                }
+            </button>
+            {isOpen && (
+                <div className="ml-3 pl-3 border-l-2 border-zinc-200/60 dark:border-zinc-700/40 space-y-0.5 mt-0.5">
+                    {item.children.map(child => {
+                        const isActive = pathname === child.path
+                        return (
+                            <Link
+                                key={child.path}
+                                to={child.path}
+                                className={`flex items-center gap-2.5 rounded-lg font-medium transition-all duration-150 px-3 py-1.5 text-xs ${isActive
+                                    ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
+                                }`}
+                            >
+                                <child.icon className={`w-4 h-4 ${isActive ? 'text-indigo-500' : ''}`} />
+                                {child.label}
+                            </Link>
+                        )
+                    })}
+                </div>
+            )}
+        </div>
+    )
+}
 
 export default function Sidebar({ user, onLogout }) {
     const location = useLocation()
@@ -62,19 +145,34 @@ export default function Sidebar({ user, onLogout }) {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 py-4 px-3 space-y-1">
-                {navItems.map((item) => {
+            <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
+                {navStructure.map((item, idx) => {
+                    if (item.type === 'divider') {
+                        return <div key={`div-${idx}`} className="my-2 mx-2 border-t border-zinc-200/60 dark:border-zinc-800/40" />
+                    }
+
+                    if (item.type === 'group') {
+                        return (
+                            <NavGroup
+                                key={item.label}
+                                item={item}
+                                pathname={location.pathname}
+                            />
+                        )
+                    }
+
+                    // Regular link
                     const isActive = location.pathname === item.path
                     return (
                         <Link
                             key={item.path}
                             to={item.path}
-                            className={`flex items-center gap-3 rounded-lg font-medium transition-all duration-150 ${item.indent ? 'px-3 py-1.5 pl-10 text-xs' : 'px-3 py-2.5 text-sm'} ${isActive
+                            className={`flex items-center gap-3 rounded-lg font-medium transition-all duration-150 px-3 py-2.5 text-sm ${isActive
                                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm dark:shadow-none border-l-[3px] border-indigo-500 pl-[9px]'
                                 : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
                                 }`}
                         >
-                            <item.icon className={`${item.indent ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'text-indigo-500' : ''}`} />
+                            <item.icon className={`w-5 h-5 ${isActive ? 'text-indigo-500' : ''}`} />
                             {item.label}
                         </Link>
                     )

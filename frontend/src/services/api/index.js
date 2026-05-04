@@ -27,6 +27,7 @@ export { profitabilityConfigApi, healthApi } from './config'
 export { courierCsvApi } from './courierCsv'
 export { businessCostsApi } from './businessCosts'
 export { productsApi } from './products'
+export { comisionApi } from './comision'
 
 // Default export: the shared Axios instance
 export { default } from './client'

@@ -45,15 +45,7 @@ class PDFService:
         writer = PdfWriter()
         
         for group in groups:
-            # Generate separator page for this group
-            separator_pdf = self._generate_separator_page(
-                group_name=group["name"],
-                group_color=group["color"],
-                order_count=len(group["orders"])
-            )
-            writer.append(PdfReader(BytesIO(separator_pdf)))
-            
-            # Download and append each order's AWB
+            # Download and append each order's AWB (no separator sheets)
             for order in group["orders"]:
                 if order.awb_pdf_url:
                     try:
