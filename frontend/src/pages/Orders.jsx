@@ -1339,8 +1339,8 @@ export default function Orders() {
                                                                                                 rel="noopener noreferrer"
                                                                                                 className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded font-medium transition-colors"
                                                                                             >
-                                                                                                <Download className="w-3 h-3" />
-                                                                                                PDF
+                                                                                                <Printer className="w-3 h-3" />
+                                                                                                Print
                                                                                             </a>
                                                                                         </div>
                                                                                     ))}
@@ -1357,14 +1357,8 @@ export default function Orders() {
                                                                                 setPrintingOrder({ uid: order.uid, action: 'print' })
                                                                                 try {
                                                                                     const result = await printApi.printSingle(order.uid)
-                                                                                    // Trigger PDF download
                                                                                     const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                                                                                    const link = document.createElement('a')
-                                                                                    link.href = downloadUrl
-                                                                                    link.download = `${order.order_number || order.uid}.pdf`
-                                                                                    document.body.appendChild(link)
-                                                                                    link.click()
-                                                                                    document.body.removeChild(link)
+                                                                                    window.open(downloadUrl, '_blank')
                                                                                     // Refresh the row to show updated status
                                                                                     order.is_printed = true
                                                                                     order.printed_at = new Date().toISOString()
@@ -1528,14 +1522,8 @@ export default function Orders() {
                                     setPrintingOrder({ uid: orderUid, action: 'regen' })
                                     try {
                                         const result = await printApi.regenerate(orderUid, packageCount)
-                                        // Trigger PDF download
                                         const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                                        const link = document.createElement('a')
-                                        link.href = downloadUrl
-                                        link.download = `${result.order_number || orderUid}_regen.pdf`
-                                        document.body.appendChild(link)
-                                        link.click()
-                                        document.body.removeChild(link)
+                                        window.open(downloadUrl, '_blank')
                                         
                                         // Refresh history
                                         const data = await printApi.getOrderAwbHistory(orderUid)

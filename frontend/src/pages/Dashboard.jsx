@@ -487,8 +487,8 @@ export default function Dashboard() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-sm text-green-700 dark:text-green-400 hover:underline mt-1"
                         >
-                            <Download className="w-4 h-4" />
-                            Download PDF
+                            <Printer className="w-4 h-4" />
+                            Open Print Dialog
                         </a>
                     </div>
                 </div>

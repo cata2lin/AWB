@@ -875,7 +875,8 @@ async def download_batch_pdf(batch_id: int, db: AsyncSession = Depends(get_db)):
     return FileResponse(
         batch.file_path,
         media_type="application/pdf",
-        filename=f"{batch.batch_number}.pdf"
+        filename=f"{batch.batch_number}.pdf",
+        content_disposition_type="inline"
     )
 
 
@@ -1062,7 +1063,8 @@ async def reprint_batch(batch_id: int, db: AsyncSession = Depends(get_db)):
     return FileResponse(
         batch.file_path,
         media_type="application/pdf",
-        filename=f"{batch.batch_number}.pdf"
+        filename=f"{batch.batch_number}.pdf",
+        content_disposition_type="inline"
     )
 
 
@@ -1114,7 +1116,8 @@ async def reprint_single_order(order_uid: str, db: AsyncSession = Depends(get_db
     return FileResponse(
         file_path,
         media_type="application/pdf",
-        filename=f"reprint_{order.order_number}.pdf"
+        filename=f"reprint_{order.order_number}.pdf",
+        content_disposition_type="inline"
     )
 
 

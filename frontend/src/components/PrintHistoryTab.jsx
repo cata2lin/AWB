@@ -318,9 +318,9 @@ export default function PrintHistoryTab() {
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-600 transition-colors"
-                                                        title="Reprint / Download PDF"
+                                                        title="Print Batch"
                                                     >
-                                                        <Download className="w-4 h-4 text-indigo-500" />
+                                                        <Printer className="w-4 h-4 text-indigo-500" />
                                                     </a>
                                                     <button
                                                         onClick={() => toggleExpand(batch.id)}
@@ -387,10 +387,10 @@ export default function PrintHistoryTab() {
                                                                                             target="_blank"
                                                                                             rel="noopener noreferrer"
                                                                                             className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
-                                                                                            title={`Download AWB for ${item.order_number}`}
+                                                                                            title={`Print AWB for ${item.order_number}`}
                                                                                             onClick={e => e.stopPropagation()}
                                                                                         >
-                                                                                            <Download className="w-3 h-3" />
+                                                                                            <Printer className="w-3 h-3" />
                                                                                             AWB
                                                                                         </a>
                                                                                     </td>
