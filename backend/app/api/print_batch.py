@@ -213,10 +213,9 @@ async def generate_print_batch(
     
     # ── Resolve AWB URLs — fetch from Frisbo if not stored (like single print) ──
     orders_without_awb = [o for o in orders if not o.awb_pdf_url]
+    awb_fetch_errors = {}  # uid → list of error strings
     if orders_without_awb:
         logger.info(f"[BATCH PRINT] {len(orders_without_awb)} orders missing awb_pdf_url, attempting Frisbo fetch...")
-        for o in orders_without_awb:
-            logger.info(f"[BATCH PRINT]   Missing URL: uid={o.uid}, order={o.order_number}, tracking={o.tracking_number}")
         
         try:
             from app.services.frisbo.client import FrisboClient
@@ -226,19 +225,30 @@ async def generate_print_batch(
             org_tokens = settings.get_org_tokens()
             if org_tokens:
                 for o in orders_without_awb:
+                    errors_for_order = []
+                    resolved = False
+                    
                     for token_cfg in org_tokens:
-                        client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
+                        org_name = token_cfg.get("name", "default")
+                        client = FrisboClient(token=token_cfg["token"], org_name=org_name)
+                        
+                        # Try print_shipment first
                         try:
-                            # Try print_shipment first
                             label_response = await client.print_shipment(o.uid)
                             download_url = _extract_label_url(label_response)
                             if download_url:
                                 o.awb_pdf_url = download_url
                                 logger.info(f"[BATCH PRINT]   ✅ Got URL via print_shipment for {o.order_number}")
+                                resolved = True
                                 break
+                            else:
+                                errors_for_order.append(f"[{org_name}] print_shipment returned OK but no label URL in response")
                         except Exception as e:
-                            if "Order not found" in str(e):
+                            err = str(e)
+                            if "Order not found" in err:
+                                errors_for_order.append(f"[{org_name}] print_shipment → Order not found (wrong org)")
                                 continue
+                            errors_for_order.append(f"[{org_name}] print_shipment → {err[:200]}")
                         
                         # Try get_shipments as fallback
                         try:
@@ -247,10 +257,16 @@ async def generate_print_batch(
                             if download_url:
                                 o.awb_pdf_url = download_url
                                 logger.info(f"[BATCH PRINT]   ✅ Got URL via get_shipments for {o.order_number}")
+                                resolved = True
                                 break
+                            else:
+                                errors_for_order.append(f"[{org_name}] get_shipments returned OK but no label URL")
                         except Exception as e:
-                            if "Order not found" in str(e):
+                            err = str(e)
+                            if "Order not found" in err:
+                                errors_for_order.append(f"[{org_name}] get_shipments → Order not found")
                                 continue
+                            errors_for_order.append(f"[{org_name}] get_shipments → {err[:200]}")
                         
                         # Try get_order as final fallback
                         try:
@@ -263,10 +279,19 @@ async def generate_print_batch(
                             if awb_url:
                                 o.awb_pdf_url = awb_url
                                 logger.info(f"[BATCH PRINT]   ✅ Got URL via get_order for {o.order_number}")
+                                resolved = True
                                 break
+                            else:
+                                errors_for_order.append(f"[{org_name}] get_order returned OK but awb_pdf_url is empty")
                         except Exception as e:
-                            if "Order not found" in str(e):
+                            err = str(e)
+                            if "Order not found" in err:
+                                errors_for_order.append(f"[{org_name}] get_order → Order not found")
                                 continue
+                            errors_for_order.append(f"[{org_name}] get_order → {err[:200]}")
+                    
+                    if not resolved and errors_for_order:
+                        awb_fetch_errors[o.uid] = errors_for_order
                 
                 await db.commit()
         except Exception as e:
@@ -277,11 +302,33 @@ async def generate_print_batch(
     skipped_orders = []
     if still_missing:
         skipped_orders = [
-            {"order_number": o.order_number or "N/A", "uid": o.uid}
+            {
+                "order_number": o.order_number or "N/A",
+                "uid": o.uid,
+                "store_uid": o.store_uid,
+                "tracking": o.tracking_number,
+                "fulfillment": o.fulfillment_status,
+                "shipment": o.shipment_status,
+                "errors": awb_fetch_errors.get(o.uid, ["No fetch attempted"]),
+            }
             for o in still_missing
         ]
-        missing_info = [f"{o.order_number} (uid={o.uid})" for o in still_missing[:10]]
-        logger.warning(f"[BATCH PRINT] Skipping {len(still_missing)} orders without AWB URLs: {missing_info}")
+        
+        # ── Detailed failure log ──
+        logger.warning(f"[BATCH PRINT] ════════════════════════════════════════════════")
+        logger.warning(f"[BATCH PRINT] SKIPPED {len(still_missing)} ORDERS — AWB UNAVAILABLE")
+        logger.warning(f"[BATCH PRINT] ════════════════════════════════════════════════")
+        for o in still_missing:
+            errs = awb_fetch_errors.get(o.uid, [])
+            logger.warning(
+                f"[BATCH PRINT]   ❌ {o.order_number} | uid={o.uid} | "
+                f"tracking={o.tracking_number} | store={o.store_uid} | "
+                f"fulfillment={o.fulfillment_status} | shipment={o.shipment_status}"
+            )
+            for err_line in errs:
+                logger.warning(f"[BATCH PRINT]      ↳ {err_line}")
+        logger.warning(f"[BATCH PRINT] ════════════════════════════════════════════════")
+        
         # Filter them out — only proceed with orders that have AWB URLs
         orders = [o for o in orders if o.awb_pdf_url]
     
