@@ -159,6 +159,7 @@ export default function Analytics() {
     // Sales Velocity state
     const [velocityData, setVelocityData] = useState(null)
     const [velocityLoading, setVelocityLoading] = useState(false)
+    const [velocityMetricsType, setVelocityMetricsType] = useState('net')
     const [velocityDays, setVelocityDays] = useState(1)
     const [velocityDateFrom, setVelocityDateFrom] = useState('')
     const [velocityDateTo, setVelocityDateTo] = useState('')
