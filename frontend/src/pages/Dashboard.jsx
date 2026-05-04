@@ -7,6 +7,7 @@ import StoreCard from '../components/StoreCard'
 import PrintPreview from '../components/PrintPreview'
 import { Package, Printer, TrendingUp, RefreshCw, Clock, Download, Eye, AlertCircle, CheckCircle, ChevronDown, Calendar, Store, Activity, Filter } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
+import { useRef } from 'react'
 
 export default function Dashboard() {
     const { selectedStoreIds, batchSize } = useAppStore()
@@ -16,6 +17,7 @@ export default function Dashboard() {
     const [printError, setPrintError] = useState(null)
     const [previewData, setPreviewData] = useState(null)
     const [showPreview, setShowPreview] = useState(false)
+    const printFrameRef = useRef(null)
 
     // Sync dropdown state
     const [showSyncMenu, setShowSyncMenu] = useState(false)
@@ -80,6 +82,39 @@ export default function Dashboard() {
         }
     }
 
+    /**
+     * Opens the browser print dialog for a generated batch PDF.
+     * Loads the PDF into a hidden iframe and calls print() on it.
+     */
+    const openPrintDialog = (batchId) => {
+        const downloadUrl = printApi.getDownloadUrl(batchId)
+        // Remove any previous print iframe
+        if (printFrameRef.current) {
+            document.body.removeChild(printFrameRef.current)
+            printFrameRef.current = null
+        }
+        const iframe = document.createElement('iframe')
+        iframe.style.position = 'fixed'
+        iframe.style.right = '0'
+        iframe.style.bottom = '0'
+        iframe.style.width = '0'
+        iframe.style.height = '0'
+        iframe.style.border = 'none'
+        iframe.src = downloadUrl
+        document.body.appendChild(iframe)
+        printFrameRef.current = iframe
+
+        iframe.onload = () => {
+            try {
+                iframe.contentWindow.focus()
+                iframe.contentWindow.print()
+            } catch (_) {
+                // Cross-origin fallback: open in new tab for manual print
+                window.open(downloadUrl, '_blank')
+            }
+        }
+    }
+
     // Generate print batch with batch size limit
     const handlePrint = async () => {
         if (isPrinting) return
@@ -119,10 +154,9 @@ export default function Dashboard() {
             const result = await printApi.generateBatch(allOrderUids)
             setPrintResult(result)
 
-            // Auto-download the PDF
+            // Open native print dialog
             if (result.batch_id) {
-                const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                window.open(downloadUrl, '_blank')
+                openPrintDialog(result.batch_id)
             }
 
             // Immediately refresh dashboard data so printed orders disappear
@@ -479,10 +513,9 @@ export default function Dashboard() {
                             setShowPreview(false)
                             setPreviewData(null)
 
-                            // Auto-download the PDF
+                            // Open native print dialog
                             if (result.batch_id) {
-                                const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                                window.open(downloadUrl, '_blank')
+                                openPrintDialog(result.batch_id)
                             }
 
                             // Immediately refresh dashboard data so printed orders disappear
