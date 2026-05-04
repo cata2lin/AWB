@@ -2,9 +2,11 @@
 Print Batch API endpoints.
 
 Handles print preview, batch generation, and batch history.
+All batch operations are logged to ./logs/print_batch.log for analysis.
 """
 from typing import List, Optional
 import logging
+import logging.handlers
 import os
 from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
@@ -25,6 +27,26 @@ from app.services.pdf_service import PDFService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# ── Dedicated file logger for batch print operations ──
+# Writes to ./logs/print_batch.log (RotatingFileHandler: 5MB, 3 backups)
+_log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
+os.makedirs(_log_dir, exist_ok=True)
+_file_handler = logging.handlers.RotatingFileHandler(
+    os.path.join(_log_dir, "print_batch.log"),
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s | %(levelname)-7s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+_file_handler.setLevel(logging.DEBUG)
+logger.addHandler(_file_handler)
+
+# Also attach to the PDF service logger so download timings go to the same file
+logging.getLogger("app.services.pdf_service").addHandler(_file_handler)
 
 
 @router.post("/preview", response_model=PrintPreviewResponse)
