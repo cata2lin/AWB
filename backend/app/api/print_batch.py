@@ -392,43 +392,81 @@ async def generate_print_batch(
     await db.commit()
     
     # Mark orders as 'waiting for courier' in Frisbo (non-critical)
-    # This tells Frisbo the package is ready for pickup
+    # Uses quiet HTTP calls — no per-request ERROR log spam
     try:
-        from app.services.frisbo.client import FrisboClient
+        import httpx
         from app.core.config import settings
         
         org_tokens = settings.get_org_tokens()
         if org_tokens:
             marked_count = 0
             failed_count = 0
-            for order in orders:
-                marked = False
-                for token_cfg in org_tokens:
-                    client = FrisboClient(token=token_cfg["token"], org_name=token_cfg.get("name", "default"))
-                    try:
-                        await client.mark_waiting_for_courier(order.uid)
-                        marked = True
-                        break
-                    except Exception as e:
-                        err_str = str(e)
-                        # "Order not found" = wrong org or order not in Frisbo → try next token
-                        if "Order not found" in err_str or "not found" in err_str.lower():
+            skip_reasons = []  # Collect failure reasons for summary log
+            
+            # Pre-build auth headers for each org (avoid creating FrisboClient per call)
+            org_configs = [
+                {
+                    "name": t.get("name", f"org-{i}"),
+                    "headers": {"Authorization": f"Bearer {t['token']}", "Content-Type": "application/json"},
+                }
+                for i, t in enumerate(org_tokens)
+            ]
+            
+            async with httpx.AsyncClient(timeout=30.0) as http:
+                for order in orders:
+                    order_marked = False
+                    last_error = ""
+                    
+                    for org in org_configs:
+                        url = f"{settings.frisbo_api_url}/orders/order/{order.uid}/mark_waiting_for_courier"
+                        try:
+                            resp = await http.get(url, headers=org["headers"])
+                            if resp.status_code == 200:
+                                order_marked = True
+                                break
+                            
+                            # Parse error body quietly
+                            try:
+                                body = resp.json()
+                            except Exception:
+                                body = {}
+                            
+                            errors = body.get("errors", body.get("data", []))
+                            err_text = "; ".join(errors) if isinstance(errors, list) else str(errors)
+                            
+                            # "Order not found" = wrong org → try next token
+                            if "Order not found" in err_text:
+                                continue
+                            
+                            # "not ready for picking" = right org but order already transitioned → stop
+                            if "not ready for picking" in err_text.lower():
+                                last_error = f"already transitioned ({err_text[:60]})"
+                                break
+                            
+                            # Other error → note and try next
+                            last_error = f"[{org['name']}] HTTP {resp.status_code}: {err_text[:80]}"
+                            
+                        except Exception as e:
+                            last_error = f"[{org['name']}] {str(e)[:80]}"
                             continue
-                        # "500" errors from Frisbo → try next token
-                        if "500" in err_str:
-                            continue
-                        # Other errors → log and try next token
-                        logger.debug(f"mark_waiting_for_courier [{token_cfg.get('name')}] for {order.uid}: {err_str[:150]}")
-                        continue
-                if marked:
-                    order.waiting_for_courier_since = datetime.utcnow()
-                    marked_count += 1
-                else:
-                    failed_count += 1
+                    
+                    if order_marked:
+                        order.waiting_for_courier_since = datetime.utcnow()
+                        marked_count += 1
+                    else:
+                        failed_count += 1
+                        if last_error and len(skip_reasons) < 10:
+                            skip_reasons.append(f"{order.order_number}: {last_error}")
             
             await db.commit()
+            
             if failed_count > 0:
-                logger.warning(f"[BATCH PRINT] Frisbo mark_waiting_for_courier: {marked_count} succeeded, {failed_count} failed (non-critical)")
+                logger.warning(
+                    f"[BATCH PRINT] mark_waiting_for_courier: {marked_count} OK, "
+                    f"{failed_count} failed (non-critical)"
+                )
+                for reason in skip_reasons:
+                    logger.warning(f"[BATCH PRINT]   ↳ {reason}")
             else:
                 logger.info(f"[BATCH PRINT] Marked {marked_count} orders as waiting_for_courier in Frisbo")
     except Exception as e:
