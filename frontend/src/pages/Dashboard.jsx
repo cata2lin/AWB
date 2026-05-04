@@ -471,6 +471,16 @@ export default function Dashboard() {
                                 ⚠️ {printResult.held_duplicates} duplicate order(s) were put on hold — review in Duplicates tab
                             </p>
                         )}
+                        {printResult.skipped_count > 0 && (
+                            <div className="mt-1">
+                                <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                                    ⚠️ {printResult.skipped_count} order(s) skipped — AWB label unavailable from Frisbo
+                                </p>
+                                <p className="text-xs text-amber-500 dark:text-amber-500 mt-0.5">
+                                    Skipped: {printResult.skipped_orders?.map(o => o.order_number).join(', ')}
+                                </p>
+                            </div>
+                        )}
                         <a
                             href={printApi.getDownloadUrl(printResult.batch_id)}
                             target="_blank"

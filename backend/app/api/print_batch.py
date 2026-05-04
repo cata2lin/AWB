@@ -272,17 +272,27 @@ async def generate_print_batch(
         except Exception as e:
             logger.warning(f"[BATCH PRINT] Frisbo URL fetch failed (non-critical): {e}")
     
-    # Re-check after Frisbo fetch attempts
+    # Re-check after Frisbo fetch attempts — skip orders that still lack AWBs
     still_missing = [o for o in orders if not o.awb_pdf_url]
+    skipped_orders = []
     if still_missing:
-        missing_info = [f"{o.order_number} (uid={o.uid})" for o in still_missing[:5]]
-        logger.error(f"[BATCH PRINT] Still missing AWB URLs after Frisbo fetch: {missing_info}")
+        skipped_orders = [
+            {"order_number": o.order_number or "N/A", "uid": o.uid}
+            for o in still_missing
+        ]
+        missing_info = [f"{o.order_number} (uid={o.uid})" for o in still_missing[:10]]
+        logger.warning(f"[BATCH PRINT] Skipping {len(still_missing)} orders without AWB URLs: {missing_info}")
+        # Filter them out — only proceed with orders that have AWB URLs
+        orders = [o for o in orders if o.awb_pdf_url]
+    
+    if not orders:
         raise HTTPException(
             status_code=400,
-            detail=f"{len(still_missing)} orders do not have AWB labels: {', '.join(o.order_number or o.uid for o in still_missing[:5])}"
+            detail=f"All {len(still_missing)} orders are missing AWB labels and cannot be printed. "
+                   f"Affected: {', '.join(s['order_number'] for s in skipped_orders[:5])}"
         )
     
-    logger.info(f"[BATCH PRINT] All {len(orders)} orders have AWB URLs, proceeding with PDF generation")
+    logger.info(f"[BATCH PRINT] Proceeding with {len(orders)} orders ({len(skipped_orders)} skipped — no AWB)")
     
     # Get active rules and group orders
     rules_result = await db.execute(
@@ -384,7 +394,9 @@ async def generate_print_batch(
         "file_path": file_path,
         "order_count": len(orders),
         "group_count": len(groups),
-        "held_duplicates": held_duplicates
+        "held_duplicates": held_duplicates,
+        "skipped_orders": skipped_orders,
+        "skipped_count": len(skipped_orders),
     }
 
 
