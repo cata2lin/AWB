@@ -392,7 +392,7 @@ async def generate_print_batch(
     await db.commit()
     
     # Mark orders as 'waiting for courier' in Frisbo (non-critical)
-    # Uses quiet HTTP calls — no per-request ERROR log spam
+    # Uses quiet HTTP calls with store→org caching for O(1) token lookup
     try:
         import httpx
         from app.core.config import settings
@@ -401,9 +401,9 @@ async def generate_print_batch(
         if org_tokens:
             marked_count = 0
             failed_count = 0
-            skip_reasons = []  # Collect failure reasons for summary log
+            skip_reasons = []
             
-            # Pre-build auth headers for each org (avoid creating FrisboClient per call)
+            # Pre-build auth headers per org
             org_configs = [
                 {
                     "name": t.get("name", f"org-{i}"),
@@ -412,17 +412,31 @@ async def generate_print_batch(
                 for i, t in enumerate(org_tokens)
             ]
             
+            # Cache: store_uid → index into org_configs (resolved on first hit)
+            store_org_cache = {}
+            
             async with httpx.AsyncClient(timeout=30.0) as http:
                 for order in orders:
                     order_marked = False
                     last_error = ""
                     
-                    for org in org_configs:
+                    # Determine which orgs to try — cached store or full scan
+                    cached_idx = store_org_cache.get(order.store_uid)
+                    if cached_idx is not None:
+                        # Fast path: we already know which org owns this store
+                        orgs_to_try = [(cached_idx, org_configs[cached_idx])]
+                    else:
+                        # First time seeing this store — try all orgs
+                        orgs_to_try = list(enumerate(org_configs))
+                    
+                    for idx, org in orgs_to_try:
                         url = f"{settings.frisbo_api_url}/orders/order/{order.uid}/mark_waiting_for_courier"
                         try:
                             resp = await http.get(url, headers=org["headers"])
                             if resp.status_code == 200:
                                 order_marked = True
+                                # Cache this store→org mapping
+                                store_org_cache[order.store_uid] = idx
                                 break
                             
                             # Parse error body quietly
@@ -438,8 +452,9 @@ async def generate_print_batch(
                             if "Order not found" in err_text:
                                 continue
                             
-                            # "not ready for picking" = right org but order already transitioned → stop
+                            # "not ready for picking" = right org, order already transitioned → stop & cache
                             if "not ready for picking" in err_text.lower():
+                                store_org_cache[order.store_uid] = idx
                                 last_error = f"already transitioned ({err_text[:60]})"
                                 break
                             
@@ -457,6 +472,8 @@ async def generate_print_batch(
                         failed_count += 1
                         if last_error and len(skip_reasons) < 10:
                             skip_reasons.append(f"{order.order_number}: {last_error}")
+            
+            logger.info(f"[BATCH PRINT] Store→org cache resolved {len(store_org_cache)} stores")
             
             await db.commit()
             
