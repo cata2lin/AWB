@@ -346,6 +346,13 @@ export default function POProductPicker({ existingSkus = [], onAddProducts, onCl
                       {p.product_name || '—'}
                     </h4>
 
+                    {/* Custom Badge */}
+                    {p.is_custom && (
+                      <span className="inline-block mt-1 px-1.5 py-0.5 bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[9px] font-bold uppercase rounded">
+                        Custom
+                      </span>
+                    )}
+
                     {/* SKU */}
                     <p className="text-xs font-bold font-mono text-zinc-700 dark:text-zinc-300 mt-0.5 truncate">{p.sku}</p>
                   </div>

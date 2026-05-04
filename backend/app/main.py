@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products, purchase_orders, purchase_order_mgmt, purchase_order_import, comision_agentie
+from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products, purchase_orders, purchase_order_mgmt, purchase_order_import, comision_agentie, custom_products
 from app.api import settings as settings_api
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
@@ -152,7 +152,7 @@ app.include_router(purchase_order_mgmt.router, prefix="/api", tags=["purchase-or
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 app.include_router(purchase_order_import.router, prefix="/api", tags=["purchase-orders-import"])
 app.include_router(comision_agentie.router, prefix="/api", tags=["comision-agentie"])
-
+app.include_router(custom_products.router, prefix="/api")
 
 @app.get("/api/health")
 async def health_check():

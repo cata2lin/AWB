@@ -84,6 +84,7 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
     Grandia store products are excluded from store context (has own PO engine).
     """
     from app.models.product import Product
+    from app.models.custom_product import CustomProduct
     from app.models.store import Store
     from app.models import SkuCost
 
@@ -108,6 +109,14 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
             sku_map[p.sku] = p
             if p.uid:
                 products_map[p.uid] = p
+                
+    # Second fallback: check custom products for any still missing SKUs
+    still_missing_skus = [s for s in product_skus if s not in sku_map]
+    if still_missing_skus:
+        r = await db.execute(select(CustomProduct).where(CustomProduct.sku.in_(still_missing_skus)))
+        for cp in r.scalars().all():
+            sku_map[cp.sku] = cp
+            # CustomProducts don't have uid in products_map, but sku_map is enough
 
     # Load catalog prices (cost_per_item from SkuCost table)
     all_skus = list({i.sku for i in items if i.sku})
@@ -177,7 +186,7 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
 
         # Product type from store context
         non_grandia_stores = []
-        if prod and prod.store_uids and isinstance(prod.store_uids, list):
+        if prod and hasattr(prod, 'store_uids') and isinstance(prod.store_uids, list):
             for uid in prod.store_uids:
                 if uid != GRANDIA_STORE_UID and uid in store_map:
                     non_grandia_stores.append(store_map[uid].name)

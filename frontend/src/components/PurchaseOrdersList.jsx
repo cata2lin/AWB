@@ -168,8 +168,8 @@ export default function PurchaseOrdersList({ h }) {
         case 'created_at': va = a.created_at || ''; vb = b.created_at || ''; break
         case 'total_cost': va = a.total_cost || 0; vb = b.total_cost || 0; break
         case 'fulfillment':
-          va = (a.total_quantity > 0) ? (a.total_received || 0) / a.total_quantity : 0
-          vb = (b.total_quantity > 0) ? (b.total_received || 0) / b.total_quantity : 0
+          va = (a.total_quantity > 0) ? (a.received_quantity || 0) / a.total_quantity : 0
+          vb = (b.total_quantity > 0) ? (b.received_quantity || 0) / b.total_quantity : 0
           break
         case 'supplier_name': va = a.supplier_name || ''; vb = b.supplier_name || ''; break
         default: va = a.created_at || ''; vb = b.created_at || ''
@@ -197,7 +197,7 @@ export default function PurchaseOrdersList({ h }) {
         openCount++
         totalValue += cost
         totalUnits += qty
-        unitsPending += qty - (po.total_received || 0)
+        unitsPending += qty - (po.received_quantity || 0)
       }
     }
     return { ...s, openCount, totalValue, totalUnits, unitsPending, uniqueSkus: h.orders.length }
@@ -417,7 +417,7 @@ export default function PurchaseOrdersList({ h }) {
                       {fmt(po.total_cost || 0)}
                     </td>
                     <td className="px-5 py-4">
-                      <ProgressBar received={po.total_received || 0} ordered={po.total_quantity || 0} />
+                      <ProgressBar received={po.received_quantity || 0} ordered={po.total_quantity || 0} />
                     </td>
                     <td className="px-5 py-4">
                       <SyncStatusCell po={po} />

@@ -24,8 +24,8 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
   const [search, setSearch] = useState('')
 
   // ── Create/Edit state ──
-  const [mode, setMode] = useState('list') // list | create | detail
-  const [createForm, setCreateForm] = useState({ ...EMPTY_FORM })
+  const [mode, setMode] = useState('list') // list | create | detail | edit
+  const [poForm, setPoForm] = useState({ ...EMPTY_FORM })
 
   // ── Product picker ──
   const [pickerSearch, setPickerSearch] = useState('')
@@ -53,8 +53,8 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
       .then(r => {
         const cats = r.categories || []
         setPoCategories(cats)
-        if (cats.length > 0 && !createForm.po_category) {
-          setCreateForm(prev => ({ ...prev, po_category: cats[0].key }))
+        if (cats.length > 0 && !poForm.po_category) {
+          setPoForm(prev => ({ ...prev, po_category: cats[0].key }))
         }
       })
       .catch(() => {})
@@ -182,21 +182,21 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
   })
 
   const addProduct = (p) => {
-    if (createForm.items.find(i => i.sku === p.sku)) return
-    setCreateForm(prev => ({ ...prev, items: [...prev.items, _buildItem(p)] }))
+    if (poForm.items.find(i => i.sku === p.sku)) return
+    setPoForm(prev => ({ ...prev, items: [...prev.items, _buildItem(p)] }))
   }
 
   /** Batch add — for multi-select picker */
   const addProducts = (products) => {
-    setCreateForm(prev => {
+    setPoForm(prev => {
       const existingSkus = new Set(prev.items.map(i => i.sku))
       const newItems = products.filter(p => !existingSkus.has(p.sku)).map(_buildItem)
       return { ...prev, items: [...prev.items, ...newItems] }
     })
   }
 
-  const removeItem = (sku) => setCreateForm(p => ({ ...p, items: p.items.filter(i => i.sku !== sku) }))
-  const updateItem = (sku, f, v) => setCreateForm(p => ({ ...p, items: p.items.map(i => i.sku === sku ? { ...i, [f]: v } : i) }))
+  const removeItem = (sku) => setPoForm(p => ({ ...p, items: p.items.filter(i => i.sku !== sku) }))
+  const updateItem = (sku, f, v) => setPoForm(p => ({ ...p, items: p.items.map(i => i.sku === sku ? { ...i, [f]: v } : i) }))
 
   const addAllUrgent = () => {
     (analyticsProducts || []).filter(p => p.urgency === 'urgent' || p.urgency === 'warning').forEach(addProduct)
@@ -205,7 +205,7 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
   // ── Create PO ──
   const startCreate = () => {
     const defaultCat = poCategories.length > 0 ? poCategories[0].key : 'packaging'
-    setCreateForm({ ...EMPTY_FORM, po_category: defaultCat })
+    setPoForm({ ...EMPTY_FORM, po_category: defaultCat })
     setPickerSearch('')
     setPickerResults([])
     setMode('create')
@@ -214,13 +214,13 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
   }
 
   const submitCreate = async () => {
-    if (!createForm.items.length) { showToast('Add at least one product', 'error'); return }
+    if (!poForm.items.length) { showToast('Add at least one product', 'error'); return }
     setSaving(true)
     try {
-      const result = await purchaseOrdersMgmtApi.create(createForm)
+      const result = await purchaseOrdersMgmtApi.create(poForm)
       showToast(`PO ${result.po_number || ''} created`, 'success')
       setMode('list')
-      setCreateForm({ ...EMPTY_FORM })
+      setPoForm({ ...EMPTY_FORM })
       fetchOrders()
       // Auto-select the new PO
       if (result.id) {
@@ -232,9 +232,55 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
 
   const cancelCreate = () => {
     setMode('list')
-    setCreateForm({ ...EMPTY_FORM })
+    setPoForm({ ...EMPTY_FORM })
     setPickerSearch('')
     setPickerResults([])
+  }
+
+  // ── Edit PO ──
+  const startEdit = () => {
+    if (!selectedPO) return
+    setPoForm({
+      title: selectedPO.title || '',
+      po_category: selectedPO.po_category || '',
+      po_type: selectedPO.po_type || 'RESTOCK',
+      priority: selectedPO.priority || 'STANDARD',
+      supplier_name: selectedPO.supplier_name || '',
+      container_ref: selectedPO.container_ref || '',
+      expected_arrival_date: selectedPO.expected_arrival_date ? selectedPO.expected_arrival_date.split('T')[0] : '',
+      notes: selectedPO.notes || '',
+      created_by: selectedPO.created_by || '',
+      items: JSON.parse(JSON.stringify(selectedPO.items || [])),
+    })
+    setMode('edit')
+  }
+
+  const saveEdit = async () => {
+    if (!poForm.items.length) { showToast('Add at least one product', 'error'); return }
+    setSaving(true)
+    try {
+      await purchaseOrdersMgmtApi.update(selectedId, poForm)
+      await purchaseOrdersMgmtApi.updateItems(selectedId, poForm.items)
+      
+      let amendMsg = ''
+      if (selectedPO.tom_number) {
+        try {
+          const tr = await purchaseOrdersMgmtApi.tomAmend(selectedId)
+          amendMsg = ` & TOM amended`
+        } catch (e) {
+          amendMsg = ` (TOM amend failed: ${e?.response?.data?.detail || 'Unknown'})`
+        }
+      }
+      showToast(`PO updated successfully${amendMsg}`, amendMsg.includes('failed') ? 'error' : 'success')
+      
+      setMode('detail')
+      fetchOrders()
+      refreshSelected()
+    } catch (e) {
+      showToast(e?.response?.data?.detail || 'Update failed', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // ── Category helpers ──
@@ -256,7 +302,7 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     // Mode
     mode, setMode,
     // Create form
-    createForm, setCreateForm,
+    poForm, setPoForm,
     // Picker
     pickerSearch, setPickerSearch, pickerResults, pickerLoading,
     // Operations
@@ -266,7 +312,7 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     // Actions
     fetchOrders, selectPO, updateStatus, deletePO, receivePO, tomAction,
     addProduct, addProducts, removeItem, updateItem, addAllUrgent,
-    startCreate, submitCreate, cancelCreate, showToast,
+    startCreate, submitCreate, cancelCreate, startEdit, saveEdit, showToast,
     // Category management
     saveCategories,
   }

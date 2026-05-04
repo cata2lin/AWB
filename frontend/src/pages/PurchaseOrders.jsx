@@ -128,7 +128,7 @@ export default function PurchaseOrders() {
       {h.mode === 'list' && !poNumber && (
         <PurchaseOrdersList h={wrappedH} />
       )}
-      {(h.mode === 'create' || h.mode === 'detail' || poNumber) && (
+      {(h.mode === 'create' || h.mode === 'detail' || h.mode === 'edit' || poNumber) && (
         <PurchaseOrderDetailPage h={wrappedH} />
       )}
     </div>

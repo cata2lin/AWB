@@ -75,6 +75,12 @@ async def get_print_preview(
     
     if request.order_uids:
         query = query.where(Order.uid.in_(request.order_uids))
+        
+    if request.date_from:
+        query = query.where(Order.frisbo_created_at >= request.date_from)
+        
+    if request.date_to:
+        query = query.where(Order.frisbo_created_at <= request.date_to)
     
     result = await db.execute(query)
     orders = result.scalars().all()

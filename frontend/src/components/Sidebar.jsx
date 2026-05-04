@@ -40,6 +40,7 @@ const navStructure = [
     { type: 'divider' },
     { type: 'link', path: '/comision-agentie', icon: Percent, label: 'Comision Agenție' },
     { type: 'divider' },
+    { type: 'link', path: '/custom-products', icon: Package, label: 'Custom Products' },
     { type: 'link', path: '/settings', icon: Settings, label: 'Settings' },
     { type: 'link', path: '/logs', icon: Activity, label: 'System Monitor' },
 ]

@@ -2,11 +2,13 @@
 import api, { API_BASE_URL } from './client'
 
 export const printApi = {
-    getPreview: async (storeUids = null, orderUids = null, limit = null) => {
+    getPreview: async (storeUids = null, orderUids = null, limit = null, dateFrom = null, dateTo = null) => {
         const { data } = await api.post('/print/preview', {
             store_uids: storeUids,
             order_uids: orderUids,
             limit: limit,
+            date_from: dateFrom ? new Date(dateFrom).toISOString() : null,
+            date_to: dateTo ? new Date(dateTo + 'T23:59:59').toISOString() : null,
         })
         return data
     },

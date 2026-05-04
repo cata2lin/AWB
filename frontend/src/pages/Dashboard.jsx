@@ -26,6 +26,10 @@ export default function Dashboard() {
     const [customDateFrom, setCustomDateFrom] = useState('')
     const [customDateTo, setCustomDateTo] = useState('')
 
+    // Print Date Filter state
+    const [printDateFrom, setPrintDateFrom] = useState('')
+    const [printDateTo, setPrintDateTo] = useState('')
+
     // Fetch data from API
     const { data: stores = [], isLoading: storesLoading, error: storesError } = useStores()
     const { data: stats, isLoading: statsLoading } = useOrderStats()
@@ -74,7 +78,7 @@ export default function Dashboard() {
         try {
             setPrintError(null)
             const storeUids = selectedStoreIds.length > 0 ? selectedStoreIds : null
-            const preview = await printApi.getPreview(storeUids, null, batchSize)
+            const preview = await printApi.getPreview(storeUids, null, batchSize, printDateFrom, printDateTo)
             setPreviewData(preview)
             setShowPreview(true)
         } catch (err) {
@@ -126,7 +130,7 @@ export default function Dashboard() {
         try {
             // First get the preview to get all order UIDs
             const storeUids = selectedStoreIds.length > 0 ? selectedStoreIds : null
-            const preview = await printApi.getPreview(storeUids)
+            const preview = await printApi.getPreview(storeUids, null, batchSize, printDateFrom, printDateTo)
 
             if (!preview.total_orders || preview.total_orders === 0) {
                 setPrintError('No orders available to print')
@@ -692,6 +696,22 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-2 mr-2 border border-zinc-200 dark:border-zinc-700">
+                                <Calendar className="w-4 h-4 text-zinc-400" />
+                                <input
+                                    type="date"
+                                    value={printDateFrom}
+                                    onChange={(e) => setPrintDateFrom(e.target.value)}
+                                    className="bg-transparent text-sm text-zinc-700 dark:text-zinc-300 outline-none w-32 dark:[color-scheme:dark]"
+                                />
+                                <span className="text-zinc-400">-</span>
+                                <input
+                                    type="date"
+                                    value={printDateTo}
+                                    onChange={(e) => setPrintDateTo(e.target.value)}
+                                    className="bg-transparent text-sm text-zinc-700 dark:text-zinc-300 outline-none w-32 dark:[color-scheme:dark]"
+                                />
+                            </div>
                             <button
                                 onClick={handlePreview}
                                 className="px-5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-lg font-medium transition-all flex items-center gap-2 border border-zinc-200 dark:border-zinc-700"

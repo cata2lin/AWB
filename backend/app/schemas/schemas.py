@@ -200,6 +200,8 @@ class PrintPreviewRequest(BaseModel):
     store_uids: Optional[List[str]] = None
     order_uids: Optional[List[str]] = None  # Specific orders to include
     limit: Optional[int] = None  # Max orders to include (batch size)
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
 
 
 class PrintPreviewResponse(BaseModel):

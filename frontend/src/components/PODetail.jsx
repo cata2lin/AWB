@@ -13,15 +13,16 @@ const fmtCur = n => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { m
 export default function PODetail({ h }) {
   const [showLog, setShowLog] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
-  const [itemSearch, setItemSearch] = useState('')
+  const [itemSearch, setItemSearch] = useState(h.search || '')
   const [itemPriorityFilter, setItemPriorityFilter] = useState('')
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const isCreate = h.mode === 'create'
+  const isEditable = ['create', 'edit'].includes(h.mode)
   const po = isCreate ? null : h.selectedPO
-  const items = isCreate ? h.createForm.items : (po?.items || [])
-  const catConfig = isCreate
-    ? (h.poCategories.find(c => c.key === h.createForm.po_category) || { tom_enabled: false })
+  const items = isEditable ? h.poForm.items : (po?.items || [])
+  const catConfig = isEditable
+    ? (h.poCategories.find(c => c.key === h.poForm.po_category) || { tom_enabled: false })
     : h.getCatConfig(po?.po_category)
   const isTomEnabled = catConfig.tom_enabled
   const hasTom = !isCreate && !!po?.tom_number
@@ -114,6 +115,8 @@ export default function PODetail({ h }) {
           <h3 className="text-lg font-bold text-zinc-800 dark:text-white flex items-center gap-2">
             {isCreate ? (
               <><Plus className="w-5 h-5 text-indigo-500" /> New Purchase Order</>
+            ) : h.mode === 'edit' ? (
+              <><PenLine className="w-5 h-5 text-indigo-500" /> Editing {po.po_number}</>
             ) : (
               <><span className="font-mono text-lg">{po.po_number}</span>
               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_CFG[po.status]?.cls || ''}`}>
@@ -121,24 +124,24 @@ export default function PODetail({ h }) {
               </span></>
             )}
           </h3>
-          {isCreate && (
-            <button onClick={h.cancelCreate} className="p-1.5 text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
+          {isEditable && (
+            <button onClick={isCreate ? h.cancelCreate : () => h.setMode('detail')} className="p-1.5 text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
           )}
         </div>
 
         {/* Meta fields */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {isCreate ? (<>
+          {isEditable ? (<>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Category</label>
-              <select value={h.createForm.po_category} onChange={e => h.setCreateForm(p => ({ ...p, po_category: e.target.value }))}
+              <select value={h.poForm.po_category} onChange={e => h.setPoForm(p => ({ ...p, po_category: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
                 {h.poCategories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
               </select>
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Type</label>
-              <select value={h.createForm.po_type} onChange={e => h.setCreateForm(p => ({ ...p, po_type: e.target.value }))}
+              <select value={h.poForm.po_type} onChange={e => h.setPoForm(p => ({ ...p, po_type: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
                 <option value="RESTOCK">Restock</option>
                 <option value="NEW_PRODUCT">New Product</option>
@@ -146,7 +149,7 @@ export default function PODetail({ h }) {
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Priority</label>
-              <select value={h.createForm.priority} onChange={e => h.setCreateForm(p => ({ ...p, priority: e.target.value }))}
+              <select value={h.poForm.priority} onChange={e => h.setPoForm(p => ({ ...p, priority: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white">
                 <option value="STANDARD">Standard</option>
                 <option value="HIGH">High</option>
@@ -154,17 +157,17 @@ export default function PODetail({ h }) {
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Supplier</label>
-              <input value={h.createForm.supplier_name} onChange={e => h.setCreateForm(p => ({ ...p, supplier_name: e.target.value }))}
+              <input value={h.poForm.supplier_name} onChange={e => h.setPoForm(p => ({ ...p, supplier_name: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" placeholder="Supplier name" />
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Expected Arrival</label>
-              <input type="date" value={h.createForm.expected_arrival_date} onChange={e => h.setCreateForm(p => ({ ...p, expected_arrival_date: e.target.value }))}
+              <input type="date" value={h.poForm.expected_arrival_date} onChange={e => h.setPoForm(p => ({ ...p, expected_arrival_date: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Notes</label>
-              <input value={h.createForm.notes} onChange={e => h.setCreateForm(p => ({ ...p, notes: e.target.value }))}
+              <input value={h.poForm.notes} onChange={e => h.setPoForm(p => ({ ...p, notes: e.target.value }))}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" placeholder="Notes" />
             </div>
           </>) : (<>
@@ -222,7 +225,7 @@ export default function PODetail({ h }) {
       </div>
 
       {/* ═══ ADD PRODUCTS BUTTON (create mode) ═══ */}
-      {isCreate && (
+      {isEditable && (
         <div className="px-4 pt-3">
           <button onClick={() => setShowPicker(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold 
@@ -240,7 +243,7 @@ export default function PODetail({ h }) {
       {/* Product picker modal */}
       {showPicker && (
         <POProductPicker
-          existingSkus={h.createForm.items.map(i => i.sku)}
+          existingSkus={h.poForm.items.map(i => i.sku)}
           onAddProducts={h.addProducts}
           onClose={() => setShowPicker(false)}
           categories={h.poCategories}
@@ -251,7 +254,7 @@ export default function PODetail({ h }) {
       <div className="flex-1 overflow-auto px-5 py-4">
         {items.length === 0 ? (
           <div className="text-center py-12 text-zinc-400 text-sm">
-            {isCreate ? 'Click "Search & Add Products" to populate this PO' : 'No items'}
+            {isEditable ? 'Click "Search & Add Products" to populate this PO' : 'No items'}
           </div>
         ) : (<>
           {/* Search & Filter Bar */}
@@ -283,12 +286,12 @@ export default function PODetail({ h }) {
                   <SortHeader col="total" label="Total" className="text-right" />
                   {!isCreate && <SortHeader col="received" label="Received" className="text-right" />}
                   {!isCreate && isTomEnabled && <SortHeader col="tom" label="TOM" className="text-center" />}
-                  {isCreate && <th className="px-3 py-2.5 w-10"></th>}
+                  {isEditable && <th className="px-3 py-2.5 w-10"></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                {filteredItems.map(item => (
-                  <tr key={item.sku || item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/20">
+                {filteredItems.map((item, idx) => (
+                  <tr key={`${item.sku || item.id}-${idx}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/20">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         {item.product_image ? <img src={item.product_image} className="w-10 h-10 rounded-lg object-cover" /> : <Package className="w-8 h-8 text-zinc-400" />}
@@ -297,7 +300,7 @@ export default function PODetail({ h }) {
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-base text-zinc-700 dark:text-zinc-300">{item.sku}</td>
                     <td className="px-4 py-3 text-center">
-                      {isCreate ? (
+                      {isEditable ? (
                         <select value={item.priority || ''} onChange={e => h.updateItem(item.sku, 'priority', e.target.value || null)}
                           className="w-24 px-2 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
                           <option value="">Inherit</option>
@@ -315,13 +318,13 @@ export default function PODetail({ h }) {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {isCreate ? (
+                      {isEditable ? (
                         <input type="number" min="1" value={item.quantity} onChange={e => h.updateItem(item.sku, 'quantity', parseInt(e.target.value) || 0)}
                           className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                       ) : <span className="font-semibold text-zinc-900 dark:text-white">{fmt(item.quantity)}</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {isCreate ? (
+                      {isEditable ? (
                         <input type="number" min="0" step="0.01" value={item.unit_cost} onChange={e => h.updateItem(item.sku, 'unit_cost', parseFloat(e.target.value) || 0)}
                           className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                       ) : <span className="text-zinc-500">{fmtCur(item.unit_cost)}</span>}
@@ -331,7 +334,15 @@ export default function PODetail({ h }) {
                     </td>
                     {!isCreate && (
                       <td className="px-4 py-3 text-right">
-                        {item.received_qty > 0 ? <span className="text-green-600 font-medium">{fmt(item.received_qty)}</span> : <span className="text-zinc-400">0</span>}
+                        {item.tom_received_qty != null && item.tom_received_qty > 0 ? (
+                          <span className="text-green-600 font-medium" title={`TOM received: ${fmt(item.tom_received_qty)}${item.tom_shipped_qty ? ` · Shipped: ${fmt(item.tom_shipped_qty)}` : ''}`}>
+                            {fmt(item.tom_received_qty)}
+                          </span>
+                        ) : item.received_qty > 0 ? (
+                          <span className="text-green-600 font-medium">{fmt(item.received_qty)}</span>
+                        ) : (
+                          <span className="text-zinc-400">0</span>
+                        )}
                       </td>
                     )}
                     {!isCreate && isTomEnabled && (
@@ -339,7 +350,7 @@ export default function PODetail({ h }) {
                         {item.tom_status ? <span className={`text-xs font-medium ${TOM_CLS[item.tom_status] || 'text-zinc-400'}`}>{item.tom_status}</span> : <span className="text-zinc-400">—</span>}
                       </td>
                     )}
-                    {isCreate && (
+                    {isEditable && (
                       <td className="px-4 py-3"><button onClick={() => h.removeItem(item.sku)}><X className="w-4 h-4 text-red-400 hover:text-red-600" /></button></td>
                     )}
                   </tr>
@@ -359,13 +370,18 @@ export default function PODetail({ h }) {
 
         {/* Actions */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          {isCreate ? (<>
-            <button onClick={h.cancelCreate} className="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
-            <button onClick={h.submitCreate} disabled={h.saving || items.length === 0}
+          {isEditable ? (<>
+            <button onClick={isCreate ? h.cancelCreate : () => { h.setMode('detail'); h.setToast(null) }} className="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
+            <button onClick={isCreate ? h.submitCreate : h.saveEdit} disabled={h.saving || items.length === 0}
               className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
-              {h.saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create PO
+              {h.saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {isCreate ? 'Create PO' : 'Save Changes'}
             </button>
           </>) : (<>
+            {['DRAFT', 'APPROVED'].includes(po.status) && (
+              <button onClick={h.startEdit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg">
+                <PenLine className="w-4 h-4" /> Edit PO
+              </button>
+            )}
             {po.status === 'DRAFT' && (<>
               <button onClick={() => h.updateStatus(po.id, 'APPROVED')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
                 <CheckCircle2 className="w-4 h-4" /> Approve

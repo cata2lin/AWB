@@ -12,6 +12,7 @@ import Analytics from './pages/Analytics'
 import PurchaseOrders from './pages/PurchaseOrders'
 import Logs from './pages/Logs'
 import ComisionAgentie from './pages/ComisionAgentie'
+import CustomProducts from './pages/CustomProducts'
 import Login from './pages/Login'
 import { Loader } from 'lucide-react'
 
@@ -48,6 +49,7 @@ function AppContent() {
               <Route path="/history" element={<History />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/comision-agentie" element={<ComisionAgentie />} />
+              <Route path="/custom-products" element={<CustomProducts />} />
               <Route path="/logs" element={<Logs />} />
             </Routes>
           </main>

@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.models import PurchaseOrder, PurchaseOrderItem, PoSyncLog, GeneratedBarcode, SkuCost
 from app.models.product import Product
 from app.models.store import Store
+from app.models.custom_product import CustomProduct
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/purchase-orders-mgmt", tags=["purchase-orders-management"])
@@ -161,6 +162,20 @@ def _update_totals(po, items):
     po.total_cost = round(sum(i.quantity * i.unit_cost for i in items), 2)
 
 
+def _merge_duplicate_sku_items(items_data):
+    """Merge items with the same SKU by summing quantities.
+    Keeps the first occurrence's metadata (name, image, etc.).
+    """
+    merged = {}
+    for d in items_data:
+        sku = d.sku
+        if sku in merged:
+            merged[sku].quantity += d.quantity
+        else:
+            merged[sku] = d
+    return list(merged.values())
+
+
 # ── CRUD ──────────────────────────────────────────────────────────────────
 
 @router.get("/list")
@@ -254,7 +269,9 @@ async def create_purchase_order(body: POCreate, db: AsyncSession = Depends(get_d
     await db.flush()
 
     items = []
-    for d in body.items:
+    # Merge duplicate SKUs before saving
+    merged = _merge_duplicate_sku_items(body.items)
+    for d in merged:
         item = PurchaseOrderItem(
             purchase_order_id=po.id, product_uid=d.product_uid,
             sku=d.sku, barcode=d.barcode, product_name=d.product_name,
@@ -320,8 +337,10 @@ async def update_po_items(po_id: int, items: List[POItemUpdate], db: AsyncSessio
         raise HTTPException(status_code=400, detail="Cannot modify items on this PO status")
 
     await db.execute(delete(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id))
+    # Merge duplicate SKUs before saving
+    merged_items = _merge_duplicate_sku_items(items)
     new_items = []
-    for d in items:
+    for d in merged_items:
         item = PurchaseOrderItem(
             purchase_order_id=po_id, product_uid=d.product_uid,
             sku=d.sku, barcode=d.barcode, product_name=d.product_name,
@@ -440,9 +459,20 @@ async def product_picker(
     result = await db.execute(query)
     products = result.scalars().all()
 
+    # Fetch Custom Products
+    custom_query = select(CustomProduct)
+    if search:
+        custom_query = custom_query.where(
+            (func.lower(CustomProduct.sku).like(sl)) |
+            (func.lower(CustomProduct.product_name).like(sl)) |
+            (func.lower(CustomProduct.barcode).like(sl))
+        )
+    custom_result = await db.execute(custom_query.order_by(CustomProduct.product_name).limit(limit))
+    custom_products = custom_result.scalars().all()
+
     # Filter out products that are ONLY on Grandia, and apply store filter
-    filtered = []
-    seen_skus = set()  # Deduplicate by SKU for unique products
+    # Aggregate by SKU: sum stock_available across stores, merge store_uids
+    sku_agg = {}  # sku -> {product, total_stock, store_uids_set}
     for p in products:
         stores = p.store_uids or []
         if isinstance(stores, list) and len(stores) == 1 and GRANDIA_STORE_UID in stores:
@@ -454,21 +484,49 @@ async def product_picker(
             if not product_store_set.intersection(filter_store_uids):
                 continue
 
-        # Deduplicate by SKU (multi-store listings appear once)
-        if p.sku in seen_skus:
-            continue
-        seen_skus.add(p.sku)
+        sku = p.sku
+        if sku in sku_agg:
+            # Aggregate: sum stock, merge store UIDs
+            sku_agg[sku]["total_stock"] += (p.stock_available or 0)
+            sku_agg[sku]["store_uids"].update(uid for uid in (stores if isinstance(stores, list) else []) if uid != GRANDIA_STORE_UID)
+        else:
+            sku_agg[sku] = {
+                "product": p,
+                "total_stock": p.stock_available or 0,
+                "store_uids": set(uid for uid in (stores if isinstance(stores, list) else []) if uid != GRANDIA_STORE_UID),
+                "is_custom": False,
+            }
+            
+    # Add custom products to the aggregation
+    for cp in custom_products:
+        sku = cp.sku
+        if sku not in sku_agg:
+            sku_agg[sku] = {
+                "product": cp,
+                "total_stock": 0,
+                "store_uids": set(),
+                "is_custom": True,
+            }
 
-        filtered.append(p)
+    filtered = list(sku_agg.values())
 
     # Sort: exact match first, then alphabetical
-    if exact_match_uid:
-        filtered.sort(key=lambda p: (0 if p.uid == exact_match_uid else 1, p.title_1 or ""))
+    def _title(e):
+        p = e["product"]
+        return p.product_name if e["is_custom"] else (p.title_1 or "")
 
-    products = filtered[:limit]
+    if exact_match_uid:
+        filtered.sort(key=lambda e: (0 if getattr(e["product"], "uid", None) == exact_match_uid else (0 if e["product"].sku and e["product"].sku.lower() == search.strip().lower() else 1), _title(e)))
+    else:
+        # If we have a search term, sort exact SKU matches first
+        if search:
+            search_lower = search.strip().lower()
+            filtered.sort(key=lambda e: (0 if (e["product"].sku or "").lower() == search_lower else 1, _title(e)))
+
+    filtered = filtered[:limit]
 
     # Load SKU costs
-    skus = [p.sku for p in products if p.sku]
+    skus = [e["product"].sku for e in filtered if e["product"].sku]
     costs_map = {}
     if skus:
         costs_r = await db.execute(select(SkuCost).where(SkuCost.sku.in_(skus)))
@@ -476,34 +534,42 @@ async def product_picker(
 
     # Load store names for display
     all_store_uids = set()
-    for p in products:
-        if p.store_uids and isinstance(p.store_uids, list):
-            all_store_uids.update(uid for uid in p.store_uids if uid != GRANDIA_STORE_UID)
-    store_names = {}
+    for e in filtered:
+        all_store_uids.update(e["store_uids"])
+    store_name_map = {}
     if all_store_uids:
         stores_r = await db.execute(select(Store).where(Store.uid.in_(list(all_store_uids))))
-        store_names = {s.uid: s.name for s in stores_r.scalars().all()}
+        store_name_map = {s.uid: s.name for s in stores_r.scalars().all()}
 
-    def _first_image(p):
+    def _first_image(p, is_custom):
+        if is_custom:
+            return p.image_url
         if p.images and isinstance(p.images, list) and len(p.images) > 0:
             img = p.images[0]
             return img.get("src") if isinstance(img, dict) else None
         return None
 
+    def _cost(e):
+        if e["is_custom"]:
+            return float(e["product"].default_unit_cost or 0)
+        return costs_map.get(e["product"].sku, 0.0)
+
     return {
         "products": [{
-            "uid": p.uid, "sku": p.sku or "", "barcode": p.barcode or "",
-            "product_name": p.title_1 or "", "variant_title": p.title_2 or "",
-            "image": _first_image(p),
-            "stock_available": p.stock_available or 0,
-            "unit_cost": costs_map.get(p.sku, 0.0),
-            "hs_code": p.hs_code,
-            "weight": p.weight,
-            "external_identifier": p.external_identifier,
-            "store_uids": [uid for uid in (p.store_uids or []) if uid != GRANDIA_STORE_UID],
-            "store_names": [store_names.get(uid, uid) for uid in (p.store_uids or []) if uid != GRANDIA_STORE_UID and uid in store_names],
-            "is_exact_match": p.uid == exact_match_uid if exact_match_uid else False,
-        } for p in products],
+            "uid": e["product"].uid, "sku": e["product"].sku or "", "barcode": e["product"].barcode or "",
+            "product_name": e["product"].product_name if e["is_custom"] else (e["product"].title_1 or ""),
+            "variant_title": "" if e["is_custom"] else (e["product"].title_2 or ""),
+            "image": _first_image(e["product"], e["is_custom"]),
+            "stock_available": e["total_stock"],
+            "unit_cost": _cost(e),
+            "hs_code": e["product"].hs_code,
+            "weight": getattr(e["product"], "weight_grams", None) if e["is_custom"] else e["product"].weight,
+            "external_identifier": None if e["is_custom"] else e["product"].external_identifier,
+            "store_uids": list(e["store_uids"]),
+            "store_names": [store_name_map.get(uid, uid) for uid in e["store_uids"] if uid in store_name_map],
+            "is_exact_match": getattr(e["product"], "uid", None) == exact_match_uid if exact_match_uid else False,
+            "is_custom": e["is_custom"],
+        } for e in filtered],
         "exact_match_uid": exact_match_uid,
     }
 
