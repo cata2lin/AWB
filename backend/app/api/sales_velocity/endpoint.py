@@ -223,6 +223,8 @@ async def get_sales_velocity(
 
     # Master SKU map for orders: maps any raw SKU -> master SKU (from the primary listing)
     master_sku_map = {}
+    store_sku_map = {}
+    group_display_sku = {}
 
     # Initialize Maps
     sku_stock_map: Dict[str, int] = {}          # group_key → total stock
@@ -244,35 +246,46 @@ async def get_sales_velocity(
         if stored_primary_uid and stored_primary_uid in uid_to_product:
             best_product = uid_to_product[stored_primary_uid]
             
-        master_sku = (best_product.sku or fallback_key).strip()
-        if not master_sku: return
+        group_key = fallback_key.strip()
+        if not group_key: return
 
-        # Map all SKUs in this group to the master_sku
+        group_display_sku[group_key] = (best_product.sku or fallback_key).strip()
+
+        # Map all SKUs in this group to the group_key
         for p in group:
             if p.sku:
-                master_sku_map[p.sku.strip()] = master_sku
+                master_sku_map[p.sku.strip()] = group_key
+                s_uids = p.store_uids or []
+                if isinstance(s_uids, str):
+                    try:
+                        import json
+                        s_uids = json.loads(s_uids)
+                    except:
+                        s_uids = []
+                for uid in s_uids:
+                    store_sku_map[(uid, p.sku.strip())] = group_key
                 
         # Sum stock across ALL listings in the group (not just primary)
         group_stock = sum(p.stock_available or 0 for p in group)
-        sku_stock_map[master_sku] = group_stock
+        sku_stock_map[group_key] = group_stock
         if best_product.title_1:
-            sku_product_name[master_sku] = best_product.title_1
+            sku_product_name[group_key] = best_product.title_1
 
         # Extract image URL from best product's images JSON
-        if master_sku not in sku_image_map:
+        if group_key not in sku_image_map:
             imgs = best_product.images
             if imgs and isinstance(imgs, list) and len(imgs) > 0:
-                sku_image_map[master_sku] = imgs[0].get('src', '') if isinstance(imgs[0], dict) else str(imgs[0])
+                sku_image_map[group_key] = imgs[0].get('src', '') if isinstance(imgs[0], dict) else str(imgs[0])
             elif imgs and isinstance(imgs, str):
                 try:
                     parsed = json.loads(imgs)
                     if parsed and isinstance(parsed, list) and len(parsed) > 0:
-                        sku_image_map[master_sku] = parsed[0].get('src', '') if isinstance(parsed[0], dict) else str(parsed[0])
+                        sku_image_map[group_key] = parsed[0].get('src', '') if isinstance(parsed[0], dict) else str(parsed[0])
                 except Exception:
                     pass
             
-        if master_sku not in sku_group_stores:
-            sku_group_stores[master_sku] = set()
+        if group_key not in sku_group_stores:
+            sku_group_stores[group_key] = set()
             
         for p in group:
             s_uids = p.store_uids or []
@@ -282,7 +295,7 @@ async def get_sales_velocity(
                     s_uids = json.loads(s_uids)
                 except Exception:
                     s_uids = []
-            sku_group_stores[master_sku].update(s_uids)
+            sku_group_stores[group_key].update(s_uids)
 
     for bc, group in barcode_groups.items():
         process_product_group(group, bc)
@@ -297,6 +310,9 @@ async def get_sales_velocity(
         """Compute the merge-group key."""
         if store_uid == NUBRA_UID:
             return f"{sku}::nubra"
+        # Check explicit store-sku mapping first
+        if (store_uid, sku.strip()) in store_sku_map:
+            return store_sku_map[(store_uid, sku.strip())]
         # Map any variant SKU to its group's master SKU
         return master_sku_map.get(sku.strip(), sku.strip())
 
@@ -550,7 +566,7 @@ async def get_sales_velocity(
 
     products = []
     for comp_key, agg in sku_current.items():
-        sku = agg["sku"]
+        sku = group_display_sku.get(comp_key, agg["sku"])
         store_uids_in_group = agg.get("store_uids_in_group", set())
         # Build store display name from all stores in this group
         store_names = " + ".join(sorted(

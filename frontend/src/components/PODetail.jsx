@@ -180,8 +180,8 @@ export default function PODetail({ h }) {
           </>)}
         </div>
 
-        {/* TOM Sync Bar (detail mode — always visible for APPROVED+ POs) */}
-        {!isCreate && (
+        {/* TOM Sync Bar (detail mode — only for TOM-enabled categories) */}
+        {!isCreate && isTomEnabled && (
           <div className="mt-4 flex items-center gap-3 flex-wrap p-3 rounded-lg bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-500/5 dark:to-indigo-500/5 border border-sky-200 dark:border-sky-500/20">
             <span className="text-xs font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider">TOM</span>
             {hasTom ? (

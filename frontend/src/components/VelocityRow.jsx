@@ -106,7 +106,7 @@ const VelocityRow = memo(({
             {/* Expanded detail */}
             {isExpanded && (
                 <tr className="bg-zinc-50 dark:bg-zinc-900/40">
-                    <td colSpan={16} className="px-4 py-4">
+                    <td colSpan={17} className="px-4 py-4">
                         <div className="space-y-4">
                             {/* Per-Variant Breakdown */}
                             {p.by_variant && p.by_variant.length > 0 && (

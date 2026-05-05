@@ -5,9 +5,8 @@ import { useState } from 'react'
 import { Check, Trash2, Truck, XCircle, CheckCircle2, Send, RotateCw, PenLine, Ban, Package, FileText, ChevronDown, ChevronUp, AlertTriangle, RefreshCw, Clock, Image } from 'lucide-react'
 import { STATUS_CFG, TOM_STATUS_CLS, fmt, fmtCur } from './POManagerPanel'
 
-export default function POExpandedDetail({ po, data, tomBusy, onUpdateStatus, onDelete, onReceive, onTomAction }) {
+export default function POExpandedDetail({ po, data, tomBusy, onUpdateStatus, onDelete, onReceive, onTomAction, isTomEnabled }) {
   const [showLog, setShowLog] = useState(false)
-  const isPkg = po.po_category === 'packaging'
   const hasTom = !!data.tom_number
   const missingImages = (data.items || []).filter(i => !(i.product_image || '').trim())
 
@@ -31,8 +30,8 @@ export default function POExpandedDetail({ po, data, tomBusy, onUpdateStatus, on
         {data.notes && <span className="text-xs text-zinc-400 ml-auto italic">📝 {data.notes}</span>}
       </div>
 
-      {/* TOM Sync Bar — packaging only */}
-      {isPkg && (
+      {/* TOM Sync Bar — categories with tom_enabled */}
+      {isTomEnabled && (
         <div className="flex items-center gap-2 flex-wrap p-2.5 rounded-lg bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-500/5 dark:to-indigo-500/5 border border-sky-200 dark:border-sky-500/20">
           <span className="text-[10px] font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider mr-1">TOM</span>
           {hasTom ? (

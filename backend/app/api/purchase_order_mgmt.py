@@ -62,6 +62,7 @@ class POCreate(BaseModel):
 class POUpdate(BaseModel):
     title: Optional[str] = None
     status: Optional[str] = None
+    po_category: Optional[str] = None
     po_type: Optional[str] = None
     priority: Optional[str] = None
     supplier_name: Optional[str] = None
@@ -306,7 +307,7 @@ async def update_purchase_order(po_id: int, body: POUpdate, db: AsyncSession = D
         elif body.status == "CANCELLED":
             po.cancelled_at = datetime.utcnow()
 
-    for field in ["title", "po_type", "priority", "supplier_name", "container_ref", "notes"]:
+    for field in ["title", "po_category", "po_type", "priority", "supplier_name", "container_ref", "notes"]:
         val = getattr(body, field, None)
         if val is not None:
             setattr(po, field, val)

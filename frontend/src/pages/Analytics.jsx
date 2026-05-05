@@ -2180,8 +2180,8 @@ export default function Analytics() {
                                 if (velocityTrendMaxPct !== '' && (p.velocity_change_pct ?? 0) > Number(velocityTrendMaxPct)) return false
                                 // Exclude stores
                                 if (velocityExcludeStores.length > 0) {
-                                    const productStoreUids = (p.store_uid || '').split('|')
-                                    if (productStoreUids.every(uid => velocityExcludeStores.includes(uid))) return false
+                                    const productStoreUids = (p.store_uid || '').split('|').filter(Boolean)
+                                    if (productStoreUids.some(uid => velocityExcludeStores.includes(uid))) return false
                                 }
                                 // SKU include list (exact SKU match from picker)
                                 if (velocitySkuInclude.length > 0) {
@@ -2691,7 +2691,7 @@ export default function Analytics() {
                                                         </thead>
                                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                                             {sortedProducts.length === 0 && (
-                                                                <tr><td colSpan={15} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
+                                                                <tr><td colSpan={17} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
                                                             )}
                                                             {sortedProducts.map((p, i) => {
                                                                 const rowKey = `${p.sku}::${p.store_uid || ''}`

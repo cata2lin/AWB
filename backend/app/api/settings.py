@@ -22,6 +22,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 # ── Default PO categories (seeded on first read) ─────────────────────────
 DEFAULT_PO_CATEGORIES = [
+    {"key": "packaging", "label": "📦 Packaging", "stores": [], "tom_enabled": True},
     {"key": "pajamas", "label": "🌙 Pajamas", "stores": ["nocturna.ro", "nocturnalux.ro", "nocturna.bg"], "tom_enabled": True},
     {"key": "home_garden", "label": "🏠 Home & Garden", "stores": ["grandia.ro", "casaofertelor.ro"], "tom_enabled": True},
     {"key": "beauty", "label": "💅 Beauty", "stores": ["rossinails.ro", "belasil.ro"], "tom_enabled": True},
