@@ -3,9 +3,10 @@
  * Unified layout for both modes with inline product search.
  */
 import { useState, useMemo } from 'react'
-import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, Edit2 } from 'lucide-react'
 import { STATUS_CFG, TOM_CLS } from './POList'
 import POProductPicker from './POProductPicker'
+import { productsApi } from '../services/api/products'
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const fmtCur = n => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON`
@@ -17,6 +18,23 @@ export default function PODetail({ h }) {
   const [itemPriorityFilter, setItemPriorityFilter] = useState('')
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+  const [editingVariantUid, setEditingVariantUid] = useState(null)
+  const [variantForm, setVariantForm] = useState({ v1: '', v2: '' })
+
+  const handleSaveVariants = async (uid) => {
+    try {
+      await productsApi.updateVariants(uid, {
+        tom_variant_1: variantForm.v1,
+        tom_variant_2: variantForm.v2
+      })
+      h.setToast({ type: 'success', msg: 'Variants updated!' })
+      setEditingVariantUid(null)
+    } catch (e) {
+      console.error('Failed to save variants:', e)
+      h.setToast({ type: 'error', msg: 'Failed to save variants.' })
+    }
+  }
+
   const isCreate = h.mode === 'create'
   const isEditable = ['create', 'edit'].includes(h.mode)
   const po = isCreate ? null : h.selectedPO
@@ -298,7 +316,43 @@ export default function PODetail({ h }) {
                         <span className="text-zinc-700 dark:text-zinc-300 truncate max-w-[300px] font-medium">{item.product_name || '—'}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono font-bold text-base text-zinc-700 dark:text-zinc-300">{item.sku}</td>
+                    <td className="px-4 py-3 relative">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-base text-zinc-700 dark:text-zinc-300">{item.sku}</span>
+                        {item.product_uid && (
+                          <button onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingVariantUid(item.product_uid)
+                            setVariantForm({ v1: item.tom_variant_1 || '', v2: item.tom_variant_2 || '' })
+                          }} className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 z-10" title="Edit TOM Variants">
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Inline Variant Editor */}
+                      {editingVariantUid === item.product_uid && (
+                        <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-zinc-800 p-3 shadow-xl border border-zinc-200 dark:border-zinc-700 z-50 rounded-xl"
+                             onClick={e => e.stopPropagation()}>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Variant 1 (Color)</label>
+                              <input type="text" value={variantForm.v1} onChange={e => setVariantForm({ ...variantForm, v1: e.target.value })}
+                                className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Variant 2 (Size)</label>
+                              <input type="text" value={variantForm.v2} onChange={e => setVariantForm({ ...variantForm, v2: e.target.value })}
+                                className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button onClick={() => setEditingVariantUid(null)} className="flex-1 px-2 py-1.5 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded hover:bg-zinc-200">Cancel</button>
+                              <button onClick={() => handleSaveVariants(item.product_uid)} className="flex-1 px-2 py-1.5 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700">Save</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       {isEditable ? (
                         <select value={item.priority || ''} onChange={e => h.updateItem(item.sku, 'priority', e.target.value || null)}
