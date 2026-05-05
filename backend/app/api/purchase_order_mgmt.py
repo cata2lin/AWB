@@ -312,15 +312,22 @@ async def update_purchase_order(po_id: int, body: POUpdate, db: AsyncSession = D
         if val is not None:
             setattr(po, field, val)
     if body.expected_arrival_date is not None:
-        try:
-            po.expected_arrival_date = datetime.strptime(body.expected_arrival_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date")
+        if body.expected_arrival_date.strip() == "":
+            po.expected_arrival_date = None
+        else:
+            try:
+                po.expected_arrival_date = datetime.strptime(body.expected_arrival_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format for expected_arrival_date. Use YYYY-MM-DD")
+    
     if body.actual_arrival_date is not None:
-        try:
-            po.actual_arrival_date = datetime.strptime(body.actual_arrival_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date")
+        if body.actual_arrival_date.strip() == "":
+            po.actual_arrival_date = None
+        else:
+            try:
+                po.actual_arrival_date = datetime.strptime(body.actual_arrival_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format for actual_arrival_date. Use YYYY-MM-DD")
 
     po.updated_at = datetime.utcnow()
     items_r = await db.execute(select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id))
