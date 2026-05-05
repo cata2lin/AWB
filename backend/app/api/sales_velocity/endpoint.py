@@ -265,8 +265,9 @@ async def get_sales_velocity(
                 for uid in s_uids:
                     store_sku_map[(uid, p.sku.strip())] = group_key
                 
-        # Sum stock across ALL listings in the group (not just primary)
-        group_stock = sum(p.stock_available or 0 for p in group)
+        # Do not sum stock across all listings, as Frisbo stock is shared across all identical barcodes/SKUs.
+        # Summing them multiplies the real stock by the number of active stores.
+        group_stock = best_product.stock_available or 0
         sku_stock_map[group_key] = group_stock
         if best_product.title_1:
             sku_product_name[group_key] = best_product.title_1
