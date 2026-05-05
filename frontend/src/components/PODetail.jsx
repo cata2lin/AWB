@@ -142,9 +142,16 @@ export default function PODetail({ h }) {
               </span></>
             )}
           </h3>
-          {isEditable && (
-            <button onClick={isCreate ? h.cancelCreate : () => h.setMode('detail')} className="p-1.5 text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
-          )}
+          <div className="flex items-center gap-2">
+            {!isCreate && h.mode === 'detail' && ['DRAFT', 'SENT', 'ORDERED'].includes(po?.status) && (
+              <button onClick={h.startEdit} className="p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 text-xs font-medium">
+                <PenLine className="w-4 h-4" /> Edit
+              </button>
+            )}
+            {isEditable && (
+              <button onClick={isCreate ? h.cancelCreate : () => h.setMode('detail')} className="p-1.5 text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
+            )}
+          </div>
         </div>
 
         {/* Meta fields */}
