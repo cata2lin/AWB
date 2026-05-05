@@ -12,10 +12,7 @@ const VelocityRow = memo(({
     isColVisible, onToggleSelect, onToggleExpand,
     COUNTRY_FLAGS, Sparkline, setSelectedVariantOrders
 }) => {
-    const sales = velocityMetricsType === 'net' ? p.units_sold : (p.gross_units || 0);
-    const revenue = velocityMetricsType === 'net' ? p.revenue : (p.gross_revenue || 0);
-    const velocity = velocityMetricsType === 'net' ? p.velocity : (p.gross_velocity || 0);
-    const necesar = Math.max(0, Math.ceil((velocityTargetCoverage * velocity) - (p.effective_stock || (p.stock_available || 0) + (p.po_incoming || 0))));
+    const necesar = Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - (p.effective_stock || (p.stock_available || 0) + (p.po_incoming || 0))));
 
     return (
         <Fragment>
@@ -28,71 +25,83 @@ const VelocityRow = memo(({
                 </td>
                 <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
                 
-                {isColVisible('image') && (
-                    <td className="px-3 py-2">
-                        <div className="w-10 h-10 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                {/* 3. SKU + Image */}
+                <td className="px-3 py-2">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 overflow-hidden">
                             {p.image_url ? (
                                 <img src={p.image_url} alt={p.sku} className="w-full h-full object-cover" />
                             ) : (
                                 <Package className="w-5 h-5 text-zinc-400" />
                             )}
                         </div>
-                    </td>
-                )}
-
-                {isColVisible('sku') && (
-                    <td className="px-3 py-2">
-                        <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
-                        {p.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{p.product_name}</div>}
-                    </td>
-                )}
-
-                {isColVisible('sales') && <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{sales.toLocaleString()}</td>}
-                {isColVisible('orders') && <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{p.orders}</td>}
-                {isColVisible('revenue') && <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{revenue.toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>}
-                {isColVisible('velocity') && <td className="px-3 py-2 text-sm font-bold text-emerald-600 dark:text-emerald-400">{velocity}</td>}
-                
-                {isColVisible('trend') && (
-                    <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                            <TrendIcon t={p.velocity_trend} />
-                            <span className={`text-xs font-medium ${p.velocity_change_pct > 0 ? 'text-emerald-600' : p.velocity_change_pct < 0 ? 'text-red-600' : 'text-zinc-400'}`}>
-                                {p.velocity_change_pct > 0 ? '+' : ''}{p.velocity_change_pct}%
-                            </span>
+                        <div>
+                            <div className="text-sm font-medium text-zinc-900 dark:text-white">{p.sku}</div>
+                            {p.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]" title={p.product_name}>{p.product_name}</div>}
                         </div>
-                    </td>
-                )}
+                    </div>
+                </td>
 
-                {isColVisible('days_without') && (
-                    <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                        {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
-                    </td>
-                )}
-
-                {isColVisible('stock') && <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>{(p.stock_available || 0).toLocaleString()}</td>}
+                {/* 4. Brut (gross_units) */}
+                <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_units || 0).toLocaleString()}</td>
                 
-                {isColVisible('unit_cost') && <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{(p.unit_cost || 0).toFixed(2)}</td>}
-                {isColVisible('inventory_value') && <td className="px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400">{(p.inventory_value || 0).toLocaleString()}</td>}
-
-                {isColVisible('po_incoming') && (
-                    <td className={`px-3 py-2 text-sm font-medium ${(p.po_incoming || 0) > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`}>
-                        {(p.po_incoming || 0).toLocaleString()}
-                    </td>
-                )}
+                {/* 5. Net (units_sold) */}
+                <td className="px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{(p.units_sold || 0).toLocaleString()}</td>
                 
-                {isColVisible('days_left') && (
-                    <td className={`px-3 py-2 text-sm ${p.days_left_of_stock !== null && p.days_left_of_stock <= 7 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                        {p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}
-                    </td>
-                )}
+                {/* 6. Rev. Brut (gross_revenue) */}
+                <td className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">{(p.gross_revenue || 0).toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
+                
+                {/* 7. Rev. Net (revenue) */}
+                <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{(p.revenue || 0).toLocaleString()} <span className="text-[10px] text-zinc-400">RON</span></td>
+                
+                {/* 8. Comenzi (orders) */}
+                <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{p.orders}</td>
+                
+                {/* 9. V. Net (velocity) */}
+                <td className="px-3 py-2 text-sm font-bold text-emerald-600 dark:text-emerald-400">{p.velocity}</td>
+                
+                {/* 10. Trend (velocity_change_pct) */}
+                <td className="px-3 py-2">
+                    <div className="flex items-center gap-1">
+                        <TrendIcon t={p.velocity_trend} />
+                        <span className={`text-xs font-medium ${p.velocity_change_pct > 0 ? 'text-emerald-600' : p.velocity_change_pct < 0 ? 'text-red-600' : 'text-zinc-400'}`}>
+                            {p.velocity_change_pct > 0 ? '+' : ''}{p.velocity_change_pct}%
+                        </span>
+                    </div>
+                </td>
 
-                {isColVisible('recommended') && (
-                    <td className={`px-3 py-2 text-sm font-medium ${necesar > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'}`}>
-                        {necesar}
-                    </td>
-                )}
+                {/* 11. Zile fără (days_since_last_sale) */}
+                <td className={`px-3 py-2 text-sm ${p.days_since_last_sale !== null && p.days_since_last_sale >= 14 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                    {p.days_since_last_sale !== null ? `${p.days_since_last_sale}z` : '—'}
+                </td>
 
-                {isColVisible('share_pct') && <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>}
+                {/* 12. Stoc (stock_available) */}
+                <td className={`px-3 py-2 text-sm ${p.stock_available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'} font-medium`}>
+                    {(p.stock_available || 0).toLocaleString()}
+                </td>
+                
+                {/* 13. PO Incoming (po_incoming) */}
+                <td className={`px-3 py-2 text-sm font-medium ${(p.po_incoming || 0) > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`}>
+                    {(p.po_incoming || 0).toLocaleString()}
+                </td>
+                
+                {/* 14. Zile Stoc Rămas (days_left_of_stock) */}
+                <td className={`px-3 py-2 text-sm ${p.days_left_of_stock !== null && p.days_left_of_stock <= 7 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                    {p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}
+                </td>
+
+                {/* 15. Necesar Recomandat (necesar) */}
+                <td className={`px-3 py-2 text-sm font-medium ${necesar > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'}`}>
+                    {necesar}
+                </td>
+
+                {/* 16. Share % (revenue_share) */}
+                <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{p.revenue_share}%</td>
+                
+                {/* 17. Sparkline */}
+                <td className="px-3 py-2">
+                    {p.daily_series && <Sparkline data={p.daily_series} />}
+                </td>
             </tr>
             {/* Expanded detail */}
             {isExpanded && (
