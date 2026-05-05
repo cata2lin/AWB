@@ -185,7 +185,7 @@ export default function PurchaseOrdersList({ h }) {
   // Compute stats from loaded orders
   const stats = useMemo(() => {
     const s = { DRAFT: 0, SENT: 0, ORDERED: 0, APPROVED: 0, PARTIALLY_RECEIVED: 0, COMPLETED: 0, CANCELLED: 0 }
-    let totalValue = 0, totalUnits = 0, unitsPending = 0, uniqueSkus = new Set()
+    let totalValue = 0, totalValueUsd = 0, totalUnits = 0, unitsPending = 0, uniqueSkus = new Set()
     const openStatuses = new Set(['DRAFT', 'SENT', 'ORDERED', 'APPROVED', 'PARTIALLY_RECEIVED'])
     let openCount = 0
 
@@ -193,14 +193,16 @@ export default function PurchaseOrdersList({ h }) {
       s[po.status] = (s[po.status] || 0) + 1
       const qty = po.total_quantity || 0
       const cost = po.total_cost || 0
+      const costUsd = po.total_cost_usd || 0
       if (openStatuses.has(po.status)) {
         openCount++
         totalValue += cost
+        totalValueUsd += costUsd
         totalUnits += qty
         unitsPending += qty - (po.received_quantity || 0)
       }
     }
-    return { ...s, openCount, totalValue, totalUnits, unitsPending, uniqueSkus: h.orders.length }
+    return { ...s, openCount, totalValue, totalValueUsd, totalUnits, unitsPending, uniqueSkus: h.orders.length }
   }, [h.orders])
 
   const statusTabs = [
@@ -214,7 +216,7 @@ export default function PurchaseOrdersList({ h }) {
 
   const scorecards = [
     { label: 'Open POs', value: stats.openCount, icon: FileText, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-500/10' },
-    { label: 'Open Value (RON)', value: fmt(stats.totalValue), icon: DollarSign, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+    { label: 'Open Value', value: `${fmt(stats.totalValue)} RON`, subValue: `$${fmt(stats.totalValueUsd)} USD`, icon: DollarSign, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
     { label: 'Units on Order', value: fmt(stats.totalUnits), icon: Package, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
     { label: 'Units Pending', value: fmt(stats.unitsPending), icon: Clock, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10' },
     { label: 'Total POs', value: h.orders.length, icon: Layers, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-500/10' },
@@ -274,6 +276,7 @@ export default function PurchaseOrdersList({ h }) {
             <p className="mt-3 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
               {card.value}
             </p>
+            {card.subValue && <p className="text-xs font-medium text-zinc-500 mt-1">{card.subValue}</p>}
           </div>
         ))}
       </div>
@@ -302,7 +305,7 @@ export default function PurchaseOrdersList({ h }) {
       </div>
 
       {/* Search */}
-      <div className="relative">
+      <div className="relative mt-6">
         <Search className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" />
         <input
           type="text"
@@ -354,7 +357,7 @@ export default function PurchaseOrdersList({ h }) {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-white dark:bg-zinc-900">
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-white dark:bg-zinc-900 mt-6">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700">
               <tr>
@@ -363,7 +366,7 @@ export default function PurchaseOrdersList({ h }) {
                   { key: 'status', label: 'Status', align: 'left' },
                   { key: 'po_category', label: 'Category', align: 'left' },
                   { key: 'created_at', label: 'Date', align: 'left' },
-                  { key: 'total_cost', label: 'Total (RON)', align: 'right' },
+                  { key: 'total_cost', label: 'Total', align: 'right' },
                   { key: 'fulfillment', label: 'Fulfillment', align: 'left' },
                   { key: null, label: 'TOM Sync', align: 'left' },
                   { key: 'supplier_name', label: 'Supplier', align: 'left' },
@@ -413,8 +416,11 @@ export default function PurchaseOrdersList({ h }) {
                         day: '2-digit', month: 'short', year: 'numeric'
                       }) : '—'}
                     </td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">
-                      {fmt(po.total_cost || 0)}
+                    <td className="px-5 py-4 text-right">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{fmt(po.total_cost || 0)} RON</span>
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400">${fmt(po.total_cost_usd || 0)} USD</span>
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <ProgressBar received={po.received_quantity || 0} ordered={po.total_quantity || 0} />

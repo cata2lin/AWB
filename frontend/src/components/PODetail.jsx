@@ -381,10 +381,18 @@ export default function PODetail({ h }) {
                       {isEditable ? (
                         <input type="number" min="0" step="0.01" value={item.unit_cost} onChange={e => h.updateItem(item.sku, 'unit_cost', parseFloat(e.target.value) || 0)}
                           className="w-20 px-2 py-1 text-sm text-right rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white" />
-                      ) : <span className="text-zinc-500">{fmtCur(item.unit_cost)}</span>}
+                      ) : (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-zinc-700 dark:text-zinc-300">{fmtCur(item.unit_cost)}</span>
+                          {item.unit_cost_usd != null && <span className="text-xs text-zinc-500">${fmt(item.unit_cost_usd)}</span>}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                      {fmtCur((item.quantity || 0) * (item.unit_cost || 0))}
+                    <td className="px-4 py-3 text-right font-medium">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-zinc-800 dark:text-zinc-200">{fmtCur((item.quantity || 0) * (item.unit_cost || 0))}</span>
+                        {item.unit_cost_usd != null && <span className="text-xs text-zinc-500">${fmt((item.quantity || 0) * (item.unit_cost_usd || 0))}</span>}
+                      </div>
                     </td>
                     {!isCreate && (
                       <td className="px-4 py-3 text-right">
@@ -420,6 +428,7 @@ export default function PODetail({ h }) {
         {/* Summary */}
         <div className="text-sm text-zinc-500 mb-3">
           {items.length} items · {fmt(totalQty)} units · <span className="font-semibold text-zinc-900 dark:text-white">{fmtCur(totalCost)}</span>
+          {po && po.total_cost_usd != null && <span className="ml-1.5 font-medium text-zinc-500">(${fmt(po.total_cost_usd)} USD)</span>}
         </div>
 
         {/* Actions */}

@@ -75,7 +75,7 @@ async def _is_tom_enabled_category(category: str, db: AsyncSession) -> bool:
 
 GRANDIA_STORE_UID = "n12w89-yy"
 
-def _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map):
+def _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map, usd_rate=1.0):
     # Resolve the full Product record
     prod = products_map.get(item.product_uid) or sku_map.get(item.sku)
 
@@ -108,14 +108,15 @@ def _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map):
     if barcode:
         line["barcode"] = barcode
 
-    # Catalog price
+    # Catalog price (convert RON to USD if it's in RON; assuming catalog_prices are in RON)
     cat_price = catalog_prices.get(item.sku, 0)
     if cat_price and cat_price > 0:
-        line["cogs_usd"] = round(cat_price, 4)
+        line["cogs_usd"] = round(cat_price / usd_rate, 4) if usd_rate else round(cat_price, 4)
 
     # Unit cost
     if item.unit_cost and item.unit_cost > 0:
-        line["unit_cost"] = round(item.unit_cost, 4)
+        # Convert RON to USD! TOM expects USD
+        line["unit_cost"] = round(item.unit_cost / usd_rate, 4) if usd_rate else round(item.unit_cost, 4)
 
     # HS Code
     if prod and getattr(prod, 'hs_code', None):
@@ -201,18 +202,15 @@ async def _get_enrichment_context(items: list, db: AsyncSession):
     return products_map, sku_map, catalog_prices, store_map
 
 async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession) -> dict:
-    """
-    Build the TOM POST /api/v1/po request payload from a PO + items.
-    
-    Fetches full Product records to enrich each line item with all available
-    data: hs_code, weight, brand, product_type, Shopify GIDs, store URLs, etc.
-    Grandia store products are excluded from store context (has own PO engine).
-    """
+    from app.api.exchange_rates import get_rate
+    target_date = po.created_at.date() if po.created_at else datetime.utcnow().date()
+    usd_rate = await get_rate("USD", target_date, db) or 1.0
+
     products_map, sku_map, catalog_prices, store_map = await _get_enrichment_context(items, db)
 
     items_payload = []
     for item in items:
-        line = _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map)
+        line = _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map, usd_rate)
         items_payload.append(line)
 
     payload = {

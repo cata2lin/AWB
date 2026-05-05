@@ -122,7 +122,15 @@ def _serialize_item(item: PurchaseOrderItem) -> dict:
     }
 
 
-async def _serialize_po(po: PurchaseOrder, items: list, sync_logs: list = None) -> dict:
+async def _serialize_po(po: PurchaseOrder, items: list, sync_logs: list = None, db: AsyncSession = None) -> dict:
+    from app.api.exchange_rates import get_rate
+    usd_rate = None
+    if db:
+        target_date = po.created_at.date() if po.created_at else datetime.utcnow().date()
+        usd_rate = await get_rate("USD", target_date, db)
+    
+    total_cost_usd = round(po.total_cost / usd_rate, 2) if usd_rate and po.total_cost else 0.0
+
     return {
         "id": po.id, "po_number": po.po_number, "title": po.title,
         "po_category": po.po_category, "po_type": po.po_type,
@@ -133,6 +141,8 @@ async def _serialize_po(po: PurchaseOrder, items: list, sync_logs: list = None) 
         "notes": po.notes, "created_by": po.created_by,
         "total_items": po.total_items, "total_quantity": po.total_quantity,
         "total_cost": po.total_cost,
+        "usd_exchange_rate": usd_rate,
+        "total_cost_usd": total_cost_usd,
         # TOM
         "tom_number": po.tom_number, "tom_po_id": po.tom_po_id,
         "tom_status": po.tom_status,
@@ -147,7 +157,10 @@ async def _serialize_po(po: PurchaseOrder, items: list, sync_logs: list = None) 
         "cancelled_at": po.cancelled_at.isoformat() if po.cancelled_at else None,
         "created_at": po.created_at.isoformat() if po.created_at else None,
         "updated_at": po.updated_at.isoformat() if po.updated_at else None,
-        "items": [_serialize_item(i) for i in items],
+        "items": [{
+            **_serialize_item(i),
+            "unit_cost_usd": round(i.unit_cost / usd_rate, 2) if usd_rate and i.unit_cost else 0.0
+        } for i in items],
         "sync_logs": [
             {"id": l.id, "action": l.action, "status": l.status,
              "items_affected": l.items_affected, "error_message": l.error_message,
@@ -245,7 +258,7 @@ async def get_purchase_order(po_id: int, db: AsyncSession = Depends(get_db)):
     items = items_r.scalars().all()
     logs_r = await db.execute(select(PoSyncLog).where(PoSyncLog.purchase_order_id == po_id).order_by(PoSyncLog.created_at.desc()))
     logs = logs_r.scalars().all()
-    return await _serialize_po(po, items, logs)
+    return await _serialize_po(po, items, logs, db=db)
 
 
 @router.post("/create")
@@ -285,7 +298,7 @@ async def create_purchase_order(body: POCreate, db: AsyncSession = Depends(get_d
 
     _update_totals(po, items)
     await db.flush()
-    return await _serialize_po(po, items)
+    return await _serialize_po(po, items, db=db)
 
 
 @router.put("/{po_id}")
@@ -332,7 +345,7 @@ async def update_purchase_order(po_id: int, body: POUpdate, db: AsyncSession = D
     po.updated_at = datetime.utcnow()
     items_r = await db.execute(select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id))
     items = items_r.scalars().all()
-    return await _serialize_po(po, items)
+    return await _serialize_po(po, items, db=db)
 
 
 @router.put("/{po_id}/items")
@@ -389,7 +402,7 @@ async def update_po_items(po_id: int, items: List[POItemUpdate], db: AsyncSessio
     _update_totals(po, new_items)
     po.updated_at = datetime.utcnow()
     await db.flush()
-    return await _serialize_po(po, new_items)
+    return await _serialize_po(po, new_items, db=db)
 
 
 @router.put("/{po_id}/receive")
@@ -422,7 +435,7 @@ async def receive_po(po_id: int, items: List[ReceiveItem], db: AsyncSession = De
         po.status = "PARTIALLY_RECEIVED"
 
     po.updated_at = datetime.utcnow()
-    return await _serialize_po(po, all_items)
+    return await _serialize_po(po, all_items, db=db)
 
 
 @router.delete("/{po_id}")
