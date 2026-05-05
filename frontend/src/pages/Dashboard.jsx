@@ -3,21 +3,21 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/useAppStore'
 import { useStores, useSyncStatus, useTriggerSync, useOrderStats, useSyncHistory } from '../hooks/useApi'
 import { printApi } from '../services/api'
+import { printBatchPdf } from '../utils/printUtils'
 import StoreCard from '../components/StoreCard'
 import PrintPreview from '../components/PrintPreview'
 import { Package, Printer, TrendingUp, RefreshCw, Clock, Download, Eye, AlertCircle, CheckCircle, ChevronDown, Calendar, Store, Activity, Filter } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
-import { useRef } from 'react'
 
 export default function Dashboard() {
-    const { selectedStoreIds, batchSize } = useAppStore()
+    const { selectedStoreIds, batchSize, printChunkSize, printChunkDelay } = useAppStore()
     const queryClient = useQueryClient()
     const [isPrinting, setIsPrinting] = useState(false)
     const [printResult, setPrintResult] = useState(null)
     const [printError, setPrintError] = useState(null)
     const [previewData, setPreviewData] = useState(null)
     const [showPreview, setShowPreview] = useState(false)
-    const printFrameRef = useRef(null)
+    const [printProgress, setPrintProgress] = useState(null) // { current, total }
 
     // Sync dropdown state
     const [showSyncMenu, setShowSyncMenu] = useState(false)
@@ -87,36 +87,22 @@ export default function Dashboard() {
     }
 
     /**
-     * Opens the browser print dialog for a generated batch PDF.
-     * Loads the PDF into a hidden iframe and calls print() on it.
+     * Opens the native print dialog for a batch PDF.
+     * Uses blob-based fetching (avoids CORS) and chunked splitting
+     * to protect low-RAM printers from spooler overload.
      */
     const openPrintDialog = (batchId) => {
-        const downloadUrl = printApi.getDownloadUrl(batchId)
-        // Remove any previous print iframe
-        if (printFrameRef.current) {
-            document.body.removeChild(printFrameRef.current)
-            printFrameRef.current = null
-        }
-        const iframe = document.createElement('iframe')
-        iframe.style.position = 'fixed'
-        iframe.style.right = '0'
-        iframe.style.bottom = '0'
-        iframe.style.width = '0'
-        iframe.style.height = '0'
-        iframe.style.border = 'none'
-        iframe.src = downloadUrl
-        document.body.appendChild(iframe)
-        printFrameRef.current = iframe
-
-        iframe.onload = () => {
-            try {
-                iframe.contentWindow.focus()
-                iframe.contentWindow.print()
-            } catch (_) {
-                // Cross-origin fallback: open in new tab for manual print
-                window.open(downloadUrl, '_blank')
-            }
-        }
+        setPrintProgress({ current: 0, total: 1 })
+        printBatchPdf(batchId, {
+            chunkSize: printChunkSize,
+            delayBetweenMs: printChunkDelay,
+            onProgress: (progress) => setPrintProgress(progress),
+            onComplete: () => setPrintProgress(null),
+            onError: (err) => {
+                setPrintProgress(null)
+                setPrintError(`Print failed: ${err.message}`)
+            },
+        })
     }
 
     // Generate print batch with batch size limit
@@ -485,15 +471,34 @@ export default function Dashboard() {
                                 </p>
                             </div>
                         )}
-                        <a
-                            href={printApi.getDownloadUrl(printResult.batch_id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm text-green-700 dark:text-green-400 hover:underline mt-1"
+                        <button
+                            onClick={() => openPrintDialog(printResult.batch_id)}
+                            className="inline-flex items-center gap-1 text-sm text-green-700 dark:text-green-400 hover:underline mt-1 bg-transparent border-none cursor-pointer p-0"
                         >
                             <Printer className="w-4 h-4" />
-                            Open Print Dialog
-                        </a>
+                            Print Again
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Print Progress — shown during chunked printing */}
+            {printProgress && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-center gap-3 animate-pulse">
+                    <RefreshCw className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" />
+                    <div className="flex-1">
+                        <p className="text-blue-700 dark:text-blue-300 font-medium">
+                            Printing chunk {printProgress.current} of {printProgress.total}
+                        </p>
+                        <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5">
+                            Close the print dialog to continue to the next chunk
+                        </p>
+                        <div className="mt-2 h-1.5 bg-blue-100 dark:bg-blue-900/40 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                                style={{ width: `${(printProgress.current / printProgress.total) * 100}%` }}
+                            />
+                        </div>
                     </div>
                 </div>
             )}

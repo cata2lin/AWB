@@ -65,11 +65,11 @@ export default function POExpandedDetail({ po, data, tomBusy, onUpdateStatus, on
                 {tomBusy === 'refresh' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />} Refresh
               </button>
             )}
-            {/* Amend — only if sent */}
+            {/* Resend to TOM — only if sent */}
             {hasTom && !['CANCELLED', 'DELIVERED'].includes(data.tom_status) && (
               <button onClick={() => onTomAction('amend')} disabled={!!tomBusy}
                 className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40">
-                {tomBusy === 'amend' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <PenLine className="w-3 h-3" />} Amend
+                {tomBusy === 'amend' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Resend to TOM
               </button>
             )}
             {/* Cancel in TOM */}

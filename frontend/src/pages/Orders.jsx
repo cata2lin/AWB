@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useStores } from '../hooks/useApi'
 import { ordersApi, printApi } from '../services/api'
+import { printSingleAwb } from '../utils/printUtils'
 import MultiSelectFilter from '../components/MultiSelectFilter'
 import { Link } from 'react-router-dom'
 import {
@@ -1333,15 +1334,13 @@ export default function Orders() {
                                                                                                     <span className="opacity-50"> • {(batch.file_size / 1024).toFixed(0)} KB</span>
                                                                                                 </p>
                                                                                             </div>
-                                                                                            <a
-                                                                                                href={printApi.getDownloadUrl(batch.batch_id)}
-                                                                                                target="_blank"
-                                                                                                rel="noopener noreferrer"
-                                                                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded font-medium transition-colors"
+                                                                                            <button
+                                                                                                onClick={(e) => { e.preventDefault(); printSingleAwb(batch.batch_id).catch(() => {}) }}
+                                                                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded font-medium transition-colors cursor-pointer border-none"
                                                                                             >
                                                                                                 <Printer className="w-3 h-3" />
                                                                                                 Print
-                                                                                            </a>
+                                                                                            </button>
                                                                                         </div>
                                                                                     ))}
                                                                                 </div>
@@ -1357,8 +1356,7 @@ export default function Orders() {
                                                                                 setPrintingOrder({ uid: order.uid, action: 'print' })
                                                                                 try {
                                                                                     const result = await printApi.printSingle(order.uid)
-                                                                                    const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                                                                                    window.open(downloadUrl, '_blank')
+                                                                                    printSingleAwb(result.batch_id).catch(() => {})
                                                                                     // Refresh the row to show updated status
                                                                                     order.is_printed = true
                                                                                     order.printed_at = new Date().toISOString()
@@ -1522,8 +1520,7 @@ export default function Orders() {
                                     setPrintingOrder({ uid: orderUid, action: 'regen' })
                                     try {
                                         const result = await printApi.regenerate(orderUid, packageCount)
-                                        const downloadUrl = printApi.getDownloadUrl(result.batch_id)
-                                        window.open(downloadUrl, '_blank')
+                                        printSingleAwb(result.batch_id).catch(() => {})
                                         
                                         // Refresh history
                                         const data = await printApi.getOrderAwbHistory(orderUid)

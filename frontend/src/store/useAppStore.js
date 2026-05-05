@@ -189,6 +189,12 @@ export const useAppStore = create(
             // Print batch config
             batchSize: 200,
             setBatchSize: (size) => set({ batchSize: size }),
+
+            // Print performance — chunked spooling for low-RAM printers
+            printChunkSize: 20,     // pages per print job (prevents spooler overload)
+            setPrintChunkSize: (size) => set({ printChunkSize: size }),
+            printChunkDelay: 3000,  // ms cooldown between print jobs
+            setPrintChunkDelay: (delay) => set({ printChunkDelay: delay }),
         }),
         {
             name: 'awb-print-storage',
@@ -199,6 +205,8 @@ export const useAppStore = create(
                 presets: state.presets,
                 activePresetId: state.activePresetId,
                 batchSize: state.batchSize,
+                printChunkSize: state.printChunkSize,
+                printChunkDelay: state.printChunkDelay,
             }),
         }
     )

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { printApi } from '../services/api/print'
 import { analyticsApi } from '../services/api'
+import { printBatchPdf, printSingleAwb } from '../utils/printUtils'
 
 const formatNumber = (n) => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const formatBytes = (bytes) => {
@@ -313,15 +314,13 @@ export default function PrintHistoryTab() {
                                             </td>
                                             <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                                                 <div className="flex items-center justify-end gap-1">
-                                                    <a
-                                                        href={printApi.getReprintUrl(batch.id)}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-600 transition-colors"
+                                                    <button
+                                                        onClick={() => printBatchPdf(batch.id).catch(() => {})}
+                                                        className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-600 transition-colors cursor-pointer border-none bg-transparent"
                                                         title="Print Batch"
                                                     >
                                                         <Printer className="w-4 h-4 text-indigo-500" />
-                                                    </a>
+                                                    </button>
                                                     <button
                                                         onClick={() => toggleExpand(batch.id)}
                                                         className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-600 transition-colors"
@@ -382,17 +381,14 @@ export default function PrintHistoryTab() {
                                                                                         {item.tracking_number || '—'}
                                                                                     </td>
                                                                                     <td className="py-2 text-right">
-                                                                                        <a
-                                                                                            href={printApi.getReprintOrderUrl(item.order_uid)}
-                                                                                            target="_blank"
-                                                                                            rel="noopener noreferrer"
-                                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                                                                                        <button
+                                                                                            onClick={(e) => { e.stopPropagation(); printSingleAwb(item.batch_id || batch.id).catch(() => {}) }}
+                                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors cursor-pointer border-none"
                                                                                             title={`Print AWB for ${item.order_number}`}
-                                                                                            onClick={e => e.stopPropagation()}
                                                                                         >
                                                                                             <Printer className="w-3 h-3" />
                                                                                             AWB
-                                                                                        </a>
+                                                                                        </button>
                                                                                     </td>
                                                                                 </tr>
                                                                             ))}

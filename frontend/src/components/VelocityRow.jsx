@@ -15,7 +15,7 @@ const VelocityRow = memo(({
     const sales = velocityMetricsType === 'net' ? p.units_sold : (p.gross_units || 0);
     const revenue = velocityMetricsType === 'net' ? p.revenue : (p.gross_revenue || 0);
     const velocity = velocityMetricsType === 'net' ? p.velocity : (p.gross_velocity || 0);
-    const necesar = Math.max(0, Math.ceil((velocityTargetCoverage * velocity) - (p.stock_available || 0)));
+    const necesar = Math.max(0, Math.ceil((velocityTargetCoverage * velocity) - (p.effective_stock || (p.stock_available || 0) + (p.po_incoming || 0))));
 
     return (
         <Fragment>
@@ -73,6 +73,12 @@ const VelocityRow = memo(({
                 
                 {isColVisible('unit_cost') && <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{(p.unit_cost || 0).toFixed(2)}</td>}
                 {isColVisible('inventory_value') && <td className="px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400">{(p.inventory_value || 0).toLocaleString()}</td>}
+
+                {isColVisible('po_incoming') && (
+                    <td className={`px-3 py-2 text-sm font-medium ${(p.po_incoming || 0) > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`}>
+                        {(p.po_incoming || 0).toLocaleString()}
+                    </td>
+                )}
                 
                 {isColVisible('days_left') && (
                     <td className={`px-3 py-2 text-sm ${p.days_left_of_stock !== null && p.days_left_of_stock <= 7 ? 'text-red-600 font-medium' : 'text-zinc-600 dark:text-zinc-400'}`}>
@@ -155,7 +161,10 @@ const VelocityRow = memo(({
                                     <div className="space-y-1 text-xs">
                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Avg qty/order</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.avg_qty_per_order}</span></div>
                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Zile Stoc Rămas</span><span className={`font-medium ${p.days_left_of_stock <= 7 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-200'}`}>{p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock}</span></div>
-                                        <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Necesar Recomandat</span><span className="font-medium text-amber-600 dark:text-amber-400">{Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - (p.stock_available || 0)))}</span></div>
+                                        <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Necesar Recomandat</span><span className="font-medium text-amber-600 dark:text-amber-400">{Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - ((p.stock_available || 0) + (p.po_incoming || 0))))}</span></div>
+                                        {(p.po_incoming || 0) > 0 && (
+                                            <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">PO Incoming</span><span className="font-medium text-blue-600 dark:text-blue-400">{p.po_incoming}</span></div>
+                                        )}
                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Delivery rate</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.delivery_rate}%</span></div>
                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză anterioară</span><span className="font-medium text-zinc-700 dark:text-zinc-200">{p.prev_velocity} u/zi</span></div>
                                         <div className="flex justify-between"><span className="text-zinc-600 dark:text-zinc-400">Viteză actuală</span><span className="font-medium text-emerald-600">{p.velocity} u/zi</span></div>

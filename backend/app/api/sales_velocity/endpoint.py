@@ -19,6 +19,8 @@ from app.core.database import get_db
 from app.core.timezone import to_bucharest_iso, to_bucharest_date, to_bucharest, date_str_to_utc_start, date_str_to_utc_end
 from app.models import Order, Store, SkuCost
 from app.models.product import Product
+from app.models.purchase_order import PurchaseOrder
+from app.models.purchase_order_item import PurchaseOrderItem
 from app.api.sku_risk.computations import compute_final_outcome
 from app.api.exchange_rates import preload_rates, get_rate_from_cache
 
@@ -226,6 +228,7 @@ async def get_sales_velocity(
     sku_stock_map: Dict[str, int] = {}          # group_key → total stock
     sku_group_stores: Dict[str, set] = {}       # group_key → set of store_uids
     sku_product_name: Dict[str, str] = {}       # group_key → best product name
+    sku_image_map: Dict[str, str] = {}          # group_key → image URL
 
     def process_product_group(group, fallback_key):
         if not group: return
@@ -249,9 +252,24 @@ async def get_sales_velocity(
             if p.sku:
                 master_sku_map[p.sku.strip()] = master_sku
                 
-        sku_stock_map[master_sku] = best_product.stock_available or 0
+        # Sum stock across ALL listings in the group (not just primary)
+        group_stock = sum(p.stock_available or 0 for p in group)
+        sku_stock_map[master_sku] = group_stock
         if best_product.title_1:
             sku_product_name[master_sku] = best_product.title_1
+
+        # Extract image URL from best product's images JSON
+        if master_sku not in sku_image_map:
+            imgs = best_product.images
+            if imgs and isinstance(imgs, list) and len(imgs) > 0:
+                sku_image_map[master_sku] = imgs[0].get('src', '') if isinstance(imgs[0], dict) else str(imgs[0])
+            elif imgs and isinstance(imgs, str):
+                try:
+                    parsed = json.loads(imgs)
+                    if parsed and isinstance(parsed, list) and len(parsed) > 0:
+                        sku_image_map[master_sku] = parsed[0].get('src', '') if isinstance(parsed[0], dict) else str(parsed[0])
+                except Exception:
+                    pass
             
         if master_sku not in sku_group_stores:
             sku_group_stores[master_sku] = set()
@@ -505,6 +523,24 @@ async def get_sales_velocity(
                         continue
                     store_agg[order.store_uid]["orders"] += 1
 
+    # ── 4c. Load incoming PO stock (from active purchase orders) ──────────
+    po_incoming_result = await db.execute(
+        select(
+            PurchaseOrderItem.sku,
+            sqlfunc.sum(PurchaseOrderItem.quantity - PurchaseOrderItem.received_qty),
+        )
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.purchase_order_id)
+        .where(PurchaseOrder.status.in_(["APPROVED", "PARTIALLY_RECEIVED"]))
+        .group_by(PurchaseOrderItem.sku)
+    )
+    po_incoming_raw = {row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()}
+
+    # Map PO incoming SKUs to their master group keys
+    po_incoming_map: Dict[str, int] = {}
+    for raw_sku, qty in po_incoming_raw.items():
+        gk = master_sku_map.get(raw_sku.strip(), raw_sku.strip())
+        po_incoming_map[gk] = po_incoming_map.get(gk, 0) + qty
+
     # ── 5. Build product performance list ─────────────────────────────────
     now = datetime.utcnow()
     total_revenue = sum(a["revenue"] for a in sku_current.values())
@@ -564,13 +600,17 @@ async def get_sales_velocity(
         by_country.sort(key=lambda x: x["units"], reverse=True)
 
         stock = sku_stock_map.get(comp_key, 0)
+        po_incoming = po_incoming_map.get(comp_key, 0)
+        effective_stock = stock + po_incoming
         inv_value = round(unit_cost * stock, 2)
+        image_url = sku_image_map.get(comp_key, '')
 
         gross_velocity = _safe_div(gross_units, period_days)
         # Use gross velocity (all orders placed) for stock coverage estimate;
         # net velocity may be 0 for short windows where deliveries haven't happened yet
         effective_velocity = gross_velocity if gross_velocity > 0 else velocity
-        days_left_of_stock = round(stock / effective_velocity, 1) if effective_velocity > 0 else 9999.0
+        # Days of stock uses effective_stock (current + PO incoming)
+        days_left_of_stock = round(effective_stock / effective_velocity, 1) if effective_velocity > 0 else 9999.0
         if min_days_left is not None and days_left_of_stock < min_days_left:
             continue
         if max_days_left is not None and days_left_of_stock > max_days_left:
@@ -625,9 +665,12 @@ async def get_sales_velocity(
             "by_country": by_country[:10],
             "by_variant": by_variant_list,
             "stock_available": stock,
+            "po_incoming": po_incoming,
+            "effective_stock": effective_stock,
             "days_left_of_stock": days_left_of_stock,
             "unit_cost": round(unit_cost, 2),
             "inventory_value": inv_value,
+            "image_url": image_url,
         })
 
     products.sort(key=lambda p: p["velocity"], reverse=True)

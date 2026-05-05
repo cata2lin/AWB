@@ -205,7 +205,7 @@ export default function PODetail({ h }) {
               {hasTom && !['CANCELLED', 'DELIVERED'].includes(po.tom_status) && (<>
                 <button onClick={() => h.tomAction(po.id, 'amend')} disabled={!!h.tomBusy}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40">
-                  {h.tomBusy === 'amend' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <PenLine className="w-4 h-4" />} Amend
+                  {h.tomBusy === 'amend' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Resend to TOM
                 </button>
                 <button onClick={() => h.tomAction(po.id, 'cancel')} disabled={!!h.tomBusy}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg disabled:opacity-40">

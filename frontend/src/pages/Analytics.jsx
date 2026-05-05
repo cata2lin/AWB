@@ -207,6 +207,8 @@ export default function Analytics() {
     const [velocityMaxRevenue, setVelocityMaxRevenue] = useState('')
     const [velocityMinStock, setVelocityMinStock] = useState('')
     const [velocityMaxStock, setVelocityMaxStock] = useState('')
+    const [velocityMinPoIncoming, setVelocityMinPoIncoming] = useState('')
+    const [velocityMaxPoIncoming, setVelocityMaxPoIncoming] = useState('')
     const [velocityTrendFilter, setVelocityTrendFilter] = useState('')
     const [velocityTrendMinPct, setVelocityTrendMinPct] = useState('')
     const [velocityTrendMaxPct, setVelocityTrendMaxPct] = useState('')
@@ -2165,6 +2167,9 @@ export default function Analytics() {
                                 // Stock range
                                 if (velocityMinStock !== '' && (p.stock_available ?? 0) < Number(velocityMinStock)) return false
                                 if (velocityMaxStock !== '' && (p.stock_available ?? 0) > Number(velocityMaxStock)) return false
+                                // PO Incoming range
+                                if (velocityMinPoIncoming !== '' && (p.po_incoming ?? 0) < Number(velocityMinPoIncoming)) return false
+                                if (velocityMaxPoIncoming !== '' && (p.po_incoming ?? 0) > Number(velocityMaxPoIncoming)) return false
                                 // Days Left range
                                 if (velocityMinDaysLeft !== '' && (p.days_left_of_stock ?? 9999) < Number(velocityMinDaysLeft)) return false
                                 if (velocityMaxDaysLeft !== '' && (p.days_left_of_stock ?? 0) > Number(velocityMaxDaysLeft)) return false
@@ -2192,7 +2197,7 @@ export default function Analytics() {
 
                         const sortedProducts = [...filteredProducts].map(p => ({
                             ...p,
-                            necesar_recomandat: Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - (p.stock_available || 0)))
+                            necesar_recomandat: Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - ((p.stock_available || 0) + (p.po_incoming || 0))))
                         })).sort((a, b) => {
                             const col = velocitySort.col
                             const av = a[col] ?? -1, bv = b[col] ?? -1
@@ -2461,6 +2466,14 @@ export default function Analytics() {
                                                     <input type="number" value={velocityMaxStock} onChange={e => setVelocityMaxStock(e.target.value)} placeholder="∞" className={advInput} />
                                                 </div>
                                                 <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Min PO</label>
+                                                    <input type="number" value={velocityMinPoIncoming} onChange={e => setVelocityMinPoIncoming(e.target.value)} placeholder="0" className={advInput} />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] text-zinc-400 mb-0.5">Max PO</label>
+                                                    <input type="number" value={velocityMaxPoIncoming} onChange={e => setVelocityMaxPoIncoming(e.target.value)} placeholder="∞" className={advInput} />
+                                                </div>
+                                                <div>
                                                     <label className="block text-[10px] text-zinc-400 mb-0.5">Trend</label>
                                                     <select value={velocityTrendFilter} onChange={e => setVelocityTrendFilter(e.target.value)} className={advInput}>
                                                         <option value="">Toate</option>
@@ -2614,7 +2627,7 @@ export default function Analytics() {
                                                         />
                                                         <button
                                                             onClick={() => {
-                                                                const headers = ['SKU', 'Produs', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'Zile Stoc Rămas', 'Necesar Recomandat', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
+                                                                const headers = ['SKU', 'Produs', 'Brut Unități', 'Brut Revenue', 'Net Unități', 'Net Revenue', 'Comenzi', 'Viteză Brut (u/zi)', 'Viteză Net (u/zi)', 'Trend %', 'Zile fără vânzare', 'Stoc', 'PO Incoming', 'Stoc Efectiv', 'Zile Stoc Rămas', 'Necesar Recomandat', 'Val. Inventar', 'Revenue Share %', 'Delivery Rate %']
                                                                 const rows = sortedProducts.map(p => [
                                                                     p.sku, p.product_name || '',
                                                                     p.gross_units || 0, p.gross_revenue || 0,
@@ -2622,8 +2635,9 @@ export default function Analytics() {
                                                                     p.orders, p.gross_velocity || 0, p.velocity,
                                                                     p.velocity_change_pct,
                                                                     p.days_since_last_sale ?? '', p.stock_available || 0,
+                                                                    p.po_incoming || 0, p.effective_stock || 0,
                                                                     p.days_left_of_stock === 9999 ? '∞' : p.days_left_of_stock,
-                                                                    Math.max(0, Math.ceil((velocityTargetCoverage * p.velocity) - (p.stock_available || 0))),
+                                                                    p.necesar_recomandat || 0,
                                                                     p.inventory_value || 0, p.revenue_share, p.delivery_rate
                                                                 ])
                                                                 const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -2668,8 +2682,9 @@ export default function Analytics() {
                                                                 <VSort col="velocity_change_pct" label="Trend" tip="Schimbare față de perioada anterioară" />
                                                                 <VSort col="days_since_last_sale" label="Zile fără" tip="Zile de la ultima vânzare" />
                                                                 <VSort col="stock_available" label="Stoc" tip="Stoc disponibil curent" />
-                                                                <VSort col="days_left_of_stock" label="Zile Stoc Rămas" tip="Acoperire stoc curent bazat pe viteza de vânzare" />
-                                                                <VSort col="necesar_recomandat" label="Necesar Recomandat" tip="Zile Acoperire Țintă * Viteză - Stoc" />
+                                                                <VSort col="po_incoming" label="PO Incoming" tip="Stoc în tranzit din Purchase Orders aprobate" />
+                                                                <VSort col="days_left_of_stock" label="Zile Stoc Rămas" tip="Acoperire stoc (curent + PO) bazat pe viteza de vânzare" />
+                                                                <VSort col="necesar_recomandat" label="Necesar Recomandat" tip="Zile Acoperire Țintă * Viteză - Stoc Efectiv" />
                                                                 <VSort col="revenue_share" label="Share %" tip="% din revenue total" />
                                                                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900">Sparkline</th>
                                                             </tr>

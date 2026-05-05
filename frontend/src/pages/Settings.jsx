@@ -7,7 +7,7 @@ import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, S
 import { formatDistanceToNow } from 'date-fns'
 
 export default function Settings() {
-    const { batchSize, setBatchSize } = useAppStore()
+    const { batchSize, setBatchSize, printChunkSize, setPrintChunkSize, printChunkDelay, setPrintChunkDelay } = useAppStore()
     const { data: stores = [], isLoading, error } = useStores()
     const { data: syncStatus } = useSyncStatus()
     const updateStoreMutation = useUpdateStore()
@@ -735,6 +735,93 @@ export default function Settings() {
                             onChange={(e) => setBatchSize(Number(e.target.value))}
                             className="w-24 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-right text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         />
+                    </div>
+                </div>
+            </div>
+
+            {/* Print Performance — RAM-safe chunked spooling */}
+            <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                    <Zap className="w-5 h-5 text-amber-500" />
+                    <h2 className="text-lg font-semibold text-zinc-900 dark:text-white tracking-tight">Print Performance</h2>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
+                    Split large batches into smaller print jobs to avoid overloading printers with limited RAM.
+                </p>
+
+                <div className="space-y-5">
+                    {/* Chunk size */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Pages per Print Job
+                                </label>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                    Number of AWB pages sent to the printer at once
+                                </p>
+                            </div>
+                            <span className="text-lg font-bold text-zinc-900 dark:text-white tabular-nums w-12 text-right">
+                                {printChunkSize}
+                            </span>
+                        </div>
+                        <input
+                            type="range"
+                            min={5}
+                            max={50}
+                            step={5}
+                            value={printChunkSize}
+                            onChange={(e) => setPrintChunkSize(Number(e.target.value))}
+                            className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                        <div className="flex justify-between text-[10px] text-zinc-400 mt-1">
+                            <span>5 (safest)</span>
+                            <span>20</span>
+                            <span>50 (fastest)</span>
+                        </div>
+                    </div>
+
+                    <hr className="border-zinc-200 dark:border-zinc-700" />
+
+                    {/* Delay between chunks */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Delay Between Jobs
+                                </label>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                    Cooldown for printer RAM to clear before next chunk
+                                </p>
+                            </div>
+                            <span className="text-lg font-bold text-zinc-900 dark:text-white tabular-nums w-12 text-right">
+                                {(printChunkDelay / 1000).toFixed(0)}s
+                            </span>
+                        </div>
+                        <input
+                            type="range"
+                            min={1000}
+                            max={10000}
+                            step={1000}
+                            value={printChunkDelay}
+                            onChange={(e) => setPrintChunkDelay(Number(e.target.value))}
+                            className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                        <div className="flex justify-between text-[10px] text-zinc-400 mt-1">
+                            <span>1s (fast)</span>
+                            <span>5s</span>
+                            <span>10s (safest)</span>
+                        </div>
+                    </div>
+
+                    {/* Preview calc */}
+                    <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg p-3 text-xs text-amber-700 dark:text-amber-300">
+                        <p className="font-medium mb-1">💡 For your {batchSize}-order batch:</p>
+                        <p>
+                            Will split into ~{Math.ceil(batchSize / printChunkSize)} print jobs ·
+                            {' '}{printChunkSize} pages each ·
+                            {' '}{(printChunkDelay / 1000).toFixed(0)}s cooldown between jobs
+                        </p>
                     </div>
                 </div>
             </div>

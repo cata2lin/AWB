@@ -155,6 +155,13 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
             "requested_qty": item.quantity,
         }
 
+        # Variant fields — TOM displays these as VARIANT_1 and VARIANT_2
+        # variant_1: color/style from the PO line variant_title or Product.title_2
+        # variant_2: secondary variant dimension (size, etc.)
+        variant_1 = item.variant_title or (prod.title_2 if prod and hasattr(prod, 'title_2') else None)
+        if variant_1:
+            line["variant_1"] = variant_1
+
         # Barcode
         barcode = item.barcode or (prod.barcode if prod else None)
         if barcode:
@@ -181,8 +188,6 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
         if prod and prod.external_identifier:
             line["shopify_product_id"] = prod.external_identifier
 
-        # Brand / Vendor
-        # Not on Product model directly, but title_2 often has variant info
 
         # Product type from store context
         non_grandia_stores = []
@@ -206,7 +211,7 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
 
     payload = {
         "source_app": _cfg().tom_source_code or "VIGO",
-        "source_po_id": str(po.id),
+        "source_po_id": po.po_number,
         "number": po.po_number,
         "date": datetime.utcnow().strftime("%Y-%m-%d"),
         "priority": po.priority or "STANDARD",
@@ -351,7 +356,7 @@ async def refresh_po_from_tom(po_id: int, db: AsyncSession) -> dict:
         return {"ok": False, "status": 0, "error": "PO has not been sent to TOM yet."}
 
     source_code = _cfg().tom_source_code or "VIGO"
-    path = f"/api/v1/po/{source_code}/{po.id}"
+    path = f"/api/v1/po/{source_code}/{po.po_number}"
     idempotency_key = str(uuid.uuid4())
 
     http_status = 0
@@ -360,6 +365,11 @@ async def refresh_po_from_tom(po_id: int, db: AsyncSession) -> dict:
 
     try:
         res = await tom_fetch("GET", path, None, idempotency_key)
+        if res["status"] == 404:
+            # Fallback for old POs that were sent using po.id
+            fallback_path = f"/api/v1/po/{source_code}/{po.id}"
+            res = await tom_fetch("GET", fallback_path, None, idempotency_key + "-fb")
+            
         http_status = res["status"]
         response_body = res["body"]
     except Exception as e:
@@ -468,7 +478,7 @@ async def amend_po_in_tom(po_id: int, db: AsyncSession) -> dict:
 
     payload = {"items": items_payload}
     source_code = _cfg().tom_source_code or "VIGO"
-    path = f"/api/v1/po/{source_code}/{po.id}/amend"
+    path = f"/api/v1/po/{source_code}/{po.po_number}/amend"
     idempotency_key = f"amend-{po.id}-{int(datetime.utcnow().timestamp())}"
 
     http_status = 0
@@ -477,6 +487,11 @@ async def amend_po_in_tom(po_id: int, db: AsyncSession) -> dict:
 
     try:
         res = await tom_fetch("POST", path, payload, idempotency_key)
+        if res["status"] == 404:
+            # Fallback for old POs that were sent using po.id
+            fallback_path = f"/api/v1/po/{source_code}/{po.id}/amend"
+            res = await tom_fetch("POST", fallback_path, payload, idempotency_key + "-fb")
+            
         http_status = res["status"]
         response_body = res["body"]
     except Exception as e:
@@ -521,7 +536,7 @@ async def cancel_po_in_tom(po_id: int, reason: str, db: AsyncSession) -> dict:
 
     payload = {"scope": "PO", "reason": "REQUESTER_CANCELLED", "note": reason}
     source_code = _cfg().tom_source_code or "VIGO"
-    path = f"/api/v1/po/{source_code}/{po.id}/cancel"
+    path = f"/api/v1/po/{source_code}/{po.po_number}/cancel"
     idempotency_key = f"cancel-{po.id}-{int(datetime.utcnow().timestamp())}"
 
     http_status = 0
@@ -530,6 +545,11 @@ async def cancel_po_in_tom(po_id: int, reason: str, db: AsyncSession) -> dict:
 
     try:
         res = await tom_fetch("POST", path, payload, idempotency_key)
+        if res["status"] == 404:
+            # Fallback for old POs that were sent using po.id
+            fallback_path = f"/api/v1/po/{source_code}/{po.id}/cancel"
+            res = await tom_fetch("POST", fallback_path, payload, idempotency_key + "-fb")
+            
         http_status = res["status"]
         response_body = res["body"]
     except Exception as e:

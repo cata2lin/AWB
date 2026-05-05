@@ -61,11 +61,12 @@ export const printApi = {
         const token = localStorage.getItem('awb_token')
         return `${API_BASE_URL}/print/reprint-order/${orderUid}${token ? `?token=${token}` : ''}`
     },
-    /** Reprint a single order (re-download AWB, no status change) */
-    reprintOrder: (orderUid) => {
+    /** @deprecated Use printFromUrl() from utils/printUtils.js instead */
+    reprintOrder: async (orderUid) => {
+        const { printFromUrl } = await import('../../utils/printUtils')
         const token = localStorage.getItem('awb_token')
         const url = `${API_BASE_URL}/print/reprint-order/${orderUid}${token ? `?token=${token}` : ''}`
-        window.open(url, '_blank')
+        await printFromUrl(url)
     },
     /** Release a single order from print hold */
     releaseHold: async (orderUid) => {
