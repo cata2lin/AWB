@@ -59,6 +59,10 @@ class Product(Base):
     # Primary listing preference — stored on all products in a barcode/SKU group.
     # Points to the UID of the listing whose stock/image should be used as the group's source of truth.
     primary_listing_uid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Persistent TOM variant mapping overrides
+    tom_variant_1: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    tom_variant_2: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     
     # Timestamps
     frisbo_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

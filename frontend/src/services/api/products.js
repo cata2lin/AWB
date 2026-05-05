@@ -40,6 +40,12 @@ export const productsApi = {
         return data
     },
 
+    /** Update TOM variants */
+    updateVariants: async (productUid, variants) => {
+        const { data } = await api.patch(`/products/${productUid}/variants`, variants)
+        return data
+    },
+
     /** Trigger product sync */
     triggerSync: async () => {
         const { data } = await api.post('/sync/trigger-products')

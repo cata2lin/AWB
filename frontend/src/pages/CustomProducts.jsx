@@ -19,6 +19,8 @@ export default function CustomProducts() {
     default_unit_cost: 0,
     hs_code: '',
     weight_grams: 0,
+    tom_variant_1: '',
+    tom_variant_2: '',
   })
 
   const fetchProducts = async () => {
@@ -50,7 +52,8 @@ export default function CustomProducts() {
   const openCreate = () => {
     setForm({
       id: null, sku: '', product_name: '', barcode: '', image_url: '', 
-      default_unit_cost: 0, hs_code: '', weight_grams: 0
+      default_unit_cost: 0, hs_code: '', weight_grams: 0,
+      tom_variant_1: '', tom_variant_2: ''
     })
     setIsModalOpen(true)
   }
@@ -65,6 +68,8 @@ export default function CustomProducts() {
       default_unit_cost: p.default_unit_cost || 0,
       hs_code: p.hs_code || '',
       weight_grams: p.weight_grams || 0,
+      tom_variant_1: p.tom_variant_1 || '',
+      tom_variant_2: p.tom_variant_2 || '',
     })
     setIsModalOpen(true)
   }
@@ -248,6 +253,14 @@ export default function CustomProducts() {
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">HS Code (Customs)</label>
                   <input type="text" value={form.hs_code} onChange={e => setForm({...form, hs_code: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">TOM Variant 1 (Color/Style)</label>
+                  <input type="text" value={form.tom_variant_1} onChange={e => setForm({...form, tom_variant_1: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">TOM Variant 2 (Size)</label>
+                  <input type="text" value={form.tom_variant_2} onChange={e => setForm({...form, tom_variant_2: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white" />
                 </div>
               </div>
             </div>

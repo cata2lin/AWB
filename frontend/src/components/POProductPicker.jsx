@@ -6,9 +6,10 @@
  * Designed for high-volume PO creation workflows.
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Search, X, Plus, Check, Package, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw, ChevronDown, Building2 } from 'lucide-react'
+import { Search, X, Plus, Check, Package, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw, ChevronDown, Building2, Edit2 } from 'lucide-react'
 import { purchaseOrdersMgmtApi, analyticsApi } from '../services/api/analytics'
 import { storesApi } from '../services/api/stores'
+import { productsApi } from '../services/api/products'
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 
@@ -46,8 +47,27 @@ export default function POProductPicker({ existingSkus = [], onAddProducts, onCl
   const [loading, setLoading] = useState(false)
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
   const [selected, setSelected] = useState(new Set()) // Set of SKUs
+  const [editingVariantUid, setEditingVariantUid] = useState(null)
+  const [variantForm, setVariantForm] = useState({ v1: '', v2: '' })
   const inputRef = useRef(null)
   const debounceRef = useRef(null)
+
+  const handleSaveVariants = async (uid) => {
+    try {
+      await productsApi.updateVariants(uid, {
+        tom_variant_1: variantForm.v1,
+        tom_variant_2: variantForm.v2
+      })
+      // Update local state to reflect change without full reload
+      setResults(prev => prev.map(p => 
+        p.uid === uid ? { ...p, tom_variant_1: variantForm.v1, tom_variant_2: variantForm.v2 } : p
+      ))
+      setEditingVariantUid(null)
+    } catch (e) {
+      console.error('Failed to save variants:', e)
+      alert('Failed to save variants.')
+    }
+  }
 
   const existingSet = useMemo(() => new Set(existingSkus), [existingSkus])
 
@@ -347,14 +367,58 @@ export default function POProductPicker({ existingSkus = [], onAddProducts, onCl
                     </h4>
 
                     {/* Custom Badge */}
-                    {p.is_custom && (
-                      <span className="inline-block mt-1 px-1.5 py-0.5 bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[9px] font-bold uppercase rounded">
-                        Custom
-                      </span>
-                    )}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {p.is_custom && (
+                        <span className="inline-block px-1.5 py-0.5 bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[9px] font-bold uppercase rounded">
+                          Custom
+                        </span>
+                      )}
+                      {p.tom_variant_1 && (
+                        <span className="inline-block px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[9px] font-bold uppercase rounded border border-zinc-200 dark:border-zinc-600 truncate max-w-full" title={p.tom_variant_1}>
+                          {p.tom_variant_1}
+                        </span>
+                      )}
+                      {p.tom_variant_2 && (
+                        <span className="inline-block px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[9px] font-bold uppercase rounded border border-zinc-200 dark:border-zinc-600 truncate max-w-full" title={p.tom_variant_2}>
+                          {p.tom_variant_2}
+                        </span>
+                      )}
+                    </div>
 
-                    {/* SKU */}
-                    <p className="text-xs font-bold font-mono text-zinc-700 dark:text-zinc-300 mt-0.5 truncate">{p.sku}</p>
+                    {/* SKU & Variant Edit */}
+                    <div className="flex items-center justify-between mt-0.5">
+                      <p className="text-xs font-bold font-mono text-zinc-700 dark:text-zinc-300 truncate">{p.sku}</p>
+                      <button onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingVariantUid(p.uid)
+                        setVariantForm({ v1: p.tom_variant_1 || '', v2: p.tom_variant_2 || '' })
+                      }} className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 z-10" title="Edit TOM Variants">
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Inline Variant Editor */}
+                    {editingVariantUid === p.uid && (
+                      <div className="absolute inset-x-0 bottom-0 bg-white dark:bg-zinc-800 p-3 shadow-lg border-t border-zinc-200 dark:border-zinc-700 z-20 rounded-b-xl"
+                           onClick={e => e.stopPropagation()}>
+                        <div className="space-y-2">
+                          <div>
+                            <label className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Variant 1 (Color)</label>
+                            <input type="text" value={variantForm.v1} onChange={e => setVariantForm({ ...variantForm, v1: e.target.value })}
+                              className="w-full px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Variant 2 (Size)</label>
+                            <input type="text" value={variantForm.v2} onChange={e => setVariantForm({ ...variantForm, v2: e.target.value })}
+                              className="w-full px-2 py-1 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={() => setEditingVariantUid(null)} className="flex-1 px-2 py-1 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded hover:bg-zinc-200">Cancel</button>
+                            <button onClick={() => handleSaveVariants(p.uid)} className="flex-1 px-2 py-1 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700">Save</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Stats bar */}

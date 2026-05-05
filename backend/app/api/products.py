@@ -44,6 +44,8 @@ def _product_to_listing(p, store_names):
         "frisbo_updated_at": p.frisbo_updated_at,
         "organization_uid": p.organization_uid,
         "missing_barcode": not (p.barcode or "").strip(),
+        "tom_variant_1": p.tom_variant_1,
+        "tom_variant_2": p.tom_variant_2,
     }
 
 
@@ -835,6 +837,35 @@ async def import_cogs_excel(
 # ── Single product ──
 # IMPORTANT: This MUST be the LAST route — /{product_uid} is a catch-all
 # that would shadow /export/excel, /import/cogs-template etc. if placed before them.
+
+# ── Variants update ──
+class UpdateVariantsRequest(BaseModel):
+    tom_variant_1: Optional[str] = None
+    tom_variant_2: Optional[str] = None
+
+@router.patch("/{product_uid}/variants")
+async def update_product_variants(
+    product_uid: str,
+    body: UpdateVariantsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update TOM variant overrides for a specific product."""
+    result = await db.execute(select(Product).where(Product.uid == product_uid))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    product.tom_variant_1 = body.tom_variant_1
+    product.tom_variant_2 = body.tom_variant_2
+    
+    # We could also apply this to the entire barcode/SKU group if requested,
+    # but for now, we apply it to the specific listing they edit.
+    await db.commit()
+    return {
+        "uid": product.uid,
+        "tom_variant_1": product.tom_variant_1,
+        "tom_variant_2": product.tom_variant_2
+    }
 
 @router.get("/{product_uid}")
 async def get_product(product_uid: str, db: AsyncSession = Depends(get_db)):

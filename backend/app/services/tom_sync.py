@@ -75,24 +75,92 @@ async def _is_tom_enabled_category(category: str, db: AsyncSession) -> bool:
 
 GRANDIA_STORE_UID = "n12w89-yy"
 
-async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession) -> dict:
-    """
-    Build the TOM POST /api/v1/po request payload from a PO + items.
-    
-    Fetches full Product records to enrich each line item with all available
-    data: hs_code, weight, brand, product_type, Shopify GIDs, store URLs, etc.
-    Grandia store products are excluded from store context (has own PO engine).
-    """
+def _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map):
+    # Resolve the full Product record
+    prod = products_map.get(item.product_uid) or sku_map.get(item.sku)
+
+    # Extract first image URL
+    image_url = item.product_image or ""
+    if not image_url and prod and prod.images and isinstance(prod.images, list) and len(prod.images) > 0:
+        img = prod.images[0]
+        image_url = img.get("src", "") if isinstance(img, dict) else ""
+
+    # Build the enriched line item
+    line = {
+        "source_line_id": item.sku,
+        "sku": item.sku,
+        "title": item.product_name or (prod.title_1 if prod else item.sku),
+        "image_url": image_url,
+        "requested_qty": item.quantity,
+    }
+
+    # Variant fields - Prioritize persistent DB tom_variants
+    variant_1 = getattr(prod, 'tom_variant_1', None) or item.variant_title or getattr(prod, 'title_2', None)
+    if variant_1:
+        line["variant_1"] = variant_1
+
+    variant_2 = getattr(prod, 'tom_variant_2', None)
+    if variant_2:
+        line["variant_2"] = variant_2
+
+    # Barcode
+    barcode = item.barcode or (prod.barcode if prod else None)
+    if barcode:
+        line["barcode"] = barcode
+
+    # Catalog price
+    cat_price = catalog_prices.get(item.sku, 0)
+    if cat_price and cat_price > 0:
+        line["cogs_usd"] = round(cat_price, 4)
+
+    # Unit cost
+    if item.unit_cost and item.unit_cost > 0:
+        line["unit_cost"] = round(item.unit_cost, 4)
+
+    # HS Code
+    if prod and getattr(prod, 'hs_code', None):
+        line["hs_code"] = prod.hs_code
+
+    # Weight
+    if prod and getattr(prod, 'weight', None):
+        line["weight_grams"] = prod.weight
+
+    # Shopify identifiers
+    if prod and getattr(prod, 'external_identifier', None):
+        line["shopify_product_id"] = prod.external_identifier
+
+    # Product type from store context
+    non_grandia_stores = []
+    if prod and hasattr(prod, 'store_uids') and isinstance(prod.store_uids, list):
+        for uid in prod.store_uids:
+            if uid != GRANDIA_STORE_UID and uid in store_map:
+                non_grandia_stores.append(store_map[uid].name)
+    if non_grandia_stores:
+        line["store_names"] = non_grandia_stores
+
+    # Line-level priority and type
+    if item.priority:
+        line["priority"] = item.priority
+    elif po and getattr(po, 'priority', None):
+        line["priority"] = po.priority
+        
+    if item.item_type:
+        line["type"] = item.item_type
+    if item.notes:
+        line["notes"] = item.notes
+
+    return line
+
+async def _get_enrichment_context(items: list, db: AsyncSession):
     from app.models.product import Product
     from app.models.custom_product import CustomProduct
     from app.models.store import Store
     from app.models import SkuCost
-
-    # Batch-load all Product records for enrichment
+    
     product_uids = [i.product_uid for i in items if i.product_uid]
     product_skus = [i.sku for i in items if i.sku]
-    products_map = {}  # uid -> Product
-    sku_map = {}       # sku -> Product
+    products_map = {}
+    sku_map = {}
 
     if product_uids:
         r = await db.execute(select(Product).where(Product.uid.in_(product_uids)))
@@ -101,7 +169,6 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
             if p.sku:
                 sku_map[p.sku] = p
 
-    # Fallback: load by SKU for items without product_uid
     missing_skus = [s for s in product_skus if s not in sku_map]
     if missing_skus:
         r = await db.execute(select(Product).where(Product.sku.in_(missing_skus)))
@@ -110,103 +177,42 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
             if p.uid:
                 products_map[p.uid] = p
                 
-    # Second fallback: check custom products for any still missing SKUs
     still_missing_skus = [s for s in product_skus if s not in sku_map]
     if still_missing_skus:
         r = await db.execute(select(CustomProduct).where(CustomProduct.sku.in_(still_missing_skus)))
         for cp in r.scalars().all():
             sku_map[cp.sku] = cp
-            # CustomProducts don't have uid in products_map, but sku_map is enough
 
-    # Load catalog prices (cost_per_item from SkuCost table)
     all_skus = list({i.sku for i in items if i.sku})
     catalog_prices = {}
     if all_skus:
         r = await db.execute(select(SkuCost).where(SkuCost.sku.in_(all_skus)))
         catalog_prices = {c.sku: float(c.cost or 0) for c in r.scalars().all()}
 
-    # Load store names for store_url context
     all_store_uids = set()
     for p in products_map.values():
         if p.store_uids and isinstance(p.store_uids, list):
             all_store_uids.update(uid for uid in p.store_uids if uid != GRANDIA_STORE_UID)
-    store_map = {}  # uid -> Store
+    store_map = {}
     if all_store_uids:
         r = await db.execute(select(Store).where(Store.uid.in_(list(all_store_uids))))
         store_map = {s.uid: s for s in r.scalars().all()}
+        
+    return products_map, sku_map, catalog_prices, store_map
+
+async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession) -> dict:
+    """
+    Build the TOM POST /api/v1/po request payload from a PO + items.
+    
+    Fetches full Product records to enrich each line item with all available
+    data: hs_code, weight, brand, product_type, Shopify GIDs, store URLs, etc.
+    Grandia store products are excluded from store context (has own PO engine).
+    """
+    products_map, sku_map, catalog_prices, store_map = await _get_enrichment_context(items, db)
 
     items_payload = []
     for item in items:
-        # Resolve the full Product record
-        prod = products_map.get(item.product_uid) or sku_map.get(item.sku)
-
-        # Extract first image URL
-        image_url = item.product_image or ""
-        if not image_url and prod and prod.images and isinstance(prod.images, list) and len(prod.images) > 0:
-            img = prod.images[0]
-            image_url = img.get("src", "") if isinstance(img, dict) else ""
-
-        # Build the enriched line item
-        line = {
-            "source_line_id": item.sku,
-            "sku": item.sku,
-            "title": item.product_name or (prod.title_1 if prod else item.sku),
-            "image_url": image_url,
-            "requested_qty": item.quantity,
-        }
-
-        # Variant fields — TOM displays these as VARIANT_1 and VARIANT_2
-        # variant_1: color/style from the PO line variant_title or Product.title_2
-        # variant_2: secondary variant dimension (size, etc.)
-        variant_1 = item.variant_title or (prod.title_2 if prod and hasattr(prod, 'title_2') else None)
-        if variant_1:
-            line["variant_1"] = variant_1
-
-        # Barcode
-        barcode = item.barcode or (prod.barcode if prod else None)
-        if barcode:
-            line["barcode"] = barcode
-
-        # Catalog price (product cost-per-item from SkuCost table)
-        cat_price = catalog_prices.get(item.sku, 0)
-        if cat_price and cat_price > 0:
-            line["cogs_usd"] = round(cat_price, 4)
-
-        # Unit cost (reorder price set on this specific PO line)
-        if item.unit_cost and item.unit_cost > 0:
-            line["unit_cost"] = round(item.unit_cost, 4)
-
-        # HS Code (customs harmonized code)
-        if prod and prod.hs_code:
-            line["hs_code"] = prod.hs_code
-
-        # Weight (grams → kg for TOM if needed, send raw grams)
-        if prod and prod.weight:
-            line["weight_grams"] = prod.weight
-
-        # Shopify identifiers
-        if prod and prod.external_identifier:
-            line["shopify_product_id"] = prod.external_identifier
-
-
-        # Product type from store context
-        non_grandia_stores = []
-        if prod and hasattr(prod, 'store_uids') and isinstance(prod.store_uids, list):
-            for uid in prod.store_uids:
-                if uid != GRANDIA_STORE_UID and uid in store_map:
-                    non_grandia_stores.append(store_map[uid].name)
-        if non_grandia_stores:
-            line["store_names"] = non_grandia_stores
-
-        # Line-level priority (inherits from PO if None)
-        if item.priority:
-            line["priority"] = item.priority
-        # Line-level type override
-        if item.item_type:
-            line["type"] = item.item_type
-        if item.notes:
-            line["notes"] = item.notes
-
+        line = _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map)
         items_payload.append(line)
 
     payload = {
@@ -453,7 +459,7 @@ async def refresh_po_from_tom(po_id: int, db: AsyncSession) -> dict:
 # ── Amend (POST /api/v1/po/{SOURCE}/{source_po_id}/amend) ───────────────
 
 async def amend_po_in_tom(po_id: int, db: AsyncSession) -> dict:
-    """Send amendments to TOM for lines still in NEW status."""
+    """Send amendments to TOM for lines still in NEW status, adhering to ADD/UPDATE/REMOVE rules."""
     if not is_tom_configured():
         return {"ok": False, "status": 0, "error": "TOM is not configured."}
 
@@ -464,17 +470,56 @@ async def amend_po_in_tom(po_id: int, db: AsyncSession) -> dict:
     if not po.tom_number:
         return {"ok": False, "status": 0, "error": "PO has not been sent to TOM yet."}
 
-    items_result = await db.execute(
-        select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id)
-    )
-    items = items_result.scalars().all()
+    # 1. Fetch current TOM state to compute diff
+    source_code = _cfg().tom_source_code or "VIGO"
+    path_get = f"/api/v1/po/{source_code}/{po.po_number}"
+    idem_get = f"refresh-amend-{po.id}-{int(datetime.utcnow().timestamp())}"
+    tom_state = {}
+    try:
+        res_get = await tom_fetch("GET", path_get, None, idem_get)
+        if res_get["status"] == 404:
+            path_get = f"/api/v1/po/{source_code}/{po.id}"
+            res_get = await tom_fetch("GET", path_get, None, idem_get + "-fb")
+        if res_get["status"] == 200 and isinstance(res_get.get("body"), dict):
+            tom_state = res_get["body"]
+    except Exception as e:
+        logger.warning(f"Failed to fetch TOM state for amend diff: {e}")
 
-    items_payload = [{
-        "source_line_id": i.sku,
-        "requested_qty": i.quantity,
-        "priority": i.priority or po.priority,
-        "title": i.product_name or i.sku,
-    } for i in items]
+    tom_skus = {ri.get("source_line_id") for ri in tom_state.get("items", []) if ri.get("source_line_id")}
+
+    # 2. Compute Diff and Build Payload
+    items_result = await db.execute(select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id))
+    local_items = items_result.scalars().all()
+    local_skus = {i.sku for i in local_items if i.sku}
+
+    products_map, sku_map, catalog_prices, store_map = await _get_enrichment_context(local_items, db)
+    items_payload = []
+
+    for item in local_items:
+        if not item.sku:
+            continue
+        if item.sku in tom_skus:
+            # Item exists in TOM -> UPDATE
+            items_payload.append({
+                "source_line_id": item.sku,
+                "action": "UPDATE",
+                "requested_qty": item.quantity,
+                "priority": item.priority or po.priority,
+                "title": item.product_name or item.sku,
+            })
+        else:
+            # Item does NOT exist in TOM -> ADD (needs full enrichment)
+            enriched_line = _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map)
+            enriched_line["action"] = "ADD"
+            items_payload.append(enriched_line)
+
+    # For items in TOM but missing locally -> REMOVE
+    for sku in tom_skus:
+        if sku not in local_skus:
+            items_payload.append({
+                "source_line_id": sku,
+                "action": "REMOVE"
+            })
 
     payload = {"items": items_payload}
     source_code = _cfg().tom_source_code or "VIGO"

@@ -19,6 +19,8 @@ class CustomProductBase(BaseModel):
     default_unit_cost: float = 0.0
     hs_code: Optional[str] = None
     weight_grams: Optional[int] = None
+    tom_variant_1: Optional[str] = None
+    tom_variant_2: Optional[str] = None
 
 class CustomProductCreate(CustomProductBase):
     pass
@@ -53,6 +55,8 @@ def _serialize(cp: CustomProduct) -> dict:
         "default_unit_cost": cp.default_unit_cost,
         "hs_code": cp.hs_code,
         "weight_grams": cp.weight_grams,
+        "tom_variant_1": cp.tom_variant_1,
+        "tom_variant_2": cp.tom_variant_2,
         "created_at": cp.created_at.isoformat() if cp.created_at else None,
         "updated_at": cp.updated_at.isoformat() if cp.updated_at else None,
     }
@@ -108,7 +112,9 @@ async def create_custom_product(body: CustomProductCreate, db: AsyncSession = De
         image_url=body.image_url,
         default_unit_cost=body.default_unit_cost,
         hs_code=body.hs_code,
-        weight_grams=body.weight_grams
+        weight_grams=body.weight_grams,
+        tom_variant_1=body.tom_variant_1,
+        tom_variant_2=body.tom_variant_2
     )
     db.add(cp)
     await db.commit()
@@ -135,6 +141,8 @@ async def update_custom_product(cp_id: int, body: CustomProductUpdate, db: Async
     cp.default_unit_cost = body.default_unit_cost
     cp.hs_code = body.hs_code
     cp.weight_grams = body.weight_grams
+    cp.tom_variant_1 = body.tom_variant_1
+    cp.tom_variant_2 = body.tom_variant_2
     
     await db.commit()
     await db.refresh(cp)

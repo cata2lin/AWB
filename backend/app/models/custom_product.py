@@ -24,5 +24,9 @@ class CustomProduct(Base):
     hs_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     weight_grams: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
+    # Persistent TOM variant mapping overrides
+    tom_variant_1: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    tom_variant_2: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

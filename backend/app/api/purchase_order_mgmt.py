@@ -337,20 +337,47 @@ async def update_po_items(po_id: int, items: List[POItemUpdate], db: AsyncSessio
     if po.status not in ("DRAFT", "APPROVED"):
         raise HTTPException(status_code=400, detail="Cannot modify items on this PO status")
 
-    await db.execute(delete(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id))
-    # Merge duplicate SKUs before saving
+    # Load existing items
+    items_r = await db.execute(select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id))
+    existing_items_list = items_r.scalars().all()
+    existing_items = {i.sku: i for i in existing_items_list}
+
+    # Merge duplicate SKUs from incoming payload before saving
     merged_items = _merge_duplicate_sku_items(items)
+    incoming_skus = {d.sku for d in merged_items}
+    
     new_items = []
     for d in merged_items:
-        item = PurchaseOrderItem(
-            purchase_order_id=po_id, product_uid=d.product_uid,
-            sku=d.sku, barcode=d.barcode, product_name=d.product_name,
-            variant_title=d.variant_title, product_image=d.product_image,
-            quantity=d.quantity, unit_cost=d.unit_cost, received_qty=d.received_qty,
-            priority=d.priority, item_type=d.item_type, notes=d.notes,
-        )
-        db.add(item)
+        if d.sku in existing_items:
+            # Update existing
+            item = existing_items[d.sku]
+            item.product_uid = d.product_uid
+            item.barcode = d.barcode
+            item.product_name = d.product_name
+            item.variant_title = d.variant_title
+            item.product_image = d.product_image
+            item.quantity = d.quantity
+            item.unit_cost = d.unit_cost
+            item.received_qty = d.received_qty
+            item.priority = d.priority
+            item.item_type = d.item_type
+            item.notes = d.notes
+        else:
+            # Add new
+            item = PurchaseOrderItem(
+                purchase_order_id=po_id, product_uid=d.product_uid,
+                sku=d.sku, barcode=d.barcode, product_name=d.product_name,
+                variant_title=d.variant_title, product_image=d.product_image,
+                quantity=d.quantity, unit_cost=d.unit_cost, received_qty=d.received_qty,
+                priority=d.priority, item_type=d.item_type, notes=d.notes,
+            )
+            db.add(item)
         new_items.append(item)
+
+    # Delete existing items not in the incoming payload
+    for sku, item in existing_items.items():
+        if sku not in incoming_skus:
+            await db.delete(item)
 
     _update_totals(po, new_items)
     po.updated_at = datetime.utcnow()
@@ -560,6 +587,8 @@ async def product_picker(
             "uid": e["product"].uid, "sku": e["product"].sku or "", "barcode": e["product"].barcode or "",
             "product_name": e["product"].product_name if e["is_custom"] else (e["product"].title_1 or ""),
             "variant_title": "" if e["is_custom"] else (e["product"].title_2 or ""),
+            "tom_variant_1": e["product"].tom_variant_1,
+            "tom_variant_2": e["product"].tom_variant_2,
             "image": _first_image(e["product"], e["is_custom"]),
             "stock_available": e["total_stock"],
             "unit_cost": _cost(e),
