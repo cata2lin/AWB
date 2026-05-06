@@ -221,7 +221,7 @@ async def _build_create_payload(po: PurchaseOrder, items: list, db: AsyncSession
     payload = {
         "source_app": _cfg().tom_source_code or "VIGO",
         "source_po_id": po.po_number,
-        "number": po.po_number,
+        "number": f"VIGO-{po.po_number}",
         "date": datetime.utcnow().strftime("%Y-%m-%d"),
         "priority": po.priority or "STANDARD",
         "type": po.po_type or "RESTOCK",
