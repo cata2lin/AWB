@@ -143,7 +143,7 @@ export default function PODetail({ h }) {
             )}
           </h3>
           <div className="flex items-center gap-2">
-            {!isCreate && h.mode === 'detail' && ['DRAFT', 'SENT', 'ORDERED'].includes(po?.status) && (
+            {!isCreate && h.mode === 'detail' && ['DRAFT', 'SENT', 'ORDERED', 'APPROVED', 'PARTIALLY_RECEIVED'].includes(po?.status) && (
               <button onClick={h.startEdit} className="p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 text-xs font-medium">
                 <PenLine className="w-4 h-4" /> Edit
               </button>
