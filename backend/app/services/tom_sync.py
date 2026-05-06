@@ -79,11 +79,16 @@ def _enrich_po_item(item, po, products_map, sku_map, catalog_prices, store_map, 
     # Resolve the full Product record
     prod = products_map.get(item.product_uid) or sku_map.get(item.sku)
 
-    # Extract first image URL
+    # Extract first image URL — TOM requires a valid URL, use placeholder if missing
     image_url = item.product_image or ""
     if not image_url and prod and prod.images and isinstance(prod.images, list) and len(prod.images) > 0:
         img = prod.images[0]
         image_url = img.get("src", "") if isinstance(img, dict) else ""
+
+    # TOM rejects empty strings for image_url — must be a valid URL or omitted
+    PLACEHOLDER_IMG = "https://cdn.shopify.com/s/files/1/0659/2777/4439/files/placeholder.png"
+    if not image_url or not image_url.startswith("http"):
+        image_url = PLACEHOLDER_IMG
 
     # Build the enriched line item
     line = {
