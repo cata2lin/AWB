@@ -11,6 +11,36 @@ Long-form references:
 
 ---
 
+## Tier 0 — Safety rails (what the harness will refuse no matter what)
+
+This session runs in `bypassPermissions` mode for speed, so almost nothing prompts. To keep that safe, two layers actively *block* operations even though prompts are off:
+
+- **Static `permissions.deny` rules** in `.claude/settings.json` cover prefix-pattern blocks: `rm -rf /`, `git push --force *main*`, `git reset --hard origin*`, `pip uninstall fastapi*`, etc.
+- **`PreToolUse` hook** `.claude/hooks/safety-rails.sh` catches what static patterns can't (e.g., `--force` appearing anywhere in a command, not just as a prefix).
+
+**Things that are blocked:**
+
+| Category | Examples |
+|---|---|
+| Filesystem catastrophe | `rm -rf /`, `rm -rf ~`, `rm -rf $HOME`, flag-order variants |
+| Force-push to protected branches | `git push --force * main`, `git push origin main --force`, also master/production/prod/release |
+| Hard reset against remote | `git reset --hard origin/main`, `git reset --hard upstream/*` |
+| Branch deletion | `git branch -D main`, `git branch -D master`, `git branch -D release` |
+| Production DB | Any command containing `38.242.226.83` |
+| Core dep removal | `pip uninstall fastapi`/`sqlalchemy`/`pydantic`/`uvicorn`, `npm uninstall react`/`vite`/`sonner` |
+| Git identity tampering | `git config user.*`, `git config credential.*`, `git config core.hooksPath` |
+| Secrets / credentials | Editing or writing `.env`, `.env.*`, `*credentials.json`, `*.pem`, `*.key`, `.npmrc`, `.pypirc` |
+| CI workflow edits | Editing `.github/workflows/*` (deliberate human review required) |
+| Self-tampering | Editing `.claude/settings.json` (ask the user explicitly) |
+
+Blocked attempts are logged to `.claude/safety-rails.log` (gitignored) with timestamp, tool, reason, and target.
+
+**If a rail blocks something the user truly wants done**: tell them, explain which rail fired, and let them either run the command themselves OR ask me to edit the rail (which itself triggers the "settings.json blocked" rail — they'll need to edit it manually).
+
+**Branch protection nuance**: normal pushes to `main` are allowed (it's the dev branch); only force-pushes are blocked. Once a CI pipeline is in place, switch to a PR workflow and the rails can tighten.
+
+---
+
 ## Tier 1 — Domain rules you cannot break
 
 These have caused outages or wrong financial numbers. Re-read before touching anything in `backend/app/api/analytics/`, `services/google_sheets.py`, or any P&L UI.

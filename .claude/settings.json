@@ -3,7 +3,8 @@
   "model": "claude-opus-4-7",
   "effortLevel": "high",
   "permissions": {
-    "defaultMode": "auto",
+    "defaultMode": "bypassPermissions",
+
     "allow": [
       "Read",
       "Glob",
@@ -16,9 +17,55 @@
       "Bash(ls*)",
       "Bash(curl.exe*)",
       "Bash(wc*)"
+    ],
+
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)",
+      "Bash(rm -rf $HOME)",
+      "Bash(rm -rf $HOME/*)",
+      "Bash(rm -rf .)",
+      "Bash(rm -rf ..)",
+      "Bash(rm -fr /)",
+      "Bash(rm -fr /*)",
+      "Bash(rm -fr ~)",
+      "Bash(rm -fr ~/*)",
+      "Bash(git push --force *main*)",
+      "Bash(git push -f *main*)",
+      "Bash(git push --force *master*)",
+      "Bash(git push -f *master*)",
+      "Bash(git reset --hard origin*)",
+      "Bash(git reset --hard upstream*)",
+      "Bash(git branch -D main*)",
+      "Bash(git branch -D master*)",
+      "Bash(git checkout -- .)",
+      "Bash(git checkout -- *)",
+      "Bash(pip uninstall fastapi*)",
+      "Bash(pip uninstall sqlalchemy*)",
+      "Bash(pip uninstall pydantic*)",
+      "Bash(pip uninstall uvicorn*)",
+      "Bash(npm uninstall react*)",
+      "Bash(npm uninstall vite*)",
+      "Bash(npm uninstall sonner*)",
+      "Bash(psql *38.242.226.83*)"
     ]
   },
+
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/safety-rails.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",

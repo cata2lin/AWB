@@ -66,3 +66,6 @@ desktop.ini
 # =========================
 .gemini/
 .agent/
+
+# Claude Code safety-rails audit log (kept locally)
+.claude/safety-rails.log
