@@ -38,8 +38,15 @@ case "$file" in
   *.py)
     case "$file" in
       *"/backend/"*)
-        if command -v ruff >/dev/null 2>&1; then
+        # Try venv first (this project's installed formatters), then system PATH.
+        venv_ruff="$repo_root/backend/venv/Scripts/ruff.exe"
+        venv_black="$repo_root/backend/venv/Scripts/black.exe"
+        if [ -x "$venv_ruff" ]; then
+          "$venv_ruff" format "$file" >/dev/null 2>&1
+        elif command -v ruff >/dev/null 2>&1; then
           ruff format "$file" >/dev/null 2>&1
+        elif [ -x "$venv_black" ]; then
+          "$venv_black" "$file" >/dev/null 2>&1
         elif command -v black >/dev/null 2>&1; then
           black "$file" >/dev/null 2>&1
         fi

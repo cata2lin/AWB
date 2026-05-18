@@ -1238,3 +1238,21 @@ The 3,684-line `Analytics.jsx` mega-component became unmaintainable — every ta
 | **Lint** | Was 20 errors + 1 warning | 0 errors, 0 warnings |
 | **`authFetch` kept inline** | Still passed to `<DetailedPnl authFetch={authFetch} />` | Will move once `DetailedPnl` is refactored — left as-is to avoid scope creep |
 
+### 2026-05-19 — Test Suite, Toast Library, Backend Formatter
+
+**Files added:** `backend/tests/__init__.py`, `backend/tests/conftest.py`, `backend/tests/test_smoke.py`, `backend/pytest.ini`  
+**Files changed:** `backend/requirements.txt`, `frontend/package.json`, `frontend/src/main.jsx`, `.claude/hooks/auto-format.sh`, `CLAUDE.md`
+
+Closing three foundation gaps that would have bitten us once we resumed feature work — a real test loop, an actual toast library to back the "every button has a toast" CLAUDE.md rule, and a Python formatter wired into the auto-format hook.
+
+| Change | Description | Details |
+| --- | --- | --- |
+| **Backend smoke test suite** | No automated way to verify "did my change break a critical endpoint?" Previously only the browser caught regressions. | Added `backend/tests/` with a pytest suite that boots the real FastAPI app via `TestClient`, exercises the full lifespan (BNR sync, admin-user bootstrap, scheduler), and asserts shape (not values) on 9 endpoints: `/health`, deliverability, profitability, summary, stores, orders count, filter-options, profitability-config, business-costs pnl-sections. 8 fast tests (~13s); 1 slow test (full P&L crunch, ~2min) marked `@pytest.mark.slow` and skipped by default. |
+| **`pytest` + `ruff` added to requirements** | Neither was installed in the venv. The auto-format hook checked for `ruff` on PATH (always failed). | Installed both into the venv and pinned in `backend/requirements.txt` (ruff==0.15.13, pytest==9.0.3). |
+| **Auto-format hook now finds the venv** | Hook used `command -v ruff` only — venv binaries don't propagate to bash PATH on Windows. | Updated `.claude/hooks/auto-format.sh` to check `$repo_root/backend/venv/Scripts/ruff.exe` first, then system PATH, then `black` as a fallback. Python files under `backend/` now auto-format on every Write/Edit. |
+| **`pytest.ini` configured** | Default pytest behavior would pick up the 20 legacy `test_*.py` scripts at `backend/` root (urllib-based connectivity probes, not pytest tests) and fail to collect them. | Pinned `testpaths = tests`, registered the `slow` marker, set `addopts = -ra --durations=10 -m "not slow"` so the fast suite is the default. Run all with `pytest -m ""`. |
+| **Auth fixture for TestClient** | All endpoints except `/health` are auth-gated (returned 401 on first test run). | `conftest.py` adds an `auth_token` fixture that logs in as the bootstrap admin (admin/admin123, created by lifespan on empty users table); the `client` fixture attaches the JWT to every request. Override via `AWB_TEST_ADMIN_USER` / `AWB_TEST_ADMIN_PASSWORD` env vars. |
+| **Toast library: sonner installed** | CLAUDE.md mandated "every state-changing button has a toast" but no toast library was installed anywhere — the rule was aspirational. | Installed `sonner@^2.0.7`. Mounted `<Toaster position="top-right" richColors closeButton theme="system" />` at the React root in `frontend/src/main.jsx`. Standard usage: `import { toast } from 'sonner'; toast.success(...) / toast.error(...) / toast.promise(...)`. Romanian copy preferred. |
+| **CLAUDE.md updated** | Documented test commands, toast usage with code example, "no mocks of prod DB" rationale. | Tier 3 (UI/UX) toast section now references sonner specifically. Tier 4 (Workflow → Testing) gained the fast vs slow command split. |
+| **What this still doesn't catch** | Smoke tests assert shape, not values. A wrong VAT-split formula will pass; only the user spotting a wrong number in the dashboard would catch it. | Unit tests on the P&L formula functions (`tva_split`, `convert_to_ron_cached`, `compute_final_outcome`) would close this gap. Deferred to when we fix a calculation bug — easier to write a regression test alongside the fix than speculatively. |
+

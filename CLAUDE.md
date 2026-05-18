@@ -87,9 +87,24 @@ These apply to every new screen, table, and form. If you're adding something and
 
 ### Toasts on every state-changing action
 
-- Every button that mutates state (create / update / delete / sync / print / import) shows a toast on success AND on failure. Success: green, ~3s. Failure: red, persistent until dismissed, with the error detail.
+**Library: [sonner](https://sonner.emilkowal.ski/)**. Mounted at the React root in `frontend/src/main.jsx` with `richColors`, `closeButton`, `theme="system"`. Use it like this:
+
+```jsx
+import { toast } from 'sonner'
+
+toast.success('Cost SKU actualizat')
+toast.error('Eroare la salvare: ' + (err.response?.data?.detail || err.message))
+toast.promise(skuCostsApi.update(...), {
+  loading: 'Se salvează...',
+  success: 'Salvat',
+  error: (e) => `Eroare: ${e.message}`,
+})
+```
+
+- Every button that mutates state (create / update / delete / sync / print / import) shows a toast on success AND on failure. Success: green via `toast.success`, ~3.5s (default). Failure: red via `toast.error`, persistent until dismissed via the close button, with the error detail.
 - Read-only operations (filter changes, sort, expand row) get no toast — silence is success.
-- If a long operation needs progress (CSV import, bulk sync), use a sticky toast that updates, not a chain of new toasts.
+- Long operations (CSV import, bulk sync) → use `toast.promise(...)` for a single updating toast, not a chain of new ones.
+- Romanian copy preferred to match the rest of the UI ("Salvat", "Șters", "Eroare la încărcare").
 
 ### Buttons are traceable
 
@@ -161,8 +176,13 @@ This is the original rule from `.agent/workflows/document-changes.md`. Honored a
 
 ### Testing
 
-- No mocks of the production database. Integration tests hit a real DB. The 2026-Q1 migration that broke prod because mocks passed is the reason — see [README.md changelog](./README.md#changelog).
-- Backend: `pytest` from `backend/`. Frontend has no test suite yet; if you add one, Vitest matches Vite.
+- **No mocks of the production database.** Integration tests hit a real DB. The 2026-Q1 migration that broke prod because mocks passed is the reason.
+- **Backend smoke tests live in `backend/tests/`** (the legacy `test_*.py` at backend/ root are ad-hoc urllib scripts — pytest is configured via `pytest.ini` to ignore them).
+- **Run fast tests**: `cd backend && ./venv/Scripts/pytest.exe` — runs everything not marked `@pytest.mark.slow` (~13s including app boot). Default for every change.
+- **Run slow tests**: `cd backend && ./venv/Scripts/pytest.exe -m slow` — includes endpoints that crunch the whole orders table (~2 min). Run before merging anything that touches P&L or sync logic.
+- **The smoke suite asserts shape, not values** — that an endpoint returns 200 with the expected JSON keys. It will NOT catch a wrong number in the P&L; that's what unit tests on the formula functions would catch (none yet). Add them when you fix a calculation bug.
+- **The TestClient fixture uses the bootstrap admin** (admin/admin123, created by the lifespan). Override via `AWB_TEST_ADMIN_USER` / `AWB_TEST_ADMIN_PASSWORD` env vars if you've rotated the password.
+- Frontend has no test suite yet; if you add one, Vitest matches Vite.
 
 ### Build verification
 

@@ -31,3 +31,8 @@ bcrypt==4.0.1
 
 # Excel Export
 openpyxl==3.1.5
+
+# Dev tooling (formatter + tests) — used by Claude Code auto-format hook
+# and the backend/tests/ smoke suite. Safe to install in prod too.
+ruff==0.15.13
+pytest==9.0.3
