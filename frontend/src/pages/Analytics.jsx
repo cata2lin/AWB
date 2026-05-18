@@ -28,6 +28,10 @@ import {
     Eye, EyeOff, Settings2, Download, ArrowUpDown, Bookmark, X, TrendingDown
 } from 'lucide-react'
 import { exportPnlToExcel } from '../utils/pnlExport'
+import {
+    getRateColor, getRateBgColor, formatNumber, formatMoney,
+    marginColor, marginBg, getLastCompleteMonth,
+} from '../utils/analyticsHelpers'
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi, purchaseOrdersMgmtApi } from '../services/api'
 import ProductsTab from '../components/ProductsTab'
 import VelocityRow from '../components/VelocityRow'
@@ -144,11 +148,6 @@ export default function Analytics() {
         cancelled_rate: 'Rată Anulare', deliverability: 'Livrabilitate',
     }
     // Livrabilitate dedicated period & sort
-    const getLastCompleteMonth = () => {
-        const now = new Date()
-        const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        return `${lm.getFullYear()}-${String(lm.getMonth() + 1).padStart(2, '0')}`
-    }
     const [delivPeriod, setDelivPeriod] = useState(getLastCompleteMonth)
     const [delivDateFrom, setDelivDateFrom] = useState('')
     const [delivDateTo, setDelivDateTo] = useState('')
@@ -578,31 +577,6 @@ export default function Analytics() {
         } catch (err) {
             console.error('Failed to add SKU:', err)
         }
-    }
-
-    // Get color for deliverability rate
-    const getRateColor = (rate) => {
-        if (rate >= 80) return 'text-green-600 dark:text-green-400'
-        if (rate >= 60) return 'text-yellow-600 dark:text-yellow-400'
-        return 'text-red-600 dark:text-red-400'
-    }
-
-    const getRateBgColor = (rate) => {
-        if (rate >= 80) return 'bg-green-500'
-        if (rate >= 60) return 'bg-yellow-500'
-        return 'bg-red-500'
-    }
-
-    // Format large numbers (for counts)
-    const formatNumber = (num) => {
-        if (num == null) return '0'
-        return Number(num).toLocaleString('ro-RO')
-    }
-
-    // Format currency values (always 2 decimals, thousands separator)
-    const formatMoney = (num) => {
-        if (num == null) return '0.00'
-        return Number(num).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     }
 
     // Get all cities sorted by order count for charts
@@ -3201,18 +3175,6 @@ export default function Analytics() {
                         const sortIcon = (col) => {
                             if (skuProfitSort.col !== col) return '↕'
                             return skuProfitSort.dir === 'asc' ? '↑' : '↓'
-                        }
-
-                        const marginColor = (pct) => {
-                            if (pct < 10) return 'text-red-500 dark:text-red-400'
-                            if (pct < 25) return 'text-amber-500 dark:text-amber-400'
-                            return 'text-emerald-500 dark:text-emerald-400'
-                        }
-
-                        const marginBg = (pct) => {
-                            if (pct < 10) return 'bg-red-500/10'
-                            if (pct < 25) return 'bg-amber-500/10'
-                            return 'bg-emerald-500/10'
                         }
 
                         const handleAddMktCost = async (sku) => {
