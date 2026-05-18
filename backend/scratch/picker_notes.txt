@@ -1,0 +1,13 @@
+"""
+GET /purchase-orders-mgmt/products/picker
+
+Optimised product picker endpoint.
+
+Changes vs old version:
+- Fetches ALL active products in one pass (no limit trimming in Python loop)
+- Uses a single JOIN-equivalent via two queries instead of N+1 (SkuCost, Store)
+- Returns all products so the frontend can do client-side filtering/sorting
+- Still excludes Grandia-only products
+- Still deduplicates by SKU keeping the barcode-bearing representative
+- New param: `limit` is now a hard-cap default 500 (all products fit in one shot)
+"""
