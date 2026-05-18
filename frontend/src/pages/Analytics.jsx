@@ -43,6 +43,7 @@ import DetailedPnl from '../components/DetailedPnl'
 import SkuPickerModal from '../components/SkuPickerModal'
 import ProductDeliverabilityTab from '../components/ProductDeliverabilityTab'
 import SkuCostsTab from './analytics/SkuCostsTab'
+import DeliverabilityTab from './analytics/DeliverabilityTab'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -67,8 +68,7 @@ export default function Analytics() {
     const [customDateFrom, setCustomDateFrom] = useState('')
     const [customDateTo, setCustomDateTo] = useState('')
     const [geoData, setGeoData] = useState(null)
-    const [deliverabilityData, setDeliverabilityData] = useState(null)
-    const [comparisonData, setComparisonData] = useState(null)
+    // deliverabilityData, comparisonData moved into DeliverabilityTab
     const [printAnalytics, setPrintAnalytics] = useState(null)
     const [isLoading, setIsLoading] = useState(true)
     const [searchParams, setSearchParams] = useSearchParams()
@@ -91,7 +91,7 @@ export default function Analytics() {
 
     // Helper: returns true for all columns (column visibility is always on)
     const isColVisible = useCallback(() => true, [])
-    const [showComparison, setShowComparison] = useState(false)
+    // showComparison moved into DeliverabilityTab
 
     // SKU Costs state moved into SkuCostsTab
 
@@ -130,28 +130,7 @@ export default function Analytics() {
     const [expandedOrderUid, setExpandedOrderUid] = useState(null)
     const [showCalcLegend, setShowCalcLegend] = useState(false)
 
-    // Livrabilitate column visibility
-    const [delivCols, setDelivCols] = useState({
-        total: true, delivered: true, cancelled: true, returned: true,
-        in_transit: true, shipped: true, delivery_rate: true,
-        expedition_rate: true, cancelled_rate: true, deliverability: true,
-    })
-    const [showDelivColMenu, setShowDelivColMenu] = useState(false)
-    const delivColLabels = {
-        total: 'Total', delivered: 'Livrate', cancelled: 'Anulate',
-        returned: 'Ret. / Ref.', in_transit: 'În Tranzit', shipped: 'Expediate',
-        delivery_rate: 'Rată Livrare', expedition_rate: 'Rată Expediție',
-        cancelled_rate: 'Rată Anulare', deliverability: 'Livrabilitate',
-    }
-    // Livrabilitate dedicated period & sort
-    const [delivPeriod, setDelivPeriod] = useState(getLastCompleteMonth)
-    const [delivDateFrom, setDelivDateFrom] = useState('')
-    const [delivDateTo, setDelivDateTo] = useState('')
-    const [delivLoading, setDelivLoading] = useState(false)
-    const [delivSort, setDelivSort] = useState({ col: 'total', dir: 'desc' })
-    const toggleDelivSort = (col) => {
-        setDelivSort(prev => prev.col === col ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })
-    }
+    // Deliverability state moved into DeliverabilityTab
     // Sales Velocity state
     const [velocityData, setVelocityData] = useState(null)
     const [velocityLoading, setVelocityLoading] = useState(false)
@@ -323,75 +302,7 @@ export default function Analytics() {
         }
     }, [activeTab])
 
-    // --- Livrabilitate dedicated fetch ---
-    const fetchDeliverability = async (period, customFrom, customTo) => {
-        setDelivLoading(true)
-        try {
-            const API_URL = import.meta.env.VITE_API_URL || '/api'
-            const params = new URLSearchParams()
-            if (selectedStores.length > 0) params.set('store_uids', selectedStores.join(','))
-
-            const now = new Date()
-            let dateFrom, dateTo
-
-            // Helper: format a local Date as YYYY-MM-DD without UTC shift
-            const fmtLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-            if (period === '30d') {
-                const d = new Date(now); d.setDate(d.getDate() - 30)
-                dateFrom = fmtLocal(d)
-                dateTo = fmtLocal(now)
-            } else if (period === '90d') {
-                const d = new Date(now); d.setDate(d.getDate() - 90)
-                dateFrom = fmtLocal(d)
-                dateTo = fmtLocal(now)
-            } else if (period === 'thisMonth') {
-                dateFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-                dateTo = fmtLocal(now)
-            } else if (period === 'lastMonth') {
-                const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-                const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-                dateFrom = fmtLocal(lm)
-                dateTo = fmtLocal(lmEnd)
-            } else if (period === 'custom') {
-                if (!customFrom || !customTo) { setDelivLoading(false); return }
-                dateFrom = customFrom
-                dateTo = customTo
-            } else if (/^\d{4}-\d{2}$/.test(period)) {
-                const [y, m] = period.split('-').map(Number)
-                dateFrom = `${y}-${String(m).padStart(2, '0')}-01`
-                const lastDay = new Date(y, m, 0).getDate()
-                dateTo = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-            }
-
-            // Optional 3-day shift for in-transit
-            if (showComparison && dateFrom && dateTo) {
-                const end = new Date(dateTo)
-                end.setDate(end.getDate() - 3)
-                dateTo = end.toISOString().split('T')[0]
-            }
-
-            if (dateFrom) params.set('date_from', dateFrom)
-            if (dateTo) params.set('date_to', dateTo)
-
-            const res = await authFetch(`${API_URL}/analytics/deliverability?${params}`)
-            const data = await res.json()
-            setDeliverabilityData(data)
-        } catch (err) {
-            console.error('Failed to fetch deliverability:', err)
-        } finally {
-            setDelivLoading(false)
-        }
-    }
-
-    // Auto-fetch deliverability on mount and when period changes
-    useEffect(() => {
-        if (delivPeriod === 'custom') {
-            if (delivDateFrom && delivDateTo) fetchDeliverability('custom', delivDateFrom, delivDateTo)
-        } else {
-            fetchDeliverability(delivPeriod)
-        }
-    }, [delivPeriod, delivDateFrom, delivDateTo, selectedStores, showComparison])
+    // fetchDeliverability + its useEffect moved into DeliverabilityTab
 
     // Load saved marketing cost from profitability config
     useEffect(() => {
@@ -655,259 +566,7 @@ export default function Analytics() {
                     {activeTab === 'print' && <PrintHistoryTab />}
 
                     {/* Deliverability Report Tab */}
-                    {activeTab === 'deliverability' && (
-                        <div className="space-y-6">
-                            {/* Period Picker + Options */}
-                            <div className="flex flex-wrap items-center gap-3">
-                                {/* Quick period buttons */}
-                                {[
-                                    { key: '30d', label: '30 zile' },
-                                    { key: '90d', label: '90 zile' },
-                                    { key: 'thisMonth', label: 'Luna curentă' },
-                                    { key: 'lastMonth', label: 'Luna trecută' },
-                                ].map(p => (
-                                    <button key={p.key}
-                                        onClick={() => { setDelivPeriod(p.key); setDelivDateFrom(''); setDelivDateTo('') }}
-                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${delivPeriod === p.key
-                                            ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
-                                            : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                                        }`}
-                                    >{p.label}</button>
-                                ))}
-
-                                {/* Month dropdown */}
-                                <select
-                                    value={/^\d{4}-\d{2}$/.test(delivPeriod) ? delivPeriod : ''}
-                                    onChange={(e) => { if (e.target.value) { setDelivPeriod(e.target.value); setDelivDateFrom(''); setDelivDateTo('') } }}
-                                    className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 dark:bg-zinc-700/50 text-zinc-600 dark:text-white border-0 cursor-pointer"
-                                >
-                                    <option value="">Lună specifică...</option>
-                                    {(() => {
-                                        const months = []
-                                        const now = new Date()
-                                        for (let i = 0; i < 18; i++) {
-                                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-                                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                                            const label = d.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
-                                            months.push(<option key={key} value={key}>{label}</option>)
-                                        }
-                                        return months
-                                    })()}
-                                </select>
-
-                                <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600" />
-
-                                {/* Custom range toggle */}
-                                <button
-                                    onClick={() => setDelivPeriod('custom')}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${delivPeriod === 'custom'
-                                        ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
-                                        : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                                    }`}
-                                >Perioadă custom</button>
-                                {delivPeriod === 'custom' && (
-                                    <>
-                                        <input type="date" value={delivDateFrom}
-                                            onChange={(e) => setDelivDateFrom(e.target.value)}
-                                            className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
-                                        <span className="text-zinc-400">→</span>
-                                        <input type="date" value={delivDateTo}
-                                            onChange={(e) => setDelivDateTo(e.target.value)}
-                                            className="px-2 py-1.5 text-xs bg-white dark:bg-zinc-800 dark:text-white dark:[color-scheme:dark] border border-zinc-200 dark:border-zinc-700 rounded-lg" />
-                                    </>
-                                )}
-
-                                {/* Exclude 3 days toggle */}
-                                <label className="flex items-center gap-2 cursor-pointer ml-auto">
-                                    <input type="checkbox" checked={showComparison} onChange={(e) => setShowComparison(e.target.checked)}
-                                        className="w-3.5 h-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
-                                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Exclude ultimele 3 zile</span>
-                                </label>
-
-                                {delivLoading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500" />}
-                            </div>
-
-                            {deliverabilityData && (
-                            <>
-                            {/* Summary Cards */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-zinc-400">
-                                    <div className="text-sm text-zinc-500 dark:text-zinc-400">Total Comenzi</div>
-                                    <div className="text-2xl font-bold text-zinc-900 dark:text-white mt-1 tracking-tight">
-                                        {formatNumber(deliverabilityData.totals?.total || 0)}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-green-500">
-                                    <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                                        <Truck className="w-4 h-4 text-green-500" /> Livrate
-                                    </div>
-                                    <div className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1 tracking-tight">
-                                        {formatNumber(deliverabilityData.totals?.delivered || 0)}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-red-500">
-                                    <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                                        <XCircle className="w-4 h-4 text-red-500" /> Anulate
-                                    </div>
-                                    <div className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1 tracking-tight">
-                                        {formatNumber(deliverabilityData.totals?.cancelled || 0)}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-orange-500">
-                                    <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                                        <RotateCcw className="w-4 h-4 text-orange-500" /> Returnate / Refuzate
-                                    </div>
-                                    <div className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1 tracking-tight">
-                                        {formatNumber((deliverabilityData.totals?.returned || 0) + (deliverabilityData.totals?.refused || 0))}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-blue-500">
-                                    <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                                        📦 Expediate
-                                    </div>
-                                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1 tracking-tight">
-                                        {formatNumber(deliverabilityData.totals?.shipped || 0)}
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-indigo-500">
-                                    <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                                        <TrendingUp className="w-4 h-4 text-indigo-500" /> Livrabilitate
-                                    </div>
-                                    <div className={`text-2xl font-bold mt-1 tracking-tight ${getRateColor(deliverabilityData.totals?.deliverability_rate || 0)}`}>
-                                        {deliverabilityData.totals?.deliverability_rate || 0}%
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Per-Store Table */}
-                            <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-clip shadow-sm">
-                                <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between">
-                                    <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2 tracking-tight">
-                                        <Store className="w-5 h-5 text-indigo-500" />
-                                        Livrabilitate per Magazin
-                                    </h3>
-                                    {/* Column visibility toggle */}
-                                    <div className="relative">
-                                        <button onClick={() => setShowDelivColMenu(!showDelivColMenu)}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">
-                                            <Settings2 className="w-3.5 h-3.5" /> Coloane
-                                        </button>
-                                        {showDelivColMenu && (
-                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl z-50 p-2 space-y-0.5">
-                                                {Object.entries(delivColLabels).map(([key, label]) => (
-                                                    <label key={key} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/50 text-zinc-700 dark:text-zinc-300">
-                                                        <input type="checkbox" checked={delivCols[key]}
-                                                            onChange={() => setDelivCols(prev => ({ ...prev, [key]: !prev[key] }))}
-                                                            className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-500 focus:ring-indigo-500" />
-                                                        {label}
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="overflow-auto max-h-[75vh]">
-                                    <table className="w-full">
-                                        <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
-                                            <tr>
-                                                {[
-                                                    { field: 'store_name', label: 'Magazin', align: 'left', show: true },
-                                                    { field: 'total', label: 'Total', show: delivCols.total },
-                                                    { field: 'delivered', label: 'Livrate', show: delivCols.delivered },
-                                                    { field: 'cancelled', label: 'Anulate', show: delivCols.cancelled },
-                                                    { field: 'returned', label: 'Ret. / Ref.', show: delivCols.returned },
-                                                    { field: 'in_transit', label: 'În Tranzit', show: delivCols.in_transit },
-                                                    { field: 'shipped', label: 'Expediate', show: delivCols.shipped },
-                                                    { field: 'delivery_rate', label: 'Rată Livrare', show: delivCols.delivery_rate },
-                                                    { field: 'expedition_rate', label: 'Rată Expediție', show: delivCols.expedition_rate },
-                                                    { field: 'cancelled_rate', label: 'Rată Anulare', show: delivCols.cancelled_rate },
-                                                    { field: 'deliverability_rate', label: 'Livrabilitate', show: delivCols.deliverability },
-                                                ].filter(c => c.show).map(c => (
-                                                    <th key={c.field}
-                                                        className={`${c.align === 'left' ? 'text-left px-4' : 'text-right px-3'} py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase cursor-pointer select-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
-                                                        onClick={() => toggleDelivSort(c.field)}>
-                                                        <span className="inline-flex items-center gap-1">
-                                                            {c.label}
-                                                            <ArrowUpDown className={`w-3 h-3 ${delivSort.col === c.field ? 'text-indigo-500' : 'opacity-40'}`} />
-                                                            {delivSort.col === c.field && (
-                                                                <span className="text-[9px] text-indigo-500">{delivSort.dir === 'asc' ? '↑' : '↓'}</span>
-                                                            )}
-                                                        </span>
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700">
-                                            {(() => {
-                                                const stores = [...(deliverabilityData.stores || [])]
-                                                const getVal = (store, col) => {
-                                                    if (col === 'store_name') return store.store_name || ''
-                                                    if (col === 'returned') return (store.returned || 0) + (store.refused || 0)
-                                                    if (col === 'in_transit') return (store.in_transit || 0) + (store.out_for_delivery || 0)
-                                                    return store[col] || 0
-                                                }
-                                                stores.sort((a, b) => {
-                                                    const va = getVal(a, delivSort.col)
-                                                    const vb = getVal(b, delivSort.col)
-                                                    if (typeof va === 'string') return delivSort.dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
-                                                    return delivSort.dir === 'asc' ? va - vb : vb - va
-                                                })
-                                                return stores.map((store) => (
-                                                <tr key={store.store_uid} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
-                                                    <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-white">
-                                                        {store.store_name}
-                                                    </td>
-                                                    {delivCols.total && <td className="px-3 py-3 text-sm text-right text-zinc-600 dark:text-white">
-                                                        {formatNumber(store.total)}
-                                                    </td>}
-                                                    {delivCols.delivered && <td className="px-3 py-3 text-sm text-right text-green-600 dark:text-green-400 font-medium">
-                                                        {formatNumber(store.delivered)}
-                                                    </td>}
-                                                    {delivCols.cancelled && <td className="px-3 py-3 text-sm text-right text-red-600 dark:text-red-400">
-                                                        {formatNumber(store.cancelled)}
-                                                    </td>}
-                                                    {delivCols.returned && <td className="px-3 py-3 text-sm text-right text-orange-600 dark:text-orange-400">
-                                                        {formatNumber((store.returned || 0) + (store.refused || 0))}
-                                                    </td>}
-                                                    {delivCols.in_transit && <td className="px-3 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
-                                                        {formatNumber((store.in_transit || 0) + (store.out_for_delivery || 0))}
-                                                    </td>}
-                                                    {delivCols.shipped && <td className="px-3 py-3 text-sm text-right text-indigo-600 dark:text-indigo-400 font-medium">
-                                                        {formatNumber(store.shipped || 0)}
-                                                    </td>}
-                                                    {delivCols.delivery_rate && <td className="px-3 py-3 text-sm text-right">
-                                                        <span className={getRateColor(store.delivery_rate || 0)}>{store.delivery_rate || 0}%</span>
-                                                    </td>}
-                                                    {delivCols.expedition_rate && <td className="px-3 py-3 text-sm text-right">
-                                                        <span className="text-indigo-600 dark:text-indigo-400">{store.expedition_rate || 0}%</span>
-                                                    </td>}
-                                                    {delivCols.cancelled_rate && <td className="px-3 py-3 text-sm text-right">
-                                                        <span className="text-red-600 dark:text-red-400">{store.cancelled_rate || 0}%</span>
-                                                    </td>}
-                                                    {delivCols.deliverability && <td className="px-3 py-3 text-sm text-right">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            <div className="w-16 h-2 bg-zinc-200 dark:bg-zinc-600 rounded-full overflow-hidden">
-                                                                <div
-                                                                    className={`h-full ${getRateBgColor(store.deliverability_rate)}`}
-                                                                    style={{ width: `${Math.min(store.deliverability_rate, 100)}%` }}
-                                                                />
-                                                            </div>
-                                                            <span className={`font-bold ${getRateColor(store.deliverability_rate)}`}>
-                                                                {store.deliverability_rate}%
-                                                            </span>
-                                                        </div>
-                                                    </td>}
-                                                </tr>
-                                                ))
-                                            })()}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            </>
-                            )}
-                        </div>
-                    )}
+                    {activeTab === 'deliverability' && <DeliverabilityTab selectedStores={selectedStores} />}
 
                     {/* Profitability Tab */}
                     {activeTab === 'profitability' && (
