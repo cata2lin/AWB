@@ -421,21 +421,68 @@ async def refresh_po_from_tom(po_id: int, db: AsyncSession) -> dict:
 
         for ri in response_body.get("items", []):
             sku = ri.get("source_line_id")
-            if not sku or sku not in items_map:
+            if not sku:
                 continue
+
+            if sku not in items_map:
+                # New item that exists in TOM but not locally — create it
+                new_item = PurchaseOrderItem(
+                    purchase_order_id=po_id,
+                    sku=sku,
+                    product_name=ri.get("title") or sku,
+                    quantity=ri.get("ordered_qty") or ri.get("requested_qty") or 0,
+                    unit_cost=0.0,
+                    tom_item_id=ri.get("tom_item_id"),
+                    tom_status=ri.get("status"),
+                    tom_ordered_qty=ri.get("ordered_qty"),
+                    tom_received_qty=ri.get("received_qty"),
+                    tom_shipped_qty=ri.get("shipped_qty"),
+                )
+                db.add(new_item)
+                items_updated += 1
+                continue
+
             item = items_map[sku]
             item.tom_item_id = ri.get("tom_item_id") or item.tom_item_id
             item.tom_status = ri.get("status")
             item.tom_ordered_qty = ri.get("ordered_qty")
             item.tom_received_qty = ri.get("received_qty")
             item.tom_shipped_qty = ri.get("shipped_qty")
-            if ri.get("tom_unit_cost_usd") is not None:
+
+            # Sync the main quantity from TOM's ordered/requested qty
+            # so the UI reflects changes made in TOM
+            tom_qty = ri.get("ordered_qty") or ri.get("requested_qty")
+            if tom_qty is not None and tom_qty != item.quantity:
+                logger.info(f"PO {po.po_number} item {sku}: qty {item.quantity} → {tom_qty} (from TOM)")
+                item.quantity = tom_qty
+
+            # Sync received_qty from TOM if it changed
+            tom_recv = ri.get("received_qty")
+            if tom_recv is not None and tom_recv != item.received_qty:
+                logger.info(f"PO {po.po_number} item {sku}: received_qty {item.received_qty} → {tom_recv} (from TOM)")
+                item.received_qty = tom_recv
+
+            # TOM sends unit_cost_usd (without tom_ prefix)
+            if ri.get("unit_cost_usd") is not None:
+                item.tom_unit_cost_usd = ri["unit_cost_usd"]
+            elif ri.get("tom_unit_cost_usd") is not None:
                 item.tom_unit_cost_usd = ri["tom_unit_cost_usd"]
             if ri.get("extra_cost_usd") is not None:
                 item.tom_extra_cost_usd = ri["extra_cost_usd"]
             item.tom_shipment_code = ri.get("shipment_code")
             item.tom_cancel_reason = ri.get("cancel_reason")
+            item.tom_matched_by = ri.get("matched_by") or item.tom_matched_by
             items_updated += 1
+
+        # Recalculate PO totals after item updates
+        all_items_r = await db.execute(
+            select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po_id)
+        )
+        all_items = all_items_r.scalars().all()
+        po.total_items = len(all_items)
+        po.total_quantity = sum(i.quantity for i in all_items)
+        po.total_cost = round(sum(i.quantity * i.unit_cost for i in all_items), 2)
+        po.updated_at = datetime.utcnow()
 
         await db.flush()
 

@@ -47,6 +47,12 @@ BRAND_TO_STORE = {
     "reduceri bune": "reduceribune.ro",
     "ce pat ai": "cepatai.ro",
     "ofertele zilei": "ofertelezilei.ro",
+    # Added brands present in sheet but previously unmapped
+    "nubra": "nubra",
+    "casa ofertelor": "casaofertelor.ro",
+    "casaofertelor": "casaofertelor.ro",
+    "belasil ro": "belasil.ro",
+    "esteban ro": "esteban.ro",
 }
 
 

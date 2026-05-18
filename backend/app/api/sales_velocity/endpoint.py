@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 from zoneinfo import ZoneInfo
 
+from app.services.product_grouping import classify_stores, pick_best_primary
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -169,12 +171,18 @@ async def get_sales_velocity(
     sku_costs_result = await db.execute(select(SkuCost))
     sku_cost_map: Dict[str, float] = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
 
+    # Classify stores for primary selection (RO vs international)
+    ro_store_uids, intl_store_uids = classify_stores(stores_map.items())
+
     # ── Build store groups based on shared product listings ──────────────
     # ── Build SKU-level groups (merge across stores, except nubra) ──────
     # Group key = just SKU for most stores, "sku::nubra" for nubra
     stock_query = await db.execute(
         select(Product)
-        .where(Product.sku.isnot(None), Product.sku != '')
+        .where(
+            Product.sku.isnot(None), Product.sku != '',
+            Product.state == 'active',
+        )
     )
     all_products = stock_query.scalars().all()
     
@@ -234,18 +242,12 @@ async def get_sales_velocity(
 
     def process_product_group(group, fallback_key):
         if not group: return
-        best_product = group[0]
-        
-        # Check if user explicitly set a primary listing
-        stored_primary_uid = None
-        for p in group:
-            if p.primary_listing_uid:
-                stored_primary_uid = p.primary_listing_uid
-                break
-                
-        if stored_primary_uid and stored_primary_uid in uid_to_product:
-            best_product = uid_to_product[stored_primary_uid]
-            
+
+        # Pick primary: user-set > RO+image > RO > any+image > fallback
+        best_product, has_explicit = pick_best_primary(
+            group, ro_store_uids, intl_store_uids, uid_to_product
+        )
+
         group_key = fallback_key.strip()
         if not group_key: return
 
@@ -264,10 +266,16 @@ async def get_sales_velocity(
                         s_uids = []
                 for uid in s_uids:
                     store_sku_map[(uid, p.sku.strip())] = group_key
-                
-        # Do not sum stock across all listings, as Frisbo stock is shared across all identical barcodes/SKUs.
-        # Summing them multiplies the real stock by the number of active stores.
-        group_stock = best_product.stock_available or 0
+
+        # ── Stock resolution ──────────────────────────────────────────────
+        # Prefer the barcode-holding product for authoritative stock.
+        stock_product = best_product
+        if not has_explicit:
+            for p in group:
+                if (p.barcode or "").strip():
+                    stock_product = p
+                    break
+        group_stock = stock_product.stock_available or 0
         sku_stock_map[group_key] = group_stock
         if best_product.title_1:
             sku_product_name[group_key] = best_product.title_1
@@ -811,7 +819,7 @@ async def get_sales_velocity(
             "date_from": to_bucharest_iso(dt_from),
             "date_to": to_bucharest_iso(dt_to),
             "period_days": period_days,
-            "total_orders": total_orders_all,
+            "total_orders": total_orders_current,
             "filters": {
                 "store_uids": store_uids,
                 "country_code": country_code,

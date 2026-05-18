@@ -1,11 +1,12 @@
 """
 Analytics API package — splits the analytics endpoints into focused modules.
 
-- summary.py          → get_analytics() + get_quick_summary()
-- geographic.py       → get_geographic_stats()
-- deliverability.py   → get_deliverability_stats()
-- profitability.py    → get_profitability_stats() [P&L, the big one]
-- profitability_orders.py → get_order_profitability() [per-order audit]
+- summary.py                → get_analytics() + get_quick_summary()
+- geographic.py              → get_geographic_stats()
+- deliverability.py          → get_deliverability_stats()  (per store)
+- product_deliverability.py  → get_product_deliverability() (per SKU) [NEW]
+- profitability.py           → get_profitability_stats() [P&L, the big one]
+- profitability_orders.py    → get_order_profitability() [per-order audit]
 """
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +17,7 @@ from app.core.timezone import romania_today
 from app.api.analytics.summary import get_analytics, get_quick_summary
 from app.api.analytics.geographic import get_geographic_stats
 from app.api.analytics.deliverability import get_deliverability_stats
+from app.api.analytics.product_deliverability import get_product_deliverability
 from app.api.analytics.profitability import get_overall_profitability
 from app.api.analytics.profitability_orders import get_order_profitability
 from app.api.analytics.csv_coverage import get_csv_coverage_gaps
@@ -29,6 +31,7 @@ router.add_api_route("", get_analytics, methods=["GET"])
 router.add_api_route("/summary", get_quick_summary, methods=["GET"])
 router.add_api_route("/geographic", get_geographic_stats, methods=["GET"])
 router.add_api_route("/deliverability", get_deliverability_stats, methods=["GET"])
+router.add_api_route("/product-deliverability", get_product_deliverability, methods=["GET"])
 router.add_api_route("/profitability", get_overall_profitability, methods=["GET"])
 router.add_api_route("/profitability/multi-period", get_multi_period_profitability, methods=["GET"])
 router.add_api_route("/profitability/orders", get_order_profitability, methods=["GET"])

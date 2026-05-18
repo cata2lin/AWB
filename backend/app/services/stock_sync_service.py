@@ -43,36 +43,52 @@ class StockSyncResult:
 
 
 # SQL to pull stock grouped by barcode from InventorySync
-# Follows the documented data flow exactly:
-#   - Only variants with non-empty barcode
-#   - Only non-deleted products
-#   - Only primary variants (is_barcode_primary = TRUE)
-#   - SUM(inventory_levels.available) across all locations
+#
+# Problem: The `is_barcode_primary` flag is only set on ~0.2% of variants
+# in the InventorySync database. Using it as a required filter causes 99.8%
+# of products to be skipped entirely.
+#
+# Solution: Use DISTINCT ON to pick ONE representative variant per barcode
+# (preferring primary if set, otherwise the variant with lowest ID for
+# determinism). Then SUM inventory_levels.available for that single variant
+# across all locations. Since Shopify reports the same stock for each variant
+# with the same barcode, picking any single variant gives the correct stock.
 BARCODE_STOCK_QUERY = text("""
-    SELECT pv.barcode,
+    SELECT sub.barcode,
            COALESCE(SUM(il.available), 0) AS stock
-    FROM   product_variants pv
-    JOIN   products p ON p.id = pv.product_id
-    LEFT JOIN inventory_levels il ON il.variant_id = pv.id
-    WHERE  pv.barcode IS NOT NULL
-      AND  pv.barcode != ''
-      AND  p.deleted_at IS NULL
-      AND  pv.is_barcode_primary = TRUE
-    GROUP BY pv.barcode
+    FROM (
+        SELECT DISTINCT ON (pv.barcode)
+               pv.id AS variant_id,
+               pv.barcode
+        FROM   product_variants pv
+        JOIN   products p ON p.id = pv.product_id
+        WHERE  pv.barcode IS NOT NULL
+          AND  pv.barcode != ''
+          AND  p.deleted_at IS NULL
+        ORDER BY pv.barcode, pv.is_barcode_primary DESC NULLS LAST, pv.id
+    ) sub
+    LEFT JOIN inventory_levels il ON il.variant_id = sub.variant_id
+    GROUP BY sub.barcode
 """)
 
 # Fallback: stock grouped by SKU (for products that can't match by barcode)
+# Same DISTINCT ON approach — pick one variant per normalized SKU.
 SKU_STOCK_QUERY = text("""
-    SELECT LOWER(BTRIM(pv.sku)) AS sku_normalized,
+    SELECT sub.sku_normalized,
            COALESCE(SUM(il.available), 0) AS stock
-    FROM   product_variants pv
-    JOIN   products p ON p.id = pv.product_id
-    LEFT JOIN inventory_levels il ON il.variant_id = pv.id
-    WHERE  pv.sku IS NOT NULL
-      AND  BTRIM(pv.sku) != ''
-      AND  p.deleted_at IS NULL
-      AND  pv.is_barcode_primary = TRUE
-    GROUP BY LOWER(BTRIM(pv.sku))
+    FROM (
+        SELECT DISTINCT ON (LOWER(BTRIM(pv.sku)))
+               pv.id AS variant_id,
+               LOWER(BTRIM(pv.sku)) AS sku_normalized
+        FROM   product_variants pv
+        JOIN   products p ON p.id = pv.product_id
+        WHERE  pv.sku IS NOT NULL
+          AND  BTRIM(pv.sku) != ''
+          AND  p.deleted_at IS NULL
+        ORDER BY LOWER(BTRIM(pv.sku)), pv.is_barcode_primary DESC NULLS LAST, pv.id
+    ) sub
+    LEFT JOIN inventory_levels il ON il.variant_id = sub.variant_id
+    GROUP BY sub.sku_normalized
 """)
 
 # Update AWBprint products stock by barcode

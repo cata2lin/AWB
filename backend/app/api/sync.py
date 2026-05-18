@@ -135,7 +135,7 @@ async def trigger_sync(
         date_to=req.date_to,
     )
     
-    type_labels = {"45_day": "45-day", "full": "Full", "custom": "Custom", "incremental": "Incremental"}
+    type_labels = {"45_day": "45-day", "3_day": "3-day safety net", "full": "Full", "custom": "Custom", "incremental": "Incremental"}
     label = type_labels.get(req.sync_type, req.sync_type)
     return SyncTriggerResponse(
         message=f"{label} sync triggered successfully",

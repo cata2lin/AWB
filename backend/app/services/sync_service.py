@@ -28,18 +28,27 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 DEFAULT_SYNC_DAYS = 45          # Window sync: orders created in the last N days
-INCREMENTAL_OVERLAP_MIN = 10    # Overlap buffer for incremental sync (handles clock drift)
+RECENT_SYNC_DAYS = 3            # 3-day safety net: updated_at >= now - 3 days (absolute, not relative to last sync)
+INCREMENTAL_OVERLAP_MIN = 15    # Overlap buffer for incremental sync (handles clock drift + long syncs)
+INCREMENTAL_FALLBACK_DAYS = 2   # If no previous sync: fall back to this many days (not 45, to stay fast)
 BATCH_SIZE = 100                # Save to database every N orders
 
 
 async def get_last_successful_sync_time() -> Optional[datetime]:
-    """Get the completed_at timestamp of the last successful order sync."""
+    """
+    Get the *started_at* timestamp of the last successful order sync.
+
+    CRITICAL: We use started_at (not completed_at) as the reference point so
+    that orders updated *during* a long sync run are captured in the next
+    incremental.  Using completed_at creates a gap window equal to the sync
+    duration.
+    """
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(SyncLog.completed_at)
+            select(SyncLog.started_at)
             .where(SyncLog.status == "completed")
-            .where(SyncLog.sync_type.in_(["45_day", "incremental", "full", "custom"]))
-            .order_by(SyncLog.completed_at.desc())
+            .where(SyncLog.sync_type.in_(["45_day", "3_day", "incremental", "full", "custom"]))
+            .order_by(SyncLog.started_at.desc())
             .limit(1)
         )
         row = result.scalar_one_or_none()
@@ -56,15 +65,18 @@ async def sync_orders(
 ):
     """
     Synchronize orders from Frisbo organizations to local database.
-    
+
     Iterates through every org token in FRISBO_ORG_TOKENS.
     For each org, does streaming batch fetch + save (100 orders at a time).
-    
+
     Sync types:
-        - "incremental": Uses updated_at_start from last sync (fast, seconds)
-        - "45_day": Window sync — created_at within last 45 days (medium)
-        - "full": All orders (slow, minutes)
-        - "custom": User-specified date range
+        - "incremental": updated_at >= last_sync.started_at - 15min (fast, seconds)
+        - "3_day":       updated_at >= now - 3 days (absolute, independent of last sync)
+                         Safety net: max 30-min staleness for last-3-day orders regardless
+                         of whether incremental had gaps (restarts, API errors).
+        - "45_day":      created_at >= now - 45 days (bulk catch-up, medium speed)
+        - "full":        No date filters — all orders (slow, manual only)
+        - "custom":      User-specified created_at date range
     """
     sync_start_time = time.time()
     
@@ -124,22 +136,48 @@ async def sync_orders(
             if sync_type == "incremental":
                 last_sync_time = await get_last_successful_sync_time()
                 if last_sync_time:
+                    # Subtract overlap buffer to cover any clock skew / long sync durations
                     incremental_since = last_sync_time - timedelta(minutes=INCREMENTAL_OVERLAP_MIN)
                     updated_at_start = incremental_since.isoformat()
                     sync_log.incremental_since = incremental_since
-                    logger.info(f"📦 INCREMENTAL: updated_at >= {updated_at_start} (last sync: {last_sync_time.isoformat()}, overlap: {INCREMENTAL_OVERLAP_MIN}min)")
+                    logger.info(
+                        f"📦 INCREMENTAL: updated_at >= {updated_at_start} "
+                        f"(last started_at: {last_sync_time.isoformat()}, "
+                        f"overlap: {INCREMENTAL_OVERLAP_MIN}min)"
+                    )
                 else:
-                    logger.warning("📦 INCREMENTAL: No previous sync found → falling back to 45-day window")
-                    cutoff_date = datetime.utcnow() - timedelta(days=DEFAULT_SYNC_DAYS)
-                    created_at_start = cutoff_date.isoformat()
-                    sync_log.sync_type = "45_day"
+                    # First ever sync — use a short fallback window (not 45 days) to stay fast
+                    logger.warning(
+                        f"📦 INCREMENTAL: No previous sync found → "
+                        f"falling back to {INCREMENTAL_FALLBACK_DAYS}-day updated_at window"
+                    )
+                    cutoff_date = datetime.utcnow() - timedelta(days=INCREMENTAL_FALLBACK_DAYS)
+                    updated_at_start = cutoff_date.isoformat()
+                    sync_log.incremental_since = cutoff_date
                     
+            elif sync_type == "3_day":
+                # Absolute 3-day updated_at window — does NOT depend on last sync time.
+                # This is the safety net for recent orders: even after a server restart or
+                # a run of failed incrementals, this guarantees orders from the last 3 days
+                # (both new AND status-changed) are never more than 30 minutes stale.
+                cutoff_3d = datetime.utcnow() - timedelta(days=RECENT_SYNC_DAYS)
+                updated_at_start = cutoff_3d.isoformat()
+                sync_log.incremental_since = cutoff_3d
+                logger.info(
+                    f"📦 3-DAY SAFETY NET: updated_at >= {updated_at_start} "
+                    f"(absolute {RECENT_SYNC_DAYS}-day window, independent of last sync)"
+                )
+
             elif sync_type == "custom" and date_from:
                 created_at_start = date_from
                 created_at_end = date_to
-                logger.info(f"📦 CUSTOM: created_at {date_from} → {date_to or 'now'}" + (f" stores={store_uids}" if store_uids else ""))
-                    
+                logger.info(
+                    f"📦 CUSTOM: created_at {date_from} → {date_to or 'now'}"
+                    + (f" stores={store_uids}" if store_uids else "")
+                )
+
             elif not full_sync:
+                # 45-day window: fetch orders created in the last 45 days
                 cutoff_date = datetime.utcnow() - timedelta(days=DEFAULT_SYNC_DAYS)
                 created_at_start = cutoff_date.isoformat()
                 logger.info(f"📦 WINDOW: created_at >= {created_at_start} ({DEFAULT_SYNC_DAYS} days)")
@@ -422,11 +460,20 @@ async def sync_orders(
                         await db.commit()
                     except Exception as batch_err:
                         error_type = type(batch_err).__name__
-                        logger.error(f"📦 [{org_name}] BATCH COMMIT FAILED skip={skip}: [{error_type}] {batch_err}")
+                        logger.error(
+                            f"📦 [{org_name}] BATCH COMMIT FAILED skip={skip}: "
+                            f"[{error_type}] {batch_err}"
+                        )
                         error_groups[f"Batch:{error_type}"].append(f"{org_name}@skip={skip}")
                         await db.rollback()
+                        # Re-fetch sync_log after rollback — the object is now detached
                         try:
-                            sync_log = await db.merge(sync_log)
+                            sl_result = await db.execute(
+                                select(SyncLog).where(SyncLog.id == sync_log.id)
+                            )
+                            refreshed = sl_result.scalar_one_or_none()
+                            if refreshed:
+                                sync_log = refreshed
                         except Exception:
                             pass
                         skip += BATCH_SIZE

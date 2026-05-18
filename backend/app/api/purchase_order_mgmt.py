@@ -125,11 +125,84 @@ def _serialize_item(item: PurchaseOrderItem) -> dict:
 async def _serialize_po(po: PurchaseOrder, items: list, sync_logs: list = None, db: AsyncSession = None) -> dict:
     from app.api.exchange_rates import get_rate
     usd_rate = None
+    product_enrichment = {}
+    sku_overlap_map = {}  # sku -> [{po_number, po_id, status, quantity}]
     if db:
         target_date = po.created_at.date() if po.created_at else datetime.utcnow().date()
         usd_rate = await get_rate("USD", target_date, db)
+
+        # Enrich items with product data (tom_variant_1/2, missing images)
+        product_uids = [i.product_uid for i in items if i.product_uid]
+        if product_uids:
+            prod_r = await db.execute(
+                select(Product.uid, Product.tom_variant_1, Product.tom_variant_2, Product.images)
+                .where(Product.uid.in_(product_uids))
+            )
+            for row in prod_r.all():
+                uid, v1, v2, imgs = row
+                img_src = None
+                if imgs and isinstance(imgs, list) and len(imgs) > 0:
+                    first = imgs[0]
+                    img_src = first.get("src") if isinstance(first, dict) else None
+                product_enrichment[uid] = {
+                    "tom_variant_1": v1 or "",
+                    "tom_variant_2": v2 or "",
+                    "image": img_src,
+                }
+
+        # Cross-PO overlap: find this SKU in OTHER active POs (on-the-way only)
+        # Active = DRAFT, SENT, ORDERED, APPROVED, PARTIALLY_RECEIVED (excludes COMPLETED & CANCELLED)
+        ACTIVE_PO_STATUSES = ["DRAFT", "SENT", "ORDERED", "APPROVED", "PARTIALLY_RECEIVED"]
+        item_skus = [i.sku for i in items if i.sku]
+        if item_skus:
+            overlap_r = await db.execute(
+                select(
+                    PurchaseOrderItem.sku,
+                    PurchaseOrder.po_number,
+                    PurchaseOrder.id,
+                    PurchaseOrder.status,
+                    PurchaseOrderItem.quantity,
+                    PurchaseOrderItem.received_qty,
+                )
+                .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.purchase_order_id)
+                .where(
+                    PurchaseOrderItem.sku.in_(item_skus),
+                    PurchaseOrder.id != po.id,
+                    PurchaseOrder.status.in_(ACTIVE_PO_STATUSES),
+                )
+            )
+            for row in overlap_r.all():
+                sku, po_num, po_id_val, status, qty, recv = row
+                if sku not in sku_overlap_map:
+                    sku_overlap_map[sku] = []
+                ordered = qty or 0
+                received = recv or 0
+                pending = max(0, ordered - received)
+                sku_overlap_map[sku].append({
+                    "po_number": po_num, "po_id": po_id_val,
+                    "status": status,
+                    "quantity": ordered,
+                    "received_qty": received,
+                    "pending_qty": pending,
+                })
     
     total_cost_usd = round(po.total_cost / usd_rate, 2) if usd_rate and po.total_cost else 0.0
+
+    def _enrich_item(i):
+        base = _serialize_item(i)
+        base["unit_cost_usd"] = round(i.unit_cost / usd_rate, 2) if usd_rate and i.unit_cost else 0.0
+        # Add tom_variant data from the product
+        enrich = product_enrichment.get(i.product_uid, {})
+        base["tom_variant_1"] = enrich.get("tom_variant_1", "")
+        base["tom_variant_2"] = enrich.get("tom_variant_2", "")
+        # Fill missing product_image from the product's images
+        if not (base.get("product_image") or "").strip() and enrich.get("image"):
+            base["product_image"] = enrich["image"]
+        # Cross-PO overlap data
+        overlap = sku_overlap_map.get(i.sku, [])
+        base["other_po_count"] = len(overlap)
+        base["other_pos"] = overlap
+        return base
 
     return {
         "id": po.id, "po_number": po.po_number, "title": po.title,
@@ -157,10 +230,7 @@ async def _serialize_po(po: PurchaseOrder, items: list, sync_logs: list = None, 
         "cancelled_at": po.cancelled_at.isoformat() if po.cancelled_at else None,
         "created_at": po.created_at.isoformat() if po.created_at else None,
         "updated_at": po.updated_at.isoformat() if po.updated_at else None,
-        "items": [{
-            **_serialize_item(i),
-            "unit_cost_usd": round(i.unit_cost / usd_rate, 2) if usd_rate and i.unit_cost else 0.0
-        } for i in items],
+        "items": [_enrich_item(i) for i in items],
         "sync_logs": [
             {"id": l.id, "action": l.action, "status": l.status,
              "items_affected": l.items_affected, "error_message": l.error_message,
@@ -201,7 +271,7 @@ async def list_purchase_orders(
 ):
     query = select(PurchaseOrder).outerjoin(PurchaseOrderItem).order_by(PurchaseOrder.created_at.desc()).distinct()
     if status:
-        query = query.where(PurchaseOrder.status == status)
+        query = query.where(PurchaseOrder.status == status.upper())
     if category:
         query = query.where(PurchaseOrder.po_category == category)
     if search:
@@ -228,9 +298,15 @@ async def list_purchase_orders(
     )
     items_map = {r[0]: {"count": r[1], "qty": int(r[2] or 0), "recv": int(r[3] or 0)} for r in items_result.all()}
 
+    # Get today's USD exchange rate for cost conversion
+    from app.api.exchange_rates import get_rate
+    usd_rate = await get_rate("USD", datetime.utcnow().date(), db)
+
     po_list = []
     for po in orders:
         info = items_map.get(po.id, {"count": 0, "qty": 0, "recv": 0})
+        total_cost = po.total_cost or 0
+        total_cost_usd = round(total_cost / usd_rate, 2) if usd_rate and total_cost else 0.0
         po_list.append({
             "id": po.id, "po_number": po.po_number, "title": po.title,
             "po_category": po.po_category, "po_type": po.po_type,
@@ -238,14 +314,29 @@ async def list_purchase_orders(
             "supplier_name": po.supplier_name,
             "expected_arrival_date": po.expected_arrival_date.isoformat() if po.expected_arrival_date else None,
             "total_items": info["count"], "total_quantity": info["qty"],
-            "received_quantity": info["recv"], "total_cost": po.total_cost,
+            "received_quantity": info["recv"], "total_cost": total_cost,
+            "total_cost_usd": total_cost_usd,
             "tom_number": po.tom_number, "tom_status": po.tom_status,
             "tom_sent_at": po.tom_sent_at.isoformat() if po.tom_sent_at else None,
             "created_by": po.created_by,
             "created_at": po.created_at.isoformat() if po.created_at else None,
         })
 
-    return {"orders": po_list, "total": len(po_list)}
+    return {"orders": po_list, "total": len(po_list), "usd_exchange_rate": usd_rate}
+
+
+@router.get("/by-number/{po_number}")
+async def get_purchase_order_by_number(po_number: str, db: AsyncSession = Depends(get_db)):
+    """Fetch a PO by its human-readable PO number (e.g. PO-0012). Used for URL-based navigation."""
+    result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.po_number == po_number))
+    po = result.scalar_one_or_none()
+    if not po:
+        raise HTTPException(status_code=404, detail=f"Purchase order '{po_number}' not found")
+    items_r = await db.execute(select(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == po.id).order_by(PurchaseOrderItem.id))
+    items = items_r.scalars().all()
+    logs_r = await db.execute(select(PoSyncLog).where(PoSyncLog.purchase_order_id == po.id).order_by(PoSyncLog.created_at.desc()))
+    logs = logs_r.scalars().all()
+    return await _serialize_po(po, items, logs, db=db)
 
 
 @router.get("/{po_id}")
@@ -285,11 +376,51 @@ async def create_purchase_order(body: POCreate, db: AsyncSession = Depends(get_d
     items = []
     # Merge duplicate SKUs before saving
     merged = _merge_duplicate_sku_items(body.items)
+
+    # Enrich items with product data (fill missing image, uid, barcode)
+    skus_needing_enrichment = [d.sku for d in merged if not (d.product_image or "").strip() or not d.product_uid]
+    product_data_map = {}
+    if skus_needing_enrichment:
+        prod_r = await db.execute(
+            select(Product).where(
+                Product.sku.in_(skus_needing_enrichment),
+                Product.state.in_(["active", None])
+            )
+        )
+        for p in prod_r.scalars().all():
+            if p.sku not in product_data_map:
+                img_src = None
+                if p.images and isinstance(p.images, list) and len(p.images) > 0:
+                    first = p.images[0]
+                    img_src = first.get("src") if isinstance(first, dict) else None
+                product_data_map[p.sku] = {
+                    "uid": p.uid,
+                    "image": img_src,
+                    "barcode": p.barcode or "",
+                    "product_name": p.title_1 or "",
+                }
+
     for d in merged:
+        # Fill missing fields from product lookup
+        enriched_uid = d.product_uid
+        enriched_image = d.product_image
+        enriched_barcode = d.barcode
+        enriched_name = d.product_name
+        if d.sku in product_data_map:
+            pdata = product_data_map[d.sku]
+            if not enriched_uid:
+                enriched_uid = pdata["uid"]
+            if not (enriched_image or "").strip() and pdata["image"]:
+                enriched_image = pdata["image"]
+            if not (enriched_barcode or "").strip():
+                enriched_barcode = pdata["barcode"]
+            if not (enriched_name or "").strip():
+                enriched_name = pdata["product_name"]
+
         item = PurchaseOrderItem(
-            purchase_order_id=po.id, product_uid=d.product_uid,
-            sku=d.sku, barcode=d.barcode, product_name=d.product_name,
-            variant_title=d.variant_title, product_image=d.product_image,
+            purchase_order_id=po.id, product_uid=enriched_uid,
+            sku=d.sku, barcode=enriched_barcode, product_name=enriched_name,
+            variant_title=d.variant_title, product_image=enriched_image,
             quantity=d.quantity, unit_cost=d.unit_cost,
             priority=d.priority, item_type=d.item_type, notes=d.notes,
         )
@@ -365,17 +496,56 @@ async def update_po_items(po_id: int, items: List[POItemUpdate], db: AsyncSessio
     # Merge duplicate SKUs from incoming payload before saving
     merged_items = _merge_duplicate_sku_items(items)
     incoming_skus = {d.sku for d in merged_items}
+
+    # Enrich new items with product data (fill missing image, uid, barcode)
+    skus_needing_enrichment = [d.sku for d in merged_items if not (d.product_image or "").strip() or not d.product_uid]
+    product_data_map = {}
+    if skus_needing_enrichment:
+        prod_r = await db.execute(
+            select(Product).where(
+                Product.sku.in_(skus_needing_enrichment),
+                Product.state.in_(["active", None])
+            )
+        )
+        for p in prod_r.scalars().all():
+            if p.sku not in product_data_map:
+                img_src = None
+                if p.images and isinstance(p.images, list) and len(p.images) > 0:
+                    first = p.images[0]
+                    img_src = first.get("src") if isinstance(first, dict) else None
+                product_data_map[p.sku] = {
+                    "uid": p.uid,
+                    "image": img_src,
+                    "barcode": p.barcode or "",
+                    "product_name": p.title_1 or "",
+                }
     
     new_items = []
     for d in merged_items:
+        # Compute enriched values
+        e_uid = d.product_uid
+        e_image = d.product_image
+        e_barcode = d.barcode
+        e_name = d.product_name
+        if d.sku in product_data_map:
+            pdata = product_data_map[d.sku]
+            if not e_uid:
+                e_uid = pdata["uid"]
+            if not (e_image or "").strip() and pdata["image"]:
+                e_image = pdata["image"]
+            if not (e_barcode or "").strip():
+                e_barcode = pdata["barcode"]
+            if not (e_name or "").strip():
+                e_name = pdata["product_name"]
+
         if d.sku in existing_items:
             # Update existing
             item = existing_items[d.sku]
-            item.product_uid = d.product_uid
-            item.barcode = d.barcode
-            item.product_name = d.product_name
+            item.product_uid = e_uid
+            item.barcode = e_barcode
+            item.product_name = e_name
             item.variant_title = d.variant_title
-            item.product_image = d.product_image
+            item.product_image = e_image
             item.quantity = d.quantity
             item.unit_cost = d.unit_cost
             item.received_qty = d.received_qty
@@ -385,9 +555,9 @@ async def update_po_items(po_id: int, items: List[POItemUpdate], db: AsyncSessio
         else:
             # Add new
             item = PurchaseOrderItem(
-                purchase_order_id=po_id, product_uid=d.product_uid,
-                sku=d.sku, barcode=d.barcode, product_name=d.product_name,
-                variant_title=d.variant_title, product_image=d.product_image,
+                purchase_order_id=po_id, product_uid=e_uid,
+                sku=d.sku, barcode=e_barcode, product_name=e_name,
+                variant_title=d.variant_title, product_image=e_image,
                 quantity=d.quantity, unit_cost=d.unit_cost, received_qty=d.received_qty,
                 priority=d.priority, item_type=d.item_type, notes=d.notes,
             )
@@ -456,143 +626,106 @@ async def delete_po(po_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/products/picker")
 async def product_picker(
-    search: Optional[str] = Query(None),
-    store_names: Optional[str] = Query(None, description="Comma-separated store names to filter by (e.g. 'nocturna.ro,nocturnalux.ro')"),
-    limit: int = Query(100, le=300),
+    store_names: Optional[str] = Query(None, description="Comma-separated store names for category filtering"),
+    limit: int = Query(1000, le=2000, description="Max products to return. Default 1000 fetches full catalogue for client-side filtering."),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return active products for adding to a PO line item.
-    Excludes Grandia store products (has its own PO engine).
-    Exact SKU/barcode matches are prioritized first.
-    Optionally filters by store names (used for category-based product selection).
+    """
+    Return the full active product catalogue for the PO product picker.
+
+    No server-side text search — all filtering and sorting happens client-side for
+    instant response.  The full catalogue (~500-1000 products) is returned in one
+    shot and cached by the frontend for the modal session.
+
+    Excludes Grandia-only products.  Deduplicates by SKU, preferring the
+    barcode-bearing product as the authoritative stock source.
+    Optionally restricts to a store-name subset (for category tabs).
     """
     GRANDIA_STORE_UID = "n12w89-yy"
 
-    # Resolve store name filter → UIDs
-    filter_store_uids = None
+    # ── Resolve optional store-name filter → UIDs (one query) ──
+    filter_store_uids: Optional[set] = None
     if store_names:
         names = [n.strip() for n in store_names.split(",") if n.strip()]
         if names:
             store_r = await db.execute(select(Store).where(Store.name.in_(names)))
             filter_store_uids = {s.uid for s in store_r.scalars().all()}
 
-    query = select(Product).where(Product.state.in_(["active", None]))
-    exact_match_uid = None
+    # ── Fetch all active products + custom products in parallel ──
+    import asyncio as _asyncio
 
-    if search:
-        search_clean = search.strip()
-        sl = f"%{search_clean.lower()}%"
-
-        # Check for exact SKU or barcode match first
-        exact_q = select(Product).where(
-            Product.state.in_(["active", None]),
-            (func.lower(Product.sku) == search_clean.lower()) |
-            (Product.barcode == search_clean)
-        )
-        exact_result = await db.execute(exact_q.limit(1))
-        exact_product = exact_result.scalars().first()
-        if exact_product:
-            exact_match_uid = exact_product.uid
-
-        query = query.where(
-            (func.lower(Product.sku).like(sl)) |
-            (func.lower(Product.title_1).like(sl)) |
-            (func.lower(Product.barcode).like(sl))
-        )
-    # When no search and no store filter, still return products (for SKU picker modal)
-
-    # Over-fetch more when browsing by store (no text search = more results expected)
-    over_fetch = limit + 300 if filter_store_uids and not search else limit + 100
-    query = query.order_by(Product.title_1).limit(over_fetch)
-    result = await db.execute(query)
-    products = result.scalars().all()
-
-    # Fetch Custom Products
-    custom_query = select(CustomProduct)
-    if search:
-        custom_query = custom_query.where(
-            (func.lower(CustomProduct.sku).like(sl)) |
-            (func.lower(CustomProduct.product_name).like(sl)) |
-            (func.lower(CustomProduct.barcode).like(sl))
-        )
-    custom_result = await db.execute(custom_query.order_by(CustomProduct.product_name).limit(limit))
+    products_result, custom_result = await _asyncio.gather(
+        db.execute(
+            select(Product)
+            .where(Product.state.in_(["active", None]))
+            .order_by(Product.title_1)
+            .limit(limit)
+        ),
+        db.execute(
+            select(CustomProduct).order_by(CustomProduct.product_name)
+        ),
+    )
+    products = products_result.scalars().all()
     custom_products = custom_result.scalars().all()
 
-    # Filter out products that are ONLY on Grandia, and apply store filter
-    # Aggregate by SKU: sum stock_available across stores, merge store_uids
-    sku_agg = {}  # sku -> {product, total_stock, store_uids_set}
+    # ── Deduplicate by SKU, exclude Grandia-only, apply store filter ──
+    # Stock is NOT summed — Frisbo stock is shared across all store listings
+    # for the same barcode/SKU.  Keep the barcode-bearing product as stock source.
+    sku_agg: dict = {}
+
     for p in products:
         stores = p.store_uids or []
         if isinstance(stores, list) and len(stores) == 1 and GRANDIA_STORE_UID in stores:
             continue
-
-        # Store filter: product must be listed on at least one of the requested stores
         if filter_store_uids:
             product_store_set = set(stores) if isinstance(stores, list) else set()
             if not product_store_set.intersection(filter_store_uids):
                 continue
 
         sku = p.sku
+        uid_set = {uid for uid in (stores if isinstance(stores, list) else []) if uid != GRANDIA_STORE_UID}
         if sku in sku_agg:
-            # Aggregate: sum stock, merge store UIDs
-            sku_agg[sku]["total_stock"] += (p.stock_available or 0)
-            sku_agg[sku]["store_uids"].update(uid for uid in (stores if isinstance(stores, list) else []) if uid != GRANDIA_STORE_UID)
+            sku_agg[sku]["store_uids"].update(uid_set)
+            if (p.barcode or "").strip() and not (sku_agg[sku]["product"].barcode or "").strip():
+                sku_agg[sku]["product"] = p
+                sku_agg[sku]["total_stock"] = p.stock_available or 0
         else:
             sku_agg[sku] = {
                 "product": p,
                 "total_stock": p.stock_available or 0,
-                "store_uids": set(uid for uid in (stores if isinstance(stores, list) else []) if uid != GRANDIA_STORE_UID),
+                "store_uids": uid_set,
                 "is_custom": False,
             }
-            
-    # Add custom products to the aggregation
+
     for cp in custom_products:
-        sku = cp.sku
-        if sku not in sku_agg:
-            sku_agg[sku] = {
+        if cp.sku not in sku_agg:
+            sku_agg[cp.sku] = {
                 "product": cp,
                 "total_stock": 0,
                 "store_uids": set(),
                 "is_custom": True,
             }
 
-    filtered = list(sku_agg.values())
+    all_entries = list(sku_agg.values())
 
-    # Sort: exact match first, then alphabetical
-    def _title(e):
-        p = e["product"]
-        return p.product_name if e["is_custom"] else (p.title_1 or "")
+    # ── Load SKU costs + store names in parallel ──
+    all_skus = [e["product"].sku for e in all_entries if e["product"].sku]
+    all_store_uid_set: set = set()
+    for e in all_entries:
+        all_store_uid_set.update(e["store_uids"])
 
-    if exact_match_uid:
-        filtered.sort(key=lambda e: (0 if getattr(e["product"], "uid", None) == exact_match_uid else (0 if e["product"].sku and e["product"].sku.lower() == search.strip().lower() else 1), _title(e)))
-    else:
-        # If we have a search term, sort exact SKU matches first
-        if search:
-            search_lower = search.strip().lower()
-            filtered.sort(key=lambda e: (0 if (e["product"].sku or "").lower() == search_lower else 1, _title(e)))
+    costs_res, stores_res = await _asyncio.gather(
+        db.execute(select(SkuCost).where(SkuCost.sku.in_(all_skus))),
+        db.execute(select(Store).where(Store.uid.in_(list(all_store_uid_set)))),
+    )
+    costs_map = {c.sku: float(c.cost or 0) for c in costs_res.scalars().all()}
+    store_name_map = {s.uid: s.name for s in stores_res.scalars().all()}
 
-    filtered = filtered[:limit]
-
-    # Load SKU costs
-    skus = [e["product"].sku for e in filtered if e["product"].sku]
-    costs_map = {}
-    if skus:
-        costs_r = await db.execute(select(SkuCost).where(SkuCost.sku.in_(skus)))
-        costs_map = {c.sku: float(c.cost or 0) for c in costs_r.scalars().all()}
-
-    # Load store names for display
-    all_store_uids = set()
-    for e in filtered:
-        all_store_uids.update(e["store_uids"])
-    store_name_map = {}
-    if all_store_uids:
-        stores_r = await db.execute(select(Store).where(Store.uid.in_(list(all_store_uids))))
-        store_name_map = {s.uid: s.name for s in stores_r.scalars().all()}
-
-    def _first_image(p, is_custom):
+    # ── Build response ──
+    def _first_image(p, is_custom: bool):
         if is_custom:
             return p.image_url
-        if p.images and isinstance(p.images, list) and len(p.images) > 0:
+        if p.images and isinstance(p.images, list) and p.images:
             img = p.images[0]
             return img.get("src") if isinstance(img, dict) else None
         return None
@@ -603,24 +736,28 @@ async def product_picker(
         return costs_map.get(e["product"].sku, 0.0)
 
     return {
-        "products": [{
-            "uid": e["product"].uid, "sku": e["product"].sku or "", "barcode": e["product"].barcode or "",
-            "product_name": e["product"].product_name if e["is_custom"] else (e["product"].title_1 or ""),
-            "variant_title": "" if e["is_custom"] else (e["product"].title_2 or ""),
-            "tom_variant_1": e["product"].tom_variant_1,
-            "tom_variant_2": e["product"].tom_variant_2,
-            "image": _first_image(e["product"], e["is_custom"]),
-            "stock_available": e["total_stock"],
-            "unit_cost": _cost(e),
-            "hs_code": e["product"].hs_code,
-            "weight": getattr(e["product"], "weight_grams", None) if e["is_custom"] else e["product"].weight,
-            "external_identifier": None if e["is_custom"] else e["product"].external_identifier,
-            "store_uids": list(e["store_uids"]),
-            "store_names": [store_name_map.get(uid, uid) for uid in e["store_uids"] if uid in store_name_map],
-            "is_exact_match": getattr(e["product"], "uid", None) == exact_match_uid if exact_match_uid else False,
-            "is_custom": e["is_custom"],
-        } for e in filtered],
-        "exact_match_uid": exact_match_uid,
+        "products": [
+            {
+                "uid": e["product"].uid,
+                "sku": e["product"].sku or "",
+                "barcode": e["product"].barcode or "",
+                "product_name": e["product"].product_name if e["is_custom"] else (e["product"].title_1 or ""),
+                "variant_title": "" if e["is_custom"] else (e["product"].title_2 or ""),
+                "tom_variant_1": e["product"].tom_variant_1,
+                "tom_variant_2": e["product"].tom_variant_2,
+                "image": _first_image(e["product"], e["is_custom"]),
+                "stock_available": e["total_stock"],
+                "unit_cost": _cost(e),
+                "hs_code": e["product"].hs_code,
+                "weight": getattr(e["product"], "weight_grams", None) if e["is_custom"] else e["product"].weight,
+                "external_identifier": None if e["is_custom"] else e["product"].external_identifier,
+                "store_uids": list(e["store_uids"]),
+                "store_names": [store_name_map.get(uid, uid) for uid in e["store_uids"] if uid in store_name_map],
+                "is_custom": e["is_custom"],
+            }
+            for e in all_entries
+        ],
+        "total": len(all_entries),
     }
 
 

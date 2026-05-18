@@ -83,9 +83,14 @@ async def lifespan(app: FastAPI):
     import logging as _log
     _log.getLogger(__name__).info("📅 Background scheduler started")
     
-    # Trigger an incremental sync after 30s warm-up so statuses are fresh after restart
+    # Trigger an incremental sync 30s after startup so statuses are fresh.
+    # Guard against multiple tasks on uvicorn hot-reload (process re-entry).
     import asyncio
+    _startup_guard = {"done": False}
     async def _startup_sync():
+        if _startup_guard["done"]:
+            return
+        _startup_guard["done"] = True
         await asyncio.sleep(30)
         try:
             from app.services.sync_service import sync_orders

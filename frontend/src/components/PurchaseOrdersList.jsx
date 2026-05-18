@@ -140,6 +140,7 @@ function CategoryEditor({ categories, onSave, onClose }) {
 }
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
+const fmtUsd = n => n == null || n === 0 ? '' : `$${Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} USD`
 
 export default function PurchaseOrdersList({ h }) {
   const [showCatEditor, setShowCatEditor] = useState(false)
@@ -419,7 +420,7 @@ export default function PurchaseOrdersList({ h }) {
                     <td className="px-5 py-4 text-right">
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{fmt(po.total_cost || 0)} RON</span>
-                        <span className="text-xs text-zinc-500 dark:text-zinc-400">${fmt(po.total_cost_usd || 0)} USD</span>
+                        {po.total_cost_usd > 0 && <span className="text-xs text-zinc-500 dark:text-zinc-400">{fmtUsd(po.total_cost_usd)}</span>}
                       </div>
                     </td>
                     <td className="px-5 py-4">

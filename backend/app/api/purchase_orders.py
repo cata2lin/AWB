@@ -27,6 +27,7 @@ from app.core.timezone import to_bucharest_iso
 from app.models import Order, Store, SkuCost, PurchaseOrder, PurchaseOrderItem
 from app.models.product import Product
 from app.api.sku_risk.computations import compute_final_outcome
+from app.services.product_grouping import classify_stores, pick_best_primary
 
 logger = logging.getLogger(__name__)
 
@@ -114,24 +115,39 @@ def _build_product_groups(all_products):
     return groups
 
 
-def _merge_product_group(group, store_name_map, self_produced_uids):
+def _merge_product_group(group, store_name_map, self_produced_uids, ro_store_uids=None, intl_store_uids=None):
     """
     Merge a list of product listings into a single product dict.
-    Uses primary_listing_uid if set, otherwise picks the first product.
-    Stock comes from the primary listing (not summed across duplicates).
+    Uses pick_best_primary for RO+image priority selection.
+    Stock comes from the barcode-holding listing (not summed across duplicates).
     """
     group.sort(
         key=lambda p: p.synced_at or p.frisbo_updated_at or p.frisbo_created_at or datetime.min,
         reverse=True,
     )
 
-    primary = group[0]
-    for p in group:
-        if p.primary_listing_uid:
-            match = next((x for x in group if x.uid == p.primary_listing_uid), None)
-            if match:
-                primary = match
-            break
+    # Pick primary: user-set > RO+image > RO > any+image > fallback
+    if ro_store_uids is not None:
+        primary, has_explicit = pick_best_primary(group, ro_store_uids, intl_store_uids or set())
+    else:
+        primary = group[0]
+        has_explicit = False
+        for p in group:
+            if p.primary_listing_uid:
+                match = next((x for x in group if x.uid == p.primary_listing_uid), None)
+                if match:
+                    primary = match
+                    has_explicit = True
+                break
+
+    # ── Stock resolution ──
+    # Prefer the barcode-holding product for authoritative stock.
+    stock_product = primary
+    if not has_explicit:
+        for p in group:
+            if (p.barcode or "").strip():
+                stock_product = p
+                break
 
     # Merge stores from all listings
     all_store_uids = []
@@ -167,9 +183,9 @@ def _merge_product_group(group, store_name_map, self_produced_uids):
         "barcode": primary.barcode or "",
         "product_name": title_1 or "",
         "images": images,
-        "stock_available": primary.stock_available or 0,
-        "stock_committed": primary.stock_committed or 0,
-        "stock_incoming": primary.stock_incoming or 0,
+        "stock_available": stock_product.stock_available or 0,
+        "stock_committed": stock_product.stock_committed or 0,
+        "stock_incoming": stock_product.stock_incoming or 0,
         "exclude_from_stock": primary.exclude_from_stock,
         "store_uids": all_store_uids,
         "stores": store_names,
@@ -207,6 +223,11 @@ async def get_purchase_orders(
     for s in stores_all:
         if s.name and s.name.lower() in SELF_PRODUCED_STORES:
             self_produced_uids.add(s.uid)
+
+    # Classify stores for primary selection (RO vs international)
+    ro_store_uids, intl_store_uids = classify_stores(
+        [(s.uid, s.name) for s in stores_all]
+    )
 
     # ── 2. Load all active products and group ─────────────────────────────
     product_query = select(Product).where(
@@ -301,7 +322,7 @@ async def get_purchase_orders(
     products_out = []
 
     for group in groups:
-        merged = _merge_product_group(group, store_name_map, self_produced_uids)
+        merged = _merge_product_group(group, store_name_map, self_produced_uids, ro_store_uids, intl_store_uids)
 
         if merged["exclude_from_stock"]:
             continue

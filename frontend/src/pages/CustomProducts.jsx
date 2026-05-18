@@ -26,7 +26,7 @@ export default function CustomProducts() {
   const fetchProducts = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('awb_token')
       const q = new URLSearchParams({ limit: 50, offset: 0 })
       if (search) q.set('search', search)
       
@@ -82,7 +82,7 @@ export default function CustomProducts() {
     
     try {
       setIsSaving(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('awb_token')
       const method = form.id ? 'PUT' : 'POST'
       const url = form.id ? `/api/custom-products/${form.id}` : '/api/custom-products'
       
@@ -113,7 +113,7 @@ export default function CustomProducts() {
     if (!confirm('Are you sure you want to delete this custom product?')) return
     
     try {
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('awb_token')
       const res = await fetch(`/api/custom-products/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }

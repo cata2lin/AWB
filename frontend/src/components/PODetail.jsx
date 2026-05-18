@@ -3,13 +3,15 @@
  * Unified layout for both modes with inline product search.
  */
 import { useState, useMemo } from 'react'
-import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, Edit2 } from 'lucide-react'
+import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLine, Ban, FileText, ChevronDown, ChevronUp, CheckCircle2, XCircle, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, Edit2, Layers } from 'lucide-react'
 import { STATUS_CFG, TOM_CLS } from './POList'
 import POProductPicker from './POProductPicker'
 import { productsApi } from '../services/api/products'
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const fmtCur = n => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON`
+const fmtUsd = n => n == null ? '' : `$${Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2 })}`
+const round2 = n => Math.round(n * 100) / 100
 
 export default function PODetail({ h }) {
   const [showLog, setShowLog] = useState(false)
@@ -18,17 +20,23 @@ export default function PODetail({ h }) {
   const [itemPriorityFilter, setItemPriorityFilter] = useState('')
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
-  const [editingVariantUid, setEditingVariantUid] = useState(null)
+  // Use SKU as unique key for variant editing — product_uid can be empty/shared
+  const [editingVariantSku, setEditingVariantSku] = useState(null)
   const [variantForm, setVariantForm] = useState({ v1: '', v2: '' })
 
-  const handleSaveVariants = async (uid) => {
+  const handleSaveVariants = async (uid, sku) => {
     try {
       await productsApi.updateVariants(uid, {
         tom_variant_1: variantForm.v1,
         tom_variant_2: variantForm.v2
       })
+      // Update local form items to reflect the saved variants
+      if (isEditable) {
+        h.updateItem(sku, 'tom_variant_1', variantForm.v1)
+        h.updateItem(sku, 'tom_variant_2', variantForm.v2)
+      }
       h.setToast({ type: 'success', msg: 'Variants updated!' })
-      setEditingVariantUid(null)
+      setEditingVariantSku(null)
     } catch (e) {
       console.error('Failed to save variants:', e)
       h.setToast({ type: 'error', msg: 'Failed to save variants.' })
@@ -47,6 +55,9 @@ export default function PODetail({ h }) {
 
   const totalCost = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_cost || 0), 0)
   const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0)
+  // Live USD computation — use the PO's stored exchange rate, or fall back to item-level usd costs
+  const usdRate = po?.usd_exchange_rate || null
+  const totalCostUsd = usdRate ? round2(totalCost / usdRate) : null
 
   // Filter items by search and priority — must be called before any early return
   const filteredItems = useMemo(() => {
@@ -309,6 +320,7 @@ export default function PODetail({ h }) {
                   <SortHeader col="quantity" label="Qty" className="text-right" />
                   <SortHeader col="unit_cost" label="Unit Cost" className="text-right" />
                   <SortHeader col="total" label="Total" className="text-right" />
+                  {!isCreate && <th className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-center" title="Same SKU in other Draft/Approved POs">Other POs</th>}
                   {!isCreate && <SortHeader col="received" label="Received" className="text-right" />}
                   {!isCreate && isTomEnabled && <SortHeader col="tom" label="TOM" className="text-center" />}
                   {isEditable && <th className="px-3 py-2.5 w-10"></th>}
@@ -324,22 +336,30 @@ export default function PODetail({ h }) {
                       </div>
                     </td>
                     <td className="px-4 py-3 relative">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-base text-zinc-700 dark:text-zinc-300">{item.sku}</span>
+                        {/* TOM variant badges — compact inline display */}
+                        {(item.tom_variant_1 || item.tom_variant_2) && (
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {item.tom_variant_1 && <span className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[9px] font-bold uppercase rounded border border-zinc-200 dark:border-zinc-600 truncate max-w-[80px]" title={item.tom_variant_1}>{item.tom_variant_1}</span>}
+                            {item.tom_variant_2 && <span className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[9px] font-bold uppercase rounded border border-zinc-200 dark:border-zinc-600 truncate max-w-[60px]" title={item.tom_variant_2}>{item.tom_variant_2}</span>}
+                          </div>
+                        )}
+                        {/* Edit button — only show when product has a uid */}
                         {item.product_uid && (
                           <button onClick={(e) => {
                             e.stopPropagation()
-                            setEditingVariantUid(item.product_uid)
+                            setEditingVariantSku(editingVariantSku === item.sku ? null : item.sku)
                             setVariantForm({ v1: item.tom_variant_1 || '', v2: item.tom_variant_2 || '' })
-                          }} className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 z-10" title="Edit TOM Variants">
+                          }} className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 z-10 ml-auto flex-shrink-0" title="Edit TOM Variants">
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
                       
-                      {/* Inline Variant Editor */}
-                      {editingVariantUid === item.product_uid && (
-                        <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-zinc-800 p-3 shadow-xl border border-zinc-200 dark:border-zinc-700 z-50 rounded-xl"
+                      {/* Inline Variant Editor — keyed by SKU for uniqueness */}
+                      {editingVariantSku === item.sku && (
+                        <div className="absolute top-full left-0 mt-1 w-52 bg-white dark:bg-zinc-800 p-3 shadow-xl border border-zinc-200 dark:border-zinc-700 z-50 rounded-xl"
                              onClick={e => e.stopPropagation()}>
                           <div className="space-y-2">
                             <div>
@@ -353,8 +373,8 @@ export default function PODetail({ h }) {
                                 className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
                             </div>
                             <div className="flex gap-2 pt-1">
-                              <button onClick={() => setEditingVariantUid(null)} className="flex-1 px-2 py-1.5 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded hover:bg-zinc-200">Cancel</button>
-                              <button onClick={() => handleSaveVariants(item.product_uid)} className="flex-1 px-2 py-1.5 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700">Save</button>
+                              <button onClick={() => setEditingVariantSku(null)} className="flex-1 px-2 py-1.5 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded hover:bg-zinc-200">Cancel</button>
+                              <button onClick={() => handleSaveVariants(item.product_uid, item.sku)} className="flex-1 px-2 py-1.5 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700">Save</button>
                             </div>
                           </div>
                         </div>
@@ -398,9 +418,39 @@ export default function PODetail({ h }) {
                     <td className="px-4 py-3 text-right font-medium">
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="text-zinc-800 dark:text-zinc-200">{fmtCur((item.quantity || 0) * (item.unit_cost || 0))}</span>
-                        {item.unit_cost_usd != null && <span className="text-xs text-zinc-500">${fmt((item.quantity || 0) * (item.unit_cost_usd || 0))}</span>}
+                        {/* Live USD: compute from exchange rate if available, else use stored usd cost */}
+                        {(usdRate || item.unit_cost_usd != null) && (
+                          <span className="text-xs text-zinc-500">
+                            {usdRate
+                              ? fmtUsd(round2((item.quantity || 0) * (item.unit_cost || 0) / usdRate))
+                              : `$${fmt((item.quantity || 0) * (item.unit_cost_usd || 0))}`}
+                          </span>
+                        )}
                       </div>
                     </td>
+                    {!isCreate && (() => {
+                      const overlap = item.other_pos || []
+                      const totalPending = overlap.reduce((s, p) => s + (p.pending_qty ?? p.quantity ?? 0), 0)
+                      const tooltip = overlap.map(p =>
+                        `${p.po_number} (${p.status}) · ${p.quantity} ordered${p.received_qty ? `, ${p.received_qty} recv` : ''}, ${p.pending_qty ?? p.quantity} pending`
+                      ).join('\n')
+                      return (
+                        <td className="px-4 py-3 text-center">
+                          {overlap.length > 0 ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-600 cursor-help"
+                              title={tooltip}
+                            >
+                              <Layers className="w-3 h-3" />
+                              <span>{overlap.length}</span>
+                              {totalPending > 0 && <span className="text-[10px] opacity-75">({fmt(totalPending)} pending)</span>}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-300 dark:text-zinc-600">—</span>
+                          )}
+                        </td>
+                      )
+                    })()}
                     {!isCreate && (
                       <td className="px-4 py-3 text-right">
                         {item.tom_received_qty != null && item.tom_received_qty > 0 ? (
@@ -435,7 +485,9 @@ export default function PODetail({ h }) {
         {/* Summary */}
         <div className="text-sm text-zinc-500 mb-3">
           {items.length} items · {fmt(totalQty)} units · <span className="font-semibold text-zinc-900 dark:text-white">{fmtCur(totalCost)}</span>
-          {po && po.total_cost_usd != null && <span className="ml-1.5 font-medium text-zinc-500">(${fmt(po.total_cost_usd)} USD)</span>}
+          {/* Live USD total — always compute from current items + exchange rate */}
+          {totalCostUsd != null && <span className="ml-1.5 font-medium text-zinc-500">({fmtUsd(totalCostUsd)} USD)</span>}
+          {totalCostUsd == null && po?.total_cost_usd != null && <span className="ml-1.5 font-medium text-zinc-500">({fmtUsd(po.total_cost_usd)} USD)</span>}
         </div>
 
         {/* Actions */}

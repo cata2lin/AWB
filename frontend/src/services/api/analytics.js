@@ -18,6 +18,10 @@ export const analyticsApi = {
         const { data } = await api.get('/analytics/deliverability', { params })
         return data
     },
+    getProductDeliverability: async (params = {}) => {
+        const { data } = await api.get('/analytics/product-deliverability', { params })
+        return data
+    },
     getProfitability: async (params = {}) => {
         const { data } = await api.get('/analytics/profitability', { params })
         return data
@@ -58,6 +62,10 @@ export const purchaseOrdersMgmtApi = {
         const { data } = await api.get(`/purchase-orders-mgmt/${id}`)
         return data
     },
+    getByNumber: async (poNumber) => {
+        const { data } = await api.get(`/purchase-orders-mgmt/by-number/${poNumber}`)
+        return data
+    },
     create: async (body) => {
         const { data } = await api.post('/purchase-orders-mgmt/create', body)
         return data
@@ -82,9 +90,11 @@ export const purchaseOrdersMgmtApi = {
         const { data } = await api.get('/purchase-orders-mgmt/incoming-stock')
         return data
     },
-    // Product picker for adding items to POs
+    // Product picker — returns full catalogue; filtering/sorting done client-side
     productPicker: async (params = {}) => {
-        const { data } = await api.get('/purchase-orders-mgmt/products/picker', { params })
+        // Drop 'search' if accidentally passed — backend no longer accepts it
+        const { search: _dropped, ...safe } = params
+        const { data } = await api.get('/purchase-orders-mgmt/products/picker', { params: safe })
         return data
     },
     // TOM API sync operations (Packaging POs only)

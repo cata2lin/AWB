@@ -25,7 +25,7 @@ import {
     ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
     Calendar, ArrowRight, ArrowUpRight, ArrowDownRight, PieChart, MapPin,
     DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2,
-    Eye, EyeOff, Settings2, Download, ArrowUpDown, Bookmark, X
+    Eye, EyeOff, Settings2, Download, ArrowUpDown, Bookmark, X, TrendingDown
 } from 'lucide-react'
 import { exportPnlToExcel } from '../utils/pnlExport'
 import { storesApi, analyticsApi, skuCostsApi, profitabilityConfigApi, skuMarketingCostsApi, purchaseOrdersMgmtApi } from '../services/api'
@@ -37,6 +37,7 @@ import MultiSelectFilter from '../components/MultiSelectFilter'
 import ContributionMarginPnl from '../components/ContributionMarginPnl'
 import DetailedPnl from '../components/DetailedPnl'
 import SkuPickerModal from '../components/SkuPickerModal'
+import ProductDeliverabilityTab from '../components/ProductDeliverabilityTab'
 
 // Country emoji flags for display
 const COUNTRY_FLAGS = {
@@ -183,7 +184,7 @@ export default function Analytics() {
 
     useEffect(() => {
         if (activeTab === 'salesVelocity') {
-            purchaseOrdersMgmtApi.list({ status: 'draft' })
+            purchaseOrdersMgmtApi.list({ status: 'DRAFT' })
                 .then(res => setDraftPOs(res.orders || []))
                 .catch(err => console.error('Failed to fetch draft POs', err))
         }
@@ -342,22 +343,25 @@ export default function Analytics() {
             const now = new Date()
             let dateFrom, dateTo
 
+            // Helper: format a local Date as YYYY-MM-DD without UTC shift
+            const fmtLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
             if (period === '30d') {
                 const d = new Date(now); d.setDate(d.getDate() - 30)
-                dateFrom = d.toISOString().split('T')[0]
-                dateTo = now.toISOString().split('T')[0]
+                dateFrom = fmtLocal(d)
+                dateTo = fmtLocal(now)
             } else if (period === '90d') {
                 const d = new Date(now); d.setDate(d.getDate() - 90)
-                dateFrom = d.toISOString().split('T')[0]
-                dateTo = now.toISOString().split('T')[0]
+                dateFrom = fmtLocal(d)
+                dateTo = fmtLocal(now)
             } else if (period === 'thisMonth') {
                 dateFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-                dateTo = now.toISOString().split('T')[0]
+                dateTo = fmtLocal(now)
             } else if (period === 'lastMonth') {
                 const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
                 const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-                dateFrom = lm.toISOString().split('T')[0]
-                dateTo = lmEnd.toISOString().split('T')[0]
+                dateFrom = fmtLocal(lm)
+                dateTo = fmtLocal(lmEnd)
             } else if (period === 'custom') {
                 if (!customFrom || !customTo) { setDelivLoading(false); return }
                 dateFrom = customFrom
@@ -422,22 +426,25 @@ export default function Analytics() {
             const now = new Date()
             let dateFrom, dateTo
 
+            // Helper: format a local Date as YYYY-MM-DD without UTC shift
+            const fmtLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
             if (period === '30d') {
                 const d = new Date(now); d.setDate(d.getDate() - 30)
-                dateFrom = d.toISOString().split('T')[0]
-                dateTo = now.toISOString().split('T')[0]
+                dateFrom = fmtLocal(d)
+                dateTo = fmtLocal(now)
             } else if (period === '90d') {
                 const d = new Date(now); d.setDate(d.getDate() - 90)
-                dateFrom = d.toISOString().split('T')[0]
-                dateTo = now.toISOString().split('T')[0]
+                dateFrom = fmtLocal(d)
+                dateTo = fmtLocal(now)
             } else if (period === 'thisMonth') {
                 dateFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-                dateTo = now.toISOString().split('T')[0]
+                dateTo = fmtLocal(now)
             } else if (period === 'lastMonth') {
                 const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
                 const lmEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-                dateFrom = lm.toISOString().split('T')[0]
-                dateTo = lmEnd.toISOString().split('T')[0]
+                dateFrom = fmtLocal(lm)
+                dateTo = fmtLocal(lmEnd)
             } else if (period === 'custom') {
                 if (!customFrom || !customTo) { setProfitLoading(false); return }
                 dateFrom = customFrom
@@ -755,6 +762,17 @@ export default function Analytics() {
                 >
                     <Package className="w-4 h-4 inline mr-2" />
                     Produse
+                </a>
+                <a
+                    href="/analytics?tab=productDeliverability"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('productDeliverability') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'productDeliverability'
+                        ? 'bg-white dark:bg-zinc-700 text-rose-600 dark:text-rose-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <TrendingDown className="w-4 h-4 inline mr-2" />
+                    Livrabilitate Produse
                 </a>
             </div>
 
@@ -2764,7 +2782,8 @@ export default function Analytics() {
                                                     const items = sortedProducts
                                                         .filter(p => velocitySelectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
                                                         .map(p => {
-                                                            const necesarRecomandat = Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - (p.stock_available || 0)))
+                                                            const efectiveStock = p.effective_stock || ((p.stock_available || 0) + (p.po_incoming || 0))
+                                                            const necesarRecomandat = Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - efectiveStock))
                                                             return {
                                                                 sku: p.sku,
                                                                 product_name: p.product_name || p.sku,
@@ -2785,7 +2804,17 @@ export default function Analytics() {
                                                             const existingItems = poDetails.items || []
 
                                                             const mergedMap = new Map()
-                                                            existingItems.forEach(i => mergedMap.set(i.sku, { ...i, quantity: i.quantity || 0 }))
+                                                            existingItems.forEach(i => mergedMap.set(i.sku, {
+                                                                sku: i.sku,
+                                                                product_name: i.product_name || '',
+                                                                unit_cost: i.unit_cost || 0,
+                                                                quantity: i.quantity || 0,
+                                                                received_qty: i.received_qty || 0,
+                                                                barcode: i.barcode || '',
+                                                                product_uid: i.product_uid || '',
+                                                                variant_title: i.variant_title || '',
+                                                                product_image: i.product_image || '',
+                                                            }))
 
                                                             items.forEach(newItem => {
                                                                 if (mergedMap.has(newItem.sku)) {
@@ -2797,14 +2826,20 @@ export default function Analytics() {
                                                                         sku: newItem.sku,
                                                                         product_name: newItem.product_name,
                                                                         unit_cost: newItem.unit_cost,
-                                                                        quantity: newItem.quantity
+                                                                        quantity: newItem.quantity,
+                                                                        received_qty: 0,
                                                                     })
                                                                 }
                                                             })
 
                                                             const mergedItemsList = Array.from(mergedMap.values())
-                                                            await purchaseOrdersMgmtApi.update(targetPo.id, { items: mergedItemsList })
-                                                            window.location.href = `/purchase-orders/${targetPo.po_number}`
+                                                            await purchaseOrdersMgmtApi.updateItems(targetPo.id, mergedItemsList)
+                                                            alert(`✅ ${items.length} produs(e) adăugate la ${targetPo.po_number}`)
+                                                            setVelocitySelectedSkus(new Set())
+                                                            // Refresh draft POs list
+                                                            purchaseOrdersMgmtApi.list({ status: 'DRAFT' })
+                                                                .then(res => setDraftPOs(res.orders || []))
+                                                                .catch(() => {})
                                                         } catch (e) {
                                                             console.error("Failed to append to existing PO", e)
                                                             alert("Eroare la adăugarea în PO: " + (e.response?.data?.detail || e.message))
@@ -3630,6 +3665,20 @@ export default function Analytics() {
                 </div>
             </div>
         )}
+            {activeTab === 'productDeliverability' && (
+                <div className="space-y-5 mt-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-lg shadow-rose-500/20 flex-shrink-0">
+                            <TrendingDown className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Livrabilitate Produse</h2>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Rata de livrare, return și anulare per produs individual</p>
+                        </div>
+                    </div>
+                    <ProductDeliverabilityTab selectedStores={selectedStores} />
+                </div>
+            )}
         </div >
     )
 }

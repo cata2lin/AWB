@@ -16,6 +16,7 @@ import io
 from app.core.database import get_db
 from app.models.product import Product
 from app.models.store import Store
+from app.services.product_grouping import classify_stores, pick_best_primary
 
 router = APIRouter()
 
@@ -93,7 +94,7 @@ def _build_groups(all_products):
     return barcode_groups, sku_only_groups, ungrouped
 
 
-def _merge_group(group, group_key, store_names, sku_cost_map):
+def _merge_group(group, group_key, store_names, sku_cost_map, ro_store_uids=None, intl_store_uids=None):
     """Merge a list of product listings into one grouped result dict."""
     # Sort: most recently synced first
     group.sort(
@@ -101,18 +102,30 @@ def _merge_group(group, group_key, store_names, sku_cost_map):
         reverse=True,
     )
 
-    # Check if a DB-stored primary preference exists
-    primary = group[0]
-    stored_primary_uid = None
-    for p in group:
-        if p.primary_listing_uid:
-            stored_primary_uid = p.primary_listing_uid
-            break
-
-    if stored_primary_uid:
+    # Pick primary: user-set > RO+image > RO > any+image > fallback
+    if ro_store_uids is not None:
+        primary, has_explicit = pick_best_primary(group, ro_store_uids, intl_store_uids or set())
+    else:
+        # Fallback if store classification not available
+        primary = group[0]
+        has_explicit = False
         for p in group:
-            if p.uid == stored_primary_uid:
-                primary = p
+            if p.primary_listing_uid:
+                for q in group:
+                    if q.uid == p.primary_listing_uid:
+                        primary = q
+                        has_explicit = True
+                break
+
+    # ── Stock resolution ──
+    # The InventorySync stock sync writes stock_available BY BARCODE first.
+    # To get the authoritative stock, prefer the barcode-holding product
+    # (directly updated by the sync) unless a user-set primary exists.
+    stock_product = primary
+    if not has_explicit:
+        for p in group:
+            if (p.barcode or "").strip():
+                stock_product = p
                 break
 
     # Merge stores from all listings
@@ -161,9 +174,9 @@ def _merge_group(group, group_key, store_names, sku_cost_map):
         "images": images,
         "store_uids": all_store_uids,
         "stores": [{"uid": uid, "name": store_names.get(uid, uid)} for uid in all_store_uids],
-        "stock_available": primary.stock_available,
-        "stock_committed": primary.stock_committed,
-        "stock_incoming": primary.stock_incoming,
+        "stock_available": stock_product.stock_available,
+        "stock_committed": stock_product.stock_committed,
+        "stock_incoming": stock_product.stock_incoming,
         "exclude_from_stock": primary.exclude_from_stock,
         "cost": cost,
         "grouped_count": len(group),
@@ -224,16 +237,19 @@ async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
         )
         store_names = {row[0]: row[1] for row in stores_result.all()}
 
+    # Classify stores for primary selection (RO vs international)
+    ro_uids, intl_uids = classify_stores(store_names.items())
+
     # Group
     barcode_groups, sku_only_groups, ungrouped = _build_groups(all_products)
 
     merged = []
 
     for bc, group in barcode_groups.items():
-        merged.append(_merge_group(group, bc, store_names, sku_cost_map))
+        merged.append(_merge_group(group, bc, store_names, sku_cost_map, ro_uids, intl_uids))
 
     for sku, group in sku_only_groups.items():
-        merged.append(_merge_group(group, sku, store_names, sku_cost_map))
+        merged.append(_merge_group(group, sku, store_names, sku_cost_map, ro_uids, intl_uids))
 
     for p in ungrouped:
         cost = sku_cost_map.get(p.sku) if p.sku else None

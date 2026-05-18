@@ -1,12 +1,20 @@
 /**
  * usePOManager — state & handlers for the PO Manager panel.
- * 
+ *
  * Manages: PO list, CRUD operations, product picker, TOM sync actions.
  * Extracted hook keeps the UI components lean.
+ *
+ * Product catalogue is cached at module scope so subsequent searches
+ * (and remounts) do not make additional network requests.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { purchaseOrdersMgmtApi } from '../services/api/analytics'
 import { settingsApi } from '../services/api/analytics'
+
+// Module-level cache so the full product catalogue is only fetched once per session
+// (shared across all usePOManager instances even if the component remounts)
+let _pickerCatalogueCache = null
+let _pickerCachePromise = null
 
 const EMPTY_FORM = {
   title: '', po_category: '', po_type: 'RESTOCK', priority: 'STANDARD',
@@ -93,6 +101,19 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     } catch (e) { console.error(e) }
   }
 
+  /**
+   * Load a PO directly by its po_number string (e.g. "PO-0012").
+   * Used on page refresh when the list hasn't been fetched yet.
+   */
+  const selectPOByNumber = async (poNumber) => {
+    try {
+      const d = await purchaseOrdersMgmtApi.getByNumber(poNumber)
+      setSelectedPO(d)
+      setSelectedId(d.id)
+      setMode('detail')
+    } catch (e) { console.error('selectPOByNumber failed:', e) }
+  }
+
   const refreshSelected = async () => {
     if (!selectedId) return
     try {
@@ -162,8 +183,21 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     if (!q || q.length < 2) { setPickerResults([]); return }
     setPickerLoading(true)
     try {
-      const r = await purchaseOrdersMgmtApi.productPicker({ search: q, limit: 30 })
-      setPickerResults(r.products || [])
+      // Use module-level cache — only one API call per browser session
+      if (!_pickerCatalogueCache) {
+        if (!_pickerCachePromise) {
+          _pickerCachePromise = purchaseOrdersMgmtApi.productPicker({ limit: 1000 })
+            .then(r => { _pickerCatalogueCache = r.products || []; return _pickerCatalogueCache })
+        }
+        await _pickerCachePromise
+      }
+      const ql = q.toLowerCase()
+      const filtered = (_pickerCatalogueCache || []).filter(p =>
+        (p.sku || '').toLowerCase().includes(ql) ||
+        (p.product_name || '').toLowerCase().includes(ql) ||
+        (p.barcode || '').toLowerCase().includes(ql)
+      )
+      setPickerResults(filtered.slice(0, 30))
     } catch (_) {}
     finally { setPickerLoading(false) }
   }, [])
@@ -179,6 +213,9 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     product_name: p.product_name || '', variant_title: p.variant_title || '',
     product_image: p.image || p.product_image || p.images?.[0]?.src || '',
     quantity: p.suggested_qty || 1, unit_cost: p.unit_cost || 0,
+    // Carry TOM variant data from the picker for display and TOM sync
+    tom_variant_1: p.tom_variant_1 || '',
+    tom_variant_2: p.tom_variant_2 || '',
   })
 
   const addProduct = (p) => {
@@ -310,7 +347,7 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     // Categories
     poCategories, getCatConfig,
     // Actions
-    fetchOrders, selectPO, updateStatus, deletePO, receivePO, tomAction,
+    fetchOrders, selectPO, selectPOByNumber, refreshSelected, updateStatus, deletePO, receivePO, tomAction,
     addProduct, addProducts, removeItem, updateItem, addAllUrgent,
     startCreate, submitCreate, cancelCreate, startEdit, saveEdit, showToast,
     // Category management
