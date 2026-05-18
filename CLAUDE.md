@@ -1,6 +1,6 @@
 # AWB Print Manager — Working Conventions
 
-This file is loaded into every Claude Code session. Keep entries dense, scannable, and corrective. Don't restate what the codebase already documents — link to it.
+This file is the **project layer**. Universal conventions, safety rails, and coding standards live in [~/.claude/CLAUDE.md](file:///c:/Users/Admin/.claude/CLAUDE.md) and are loaded alongside this file. This file only covers AWB-specific rules, domain knowledge, and overrides.
 
 Long-form references:
 - [README.md](./README.md) — architecture, schema, endpoint catalog, changelog
@@ -11,33 +11,19 @@ Long-form references:
 
 ---
 
-## Tier 0 — Safety rails (what the harness will refuse no matter what)
+## Tier 0 — Safety rails (universal + AWB-specific)
 
-This session runs in `bypassPermissions` mode for speed, so almost nothing prompts. To keep that safe, two layers actively *block* operations even though prompts are off:
+The **global** layer already blocks the universal-dangerous stuff (rm -rf catastrophe, force-push to protected branches, hard reset against remote, .env writes, .github/workflows edits, git identity tampering, settings.json self-tampering). See `~/.claude/CLAUDE.md` Tier 0 for the full list.
 
-- **Static `permissions.deny` rules** in `.claude/settings.json` cover prefix-pattern blocks: `rm -rf /`, `git push --force *main*`, `git reset --hard origin*`, `pip uninstall fastapi*`, etc.
-- **`PreToolUse` hook** `.claude/hooks/safety-rails.sh` catches what static patterns can't (e.g., `--force` appearing anywhere in a command, not just as a prefix).
+**Additional rails enforced in this project** (via `.claude/settings.json` deny list):
 
-**Things that are blocked:**
-
-| Category | Examples |
+| Category | What it blocks |
 |---|---|
-| Filesystem catastrophe | `rm -rf /`, `rm -rf ~`, `rm -rf $HOME`, flag-order variants |
-| Force-push to protected branches | `git push --force * main`, `git push origin main --force`, also master/production/prod/release |
-| Hard reset against remote | `git reset --hard origin/main`, `git reset --hard upstream/*` |
-| Branch deletion | `git branch -D main`, `git branch -D master`, `git branch -D release` |
-| Production DB | Any command containing `38.242.226.83` |
-| Core dep removal | `pip uninstall fastapi`/`sqlalchemy`/`pydantic`/`uvicorn`, `npm uninstall react`/`vite`/`sonner` |
-| Git identity tampering | `git config user.*`, `git config credential.*`, `git config core.hooksPath` |
-| Secrets / credentials | Editing or writing `.env`, `.env.*`, `*credentials.json`, `*.pem`, `*.key`, `.npmrc`, `.pypirc` |
-| CI workflow edits | Editing `.github/workflows/*` (deliberate human review required) |
-| Self-tampering | Editing `.claude/settings.json` (ask the user explicitly) |
+| Production DB | Any command containing `38.242.226.83` (the prod PG host per [DB_Reference.md](../debug/DB_Reference.md)) |
+| FastAPI stack deps | `pip uninstall fastapi`/`sqlalchemy`/`pydantic`/`uvicorn`/`pypdf`/`reportlab`/`httpx`/`apscheduler` |
+| React stack deps | `npm uninstall react*`/`vite*`/`sonner*`/`@tanstack/react-query*`/`axios*`/`tailwindcss*` |
 
-Blocked attempts are logged to `.claude/safety-rails.log` (gitignored) with timestamp, tool, reason, and target.
-
-**If a rail blocks something the user truly wants done**: tell them, explain which rail fired, and let them either run the command themselves OR ask me to edit the rail (which itself triggers the "settings.json blocked" rail — they'll need to edit it manually).
-
-**Branch protection nuance**: normal pushes to `main` are allowed (it's the dev branch); only force-pushes are blocked. Once a CI pipeline is in place, switch to a PR workflow and the rails can tighten.
+Blocked attempts log to `~/.claude/safety-rails.log` (global, gitignored).
 
 ---
 

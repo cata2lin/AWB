@@ -1,83 +1,39 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "model": "claude-opus-4-7",
-  "effortLevel": "high",
-  "permissions": {
-    "defaultMode": "bypassPermissions",
 
+  "permissions": {
     "allow": [
-      "Read",
-      "Glob",
-      "Grep",
-      "Edit",
-      "Bash(git *)",
-      "Bash(npm *)",
-      "Bash(npx *)",
-      "Bash(python *)",
-      "Bash(ls*)",
-      "Bash(curl.exe*)",
-      "Bash(wc*)"
+      "Bash(./venv/Scripts/python.exe*)",
+      "Bash(backend/venv/Scripts/*)",
+      "Bash(./venv/Scripts/pytest.exe*)",
+      "Bash(./venv/Scripts/ruff.exe*)",
+      "Bash(./venv/Scripts/pip.exe install*)",
+      "Bash(curl.exe -s http://127.0.0.1:8000*)",
+      "Bash(curl.exe -s -o NUL -w*)",
+      "Bash(curl.exe -s http://localhost:5173*)",
+      "Bash(taskkill *python.exe*)",
+      "Bash(taskkill *node.exe*)"
     ],
 
     "deny": [
-      "Bash(rm -rf /)",
-      "Bash(rm -rf /*)",
-      "Bash(rm -rf ~)",
-      "Bash(rm -rf ~/*)",
-      "Bash(rm -rf $HOME)",
-      "Bash(rm -rf $HOME/*)",
-      "Bash(rm -rf .)",
-      "Bash(rm -rf ..)",
-      "Bash(rm -fr /)",
-      "Bash(rm -fr /*)",
-      "Bash(rm -fr ~)",
-      "Bash(rm -fr ~/*)",
-      "Bash(git push --force *main*)",
-      "Bash(git push -f *main*)",
-      "Bash(git push --force *master*)",
-      "Bash(git push -f *master*)",
-      "Bash(git reset --hard origin*)",
-      "Bash(git reset --hard upstream*)",
-      "Bash(git branch -D main*)",
-      "Bash(git branch -D master*)",
-      "Bash(git checkout -- .)",
-      "Bash(git checkout -- *)",
+      "Bash(psql *38.242.226.83*)",
+      "Bash(psql -h 38.242.226.83*)",
+
       "Bash(pip uninstall fastapi*)",
       "Bash(pip uninstall sqlalchemy*)",
       "Bash(pip uninstall pydantic*)",
       "Bash(pip uninstall uvicorn*)",
+      "Bash(pip uninstall pypdf*)",
+      "Bash(pip uninstall reportlab*)",
+      "Bash(pip uninstall httpx*)",
+      "Bash(pip uninstall apscheduler*)",
+
       "Bash(npm uninstall react*)",
       "Bash(npm uninstall vite*)",
       "Bash(npm uninstall sonner*)",
-      "Bash(psql *38.242.226.83*)"
-    ]
-  },
-
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/safety-rails.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/auto-format.sh\"",
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      }
+      "Bash(npm uninstall @tanstack/react-query*)",
+      "Bash(npm uninstall axios*)",
+      "Bash(npm uninstall tailwindcss*)"
     ]
   }
 }
