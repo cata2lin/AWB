@@ -1,13 +1,11 @@
 /**
- * Analytics Page - Print Analytics, Geographic Distribution & Deliverability Report
- * 
- * Features:
- * - Print analytics with charts
- * - Geographic distribution charts showing order distribution by country/city
- * - Deliverability report per store with period comparison
+ * Analytics Page - Tab Router
+ *
+ * Thin parent that owns the active-tab URL state and the shared `stores` list,
+ * then delegates rendering to per-tab components under `pages/analytics/`.
  */
 
-// Auth helper for raw fetch calls
+// Auth helper for raw fetch calls (still used by DetailedPnl)
 const authFetch = (url, opts = {}) => {
     const token = localStorage.getItem('awb_token')
     return fetch(url, {
@@ -18,25 +16,16 @@ const authFetch = (url, opts = {}) => {
         },
     })
 }
-import { useState, useEffect, useMemo, Fragment, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-    Globe2, TrendingUp, Package, Truck, XCircle, RotateCcw,
-    ChevronDown, ChevronUp, RefreshCw, Filter, BarChart3, Store, Printer,
-    Calendar, ArrowRight, ArrowUpRight, ArrowDownRight, PieChart, MapPin,
-    DollarSign, Tag, Save, Plus, Trash2, Search, AlertTriangle, Info, Edit2,
-    Eye, EyeOff, Settings2, Download, ArrowUpDown, Bookmark, X, TrendingDown
+    TrendingUp, Package, BarChart3, Printer, PieChart,
+    DollarSign, Tag, AlertTriangle, TrendingDown
 } from 'lucide-react'
-import { exportPnlToExcel } from '../utils/pnlExport'
-import {
-    getRateColor, getRateBgColor, formatNumber, formatMoney,
-    marginColor, marginBg, getLastCompleteMonth,
-} from '../utils/analyticsHelpers'
-import { storesApi, analyticsApi, profitabilityConfigApi } from '../services/api'
+import { storesApi } from '../services/api'
 import ProductsTab from '../components/ProductsTab'
 import PrintHistoryTab from '../components/PrintHistoryTab'
 
-import ContributionMarginPnl from '../components/ContributionMarginPnl'
 import DetailedPnl from '../components/DetailedPnl'
 import ProductDeliverabilityTab from '../components/ProductDeliverabilityTab'
 import SkuCostsTab from './analytics/SkuCostsTab'
@@ -46,32 +35,16 @@ import ProfitabilityTab from './analytics/ProfitabilityTab'
 import SkuProfitabilityTab from './analytics/SkuProfitabilityTab'
 import SalesVelocityTab from './analytics/SalesVelocityTab'
 
-// Country emoji flags for display
-const COUNTRY_FLAGS = {
-    'RO': '🇷🇴', 'BG': '🇧🇬', 'HU': '🇭🇺', 'DE': '🇩🇪', 'FR': '🇫🇷',
-    'IT': '🇮🇹', 'ES': '🇪🇸', 'PL': '🇵🇱', 'AT': '🇦🇹', 'GR': '🇬🇷',
-    'NL': '🇳🇱', 'BE': '🇧🇪', 'PT': '🇵🇹', 'SE': '🇸🇪', 'GB': '🇬🇧',
-    'CZ': '🇨🇿', 'SK': '🇸🇰', 'HR': '🇭🇷', 'SI': '🇸🇮', 'MD': '🇲🇩',
-    'UA': '🇺🇦', 'RS': '🇷🇸', 'IE': '🇮🇪'
-}
-
-// Color palette for charts
-const CHART_COLORS = [
-    '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
-    '#ec4899', '#6366f1', '#14b8a6', '#84cc16', '#f97316'
-]
-
 export default function Analytics() {
-    // State
+    // Stores list shared with every tab
     const [stores, setStores] = useState([])
-    const [selectedStores, setSelectedStores] = useState([])
-    const [days, setDays] = useState(30)
-    const [customDateFrom, setCustomDateFrom] = useState('')
-    const [customDateTo, setCustomDateTo] = useState('')
-    const [geoData, setGeoData] = useState(null)
-    // deliverabilityData, comparisonData moved into DeliverabilityTab
-    const [printAnalytics, setPrintAnalytics] = useState(null)
-    const [isLoading, setIsLoading] = useState(true)
+
+    // Filters: read-only at the parent level (tabs that need to mutate them own
+    // their own state). Kept here purely to pass stable defaults down.
+    const [selectedStores] = useState([])
+    const [days] = useState(30)
+
+    // Active tab synced to ?tab= query param
     const [searchParams, setSearchParams] = useSearchParams()
     const [activeTab, _setActiveTab] = useState(() => searchParams.get('tab') || 'deliverability')
     const setActiveTab = useCallback((tab) => {
@@ -84,32 +57,14 @@ export default function Analytics() {
         }, { replace: true })
     }, [setSearchParams])
 
-    // Sync tab from URL on back/forward navigation
+    // Sync tab from URL on back/forward navigation. The set-state-in-effect
+    // rule is overly conservative here — this *is* the external-system sync
+    // (URL <-> tab state) the rule's docs describe.
     useEffect(() => {
         const urlTab = searchParams.get('tab') || 'deliverability'
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         _setActiveTab(urlTab)
     }, [searchParams])
-
-    // Helper: returns true for all columns (column visibility is always on)
-    const isColVisible = useCallback(() => true, [])
-    // showComparison moved into DeliverabilityTab
-
-    // SKU Costs state moved into SkuCostsTab
-
-    // Profitability state moved into ProfitabilityTab
-    const [showCalcLegend, setShowCalcLegend] = useState(false)
-
-    // Deliverability state moved into DeliverabilityTab
-    // Sales Velocity state (incl. draft POs, advanced filters, saved views,
-    // PO-generation selection, and selectedVariantOrders modal) moved into SalesVelocityTab
-
-    // SKU Profitability state moved into SkuProfitabilityTab
-
-    // Top SKUs table state
-
-    // (Marketing costs moved to Business Costs management)
-
-    // SKU costs filter & bulk edit state moved into SkuCostsTab
 
     // Fetch stores on mount
     useEffect(() => {
@@ -123,96 +78,6 @@ export default function Analytics() {
         }
         fetchStores()
     }, [])
-
-    // Fetch analytics data
-    // Compute effective date range key — only changes when BOTH dates are set
-    // This prevents double-reload when user sets one date at a time
-    const effectiveDateRange = (customDateFrom && customDateTo) ? `${customDateFrom}_${customDateTo}` : null
-
-    useEffect(() => {
-        const fetchData = async () => {
-            // If one custom date is set but not the other, skip fetching (wait for user to complete)
-            if ((customDateFrom && !customDateTo) || (!customDateFrom && customDateTo)) {
-                return
-            }
-            setIsLoading(true)
-            try {
-                const params = new URLSearchParams()
-                if (selectedStores.length > 0) {
-                    params.set('store_uids', selectedStores.join(','))
-                }
-                // Use custom date range if both dates are set, otherwise use days
-                if (customDateFrom && customDateTo) {
-                    params.set('date_from', customDateFrom)
-                    params.set('date_to', customDateTo)
-                } else if (days) {
-                    params.set('days', days.toString())
-                }
-
-                const API_URL = import.meta.env.VITE_API_URL || '/api'
-
-                // Fetch geo & print (deliverability has its own dedicated fetch now)
-                const [geoRes, printRes] = await Promise.all([
-                    authFetch(`${API_URL}/analytics/geographic?${params}`).then(r => r.json()),
-                    analyticsApi.getAnalytics(days || 30),
-                ])
-
-                setGeoData(geoRes)
-                setPrintAnalytics(printRes)
-                setIsLoading(false)
-
-                // Profitability is NOT auto-fetched — user must click "Analizează"
-            } catch (err) {
-                console.error('Failed to fetch analytics:', err)
-                setIsLoading(false)
-            }
-        }
-        fetchData()
-    }, [selectedStores, days, effectiveDateRange])
-
-    // Velocity auto-load useEffect moved into SalesVelocityTab
-
-    // fetchDeliverability + its useEffect moved into DeliverabilityTab
-
-    // Profitability fetchers + marketing-cost useEffect moved into ProfitabilityTab
-
-    // Get all cities sorted by order count for charts
-    const topCities = useMemo(() => {
-        if (!geoData?.countries) return []
-        return geoData.countries
-            .flatMap(country =>
-                (country.cities || []).map(city => ({
-                    country: country.name,
-                    countryCode: country.code,
-                    city: city.name,
-                    province: city.province,
-                    count: city.count
-                }))
-            )
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 50)
-    }, [geoData])
-
-    // Get county/province aggregation for Romania
-    const countyData = useMemo(() => {
-        if (!geoData?.countries) return []
-        const romania = geoData.countries.find(c => c.code === 'RO')
-        if (!romania?.cities) return []
-
-        const counties = {}
-        romania.cities.forEach(city => {
-            const county = city.province || 'Unknown'
-            if (!counties[county]) {
-                counties[county] = { name: county, count: 0, cities: 0 }
-            }
-            counties[county].count += city.count
-            counties[county].cities += 1
-        })
-
-        return Object.values(counties)
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 20)
-    }, [geoData])
 
     return (
         <div className="p-6 space-y-6 bg-zinc-50 dark:bg-zinc-950 min-h-screen animate-fade-in">
@@ -347,47 +212,16 @@ export default function Analytics() {
                 </a>
             </div>
 
-            {/* Loading State */}
-            {isLoading ? (
-                <div className="flex items-center justify-center py-20">
-                    <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
-                    <span className="ml-3 text-zinc-500 dark:text-white">Se încarcă datele...</span>
-                </div>
-            ) : (
-                <>
-                    {/* Print Analytics Tab */}
-                    {activeTab === 'print' && <PrintHistoryTab />}
-
-                    {/* Deliverability Report Tab */}
-                    {activeTab === 'deliverability' && <DeliverabilityTab selectedStores={selectedStores} />}
-
-                    {/* Profitability Tab */}
-                    {activeTab === 'profitability' && <ProfitabilityTab stores={stores} selectedStores={selectedStores} days={days} />}
-
-                    {/* P&L Detaliat Tab */}
-                    {activeTab === 'pnlDetailed' && (
-                        <DetailedPnl authFetch={authFetch} />
-                    )}
-
-                    {/* SKU Costs Tab */}
-                    {activeTab === 'skuCosts' && <SkuCostsTab />}
-
-
-                    {/* ══ SKU Risk & Shipping Anomalies Tab ══ */}
-                    {activeTab === 'skuRisk' && <SkuRiskTab stores={stores} />}
-
-                    {/* ══ Sales Velocity & Product Analytics Tab ══ */}
-                    {activeTab === 'salesVelocity' && <SalesVelocityTab stores={stores} />}
-                    {/* === SKU Profitability Tab === */}
-                    {activeTab === 'skuProfit' && <SkuProfitabilityTab stores={stores} />}
-                    {/* Products/Inventory Tab */}
-                    {activeTab === 'products' && (
-                        <ProductsTab stores={stores} />
-                    )}
-
-                </>
-            )
-            }
+            {/* Tab Router — each tab is self-contained and manages its own loading state */}
+            {activeTab === 'print' && <PrintHistoryTab />}
+            {activeTab === 'deliverability' && <DeliverabilityTab selectedStores={selectedStores} />}
+            {activeTab === 'profitability' && <ProfitabilityTab stores={stores} selectedStores={selectedStores} days={days} />}
+            {activeTab === 'pnlDetailed' && <DetailedPnl authFetch={authFetch} />}
+            {activeTab === 'skuCosts' && <SkuCostsTab />}
+            {activeTab === 'skuRisk' && <SkuRiskTab stores={stores} />}
+            {activeTab === 'salesVelocity' && <SalesVelocityTab stores={stores} />}
+            {activeTab === 'skuProfit' && <SkuProfitabilityTab stores={stores} />}
+            {activeTab === 'products' && <ProductsTab stores={stores} />}
             {activeTab === 'productDeliverability' && (
                 <div className="space-y-5 mt-4">
                     <div className="flex items-center gap-3">
@@ -402,6 +236,6 @@ export default function Analytics() {
                     <ProductDeliverabilityTab selectedStores={selectedStores} />
                 </div>
             )}
-        </div >
+        </div>
     )
 }
