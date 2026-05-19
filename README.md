@@ -942,6 +942,18 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-05-19 — Livrabilitate Produse: advanced filters + include/exclude + shared presets
+
+**Files changed:** `backend/app/models/analytics_filter_preset.py` (new), `backend/app/models/__init__.py`, `backend/app/api/analytics_filter_presets.py` (new), `backend/app/main.py`, `backend/migrate_analytics_filter_presets.py` (new), `frontend/src/components/ui/AdvancedFiltersDrawer.jsx` (new), `frontend/src/components/ui/IncludeExcludeModal.jsx` (new), `frontend/src/components/ui/FilterPresetsBar.jsx` (new), `frontend/src/components/ui/index.js`, `frontend/src/services/api/analyticsFilterPresets.js` (new), `frontend/src/services/api/index.js`, `frontend/src/components/ProductDeliverabilityTab.jsx`
+
+| Fix | Description | Details |
+| --- | ----------- | ------- |
+| **Custom date picker** | Replaced the two raw `<input type="date">` boxes with the shared `RangeDatePicker` primitive when `period === 'custom'`. | Cleaner UI, dark-mode-aware via `dark:[color-scheme:dark]`, and gains a clear button automatically. |
+| **Min/max per column** | New `AdvancedFiltersDrawer` slide-in panel exposes min/max inputs for the 12 numeric columns. | Applies client-side, no extra fetch. Active filter count shows on the trigger button. |
+| **Include/Exclude SKU + Store** | New `IncludeExcludeModal` with two tabs (SKU-uri, Magazine). | SKUs filtered client-side; stores re-compose the `store_uids` param sent to the backend (included overrides global, excluded is subtracted). |
+| **Shared filter presets** | New `analytics_filter_presets` table + `/api/analytics-filter-presets` CRUD. `FilterPresetsBar` dropdown lets users save the entire filter state as named presets. | Migration: run `python migrate_analytics_filter_presets.py` on prod. One preset per `report_key` can be marked default and auto-applies on tab mount. |
+| **Active-filter badges** | Buttons show a small count badge when their respective filter category has active entries. | Quick at-a-glance state without opening the panel. |
+
 ### 2026-05-19 — Hotfix: Dashboard TDZ error + PO number collision
 
 **Files changed:**

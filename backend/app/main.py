@@ -2,11 +2,38 @@
 AWB Print Manager - FastAPI Backend
 Main application entry point
 """
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import orders, rules, stores, print_batch, sync, analytics, sku_costs, presets, profitability_config, exchange_rates, courier_csv, business_costs, sku_risk, sales_velocity, sku_profitability, sku_marketing_costs, system, auth_api, products, purchase_orders, purchase_order_mgmt, purchase_order_import, comision_agentie, custom_products
+from app.api import (
+    orders,
+    rules,
+    stores,
+    print_batch,
+    sync,
+    analytics,
+    sku_costs,
+    presets,
+    profitability_config,
+    exchange_rates,
+    courier_csv,
+    business_costs,
+    sku_risk,
+    sales_velocity,
+    sku_profitability,
+    sku_marketing_costs,
+    system,
+    auth_api,
+    products,
+    purchase_orders,
+    purchase_order_mgmt,
+    purchase_order_import,
+    comision_agentie,
+    custom_products,
+    analytics_filter_presets,
+)
 from app.api import settings as settings_api
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
@@ -14,9 +41,13 @@ from app.services.scheduler import scheduler
 
 # ── Suppress noisy loggers from polluting console/journalctl ──
 import logging
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # Hide "GET /api/... 200" spam
+
+logging.getLogger("uvicorn.access").setLevel(
+    logging.WARNING
+)  # Hide "GET /api/... 200" spam
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 logging.getLogger("apscheduler.executors").setLevel(logging.WARNING)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,7 +55,7 @@ async def lifespan(app: FastAPI):
     # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     # Sync BNR exchange rates on startup
     try:
         async with AsyncSessionLocal() as db:
@@ -32,17 +63,20 @@ async def lifespan(app: FastAPI):
             await db.commit()
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).warning(f"BNR rate sync on startup failed: {e}")
-    
+
     # Auto-create default admin user if no users exist
     try:
         from sqlalchemy import select, func
         from app.models.user import User
         from app.core.auth import hash_password
+
         async with AsyncSessionLocal() as db:
             count = (await db.execute(select(func.count(User.id)))).scalar() or 0
             if count == 0:
                 import logging
+
                 admin = User(
                     username="admin",
                     display_name="Administrator",
@@ -51,16 +85,20 @@ async def lifespan(app: FastAPI):
                 )
                 db.add(admin)
                 await db.commit()
-                logging.getLogger(__name__).info("Created default admin user (admin / admin123)")
+                logging.getLogger(__name__).info(
+                    "Created default admin user (admin / admin123)"
+                )
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).warning(f"Auto-create admin failed: {e}")
-    
+
     # Clear any stale "running" syncs from previous process (they're dead)
     try:
         from sqlalchemy import select
         from app.models import SyncLog
         from datetime import datetime
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(SyncLog).where(SyncLog.status == "running")
@@ -68,25 +106,32 @@ async def lifespan(app: FastAPI):
             stale = result.scalars().all()
             if stale:
                 import logging
+
                 for s in stale:
                     s.status = "cancelled"
                     s.completed_at = datetime.utcnow()
                     s.error_message = "Cancelled: server restarted"
                 await db.commit()
-                logging.getLogger(__name__).info(f"Cleared {len(stale)} stale running sync(s) from previous run")
+                logging.getLogger(__name__).info(
+                    f"Cleared {len(stale)} stale running sync(s) from previous run"
+                )
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).warning(f"Stale sync cleanup failed: {e}")
-    
+
     # Start background scheduler for automatic syncs
     scheduler.start()
     import logging as _log
+
     _log.getLogger(__name__).info("📅 Background scheduler started")
-    
+
     # Trigger an incremental sync 30s after startup so statuses are fresh.
     # Guard against multiple tasks on uvicorn hot-reload (process re-entry).
     import asyncio
+
     _startup_guard = {"done": False}
+
     async def _startup_sync():
         if _startup_guard["done"]:
             return
@@ -94,14 +139,16 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(30)
         try:
             from app.services.sync_service import sync_orders
+
             _log.getLogger(__name__).info("📦 Startup incremental sync triggered")
             await sync_orders(sync_type="incremental")
         except Exception as e:
             _log.getLogger(__name__).warning(f"Startup sync failed (non-critical): {e}")
+
     asyncio.create_task(_startup_sync())
-    
+
     yield
-    
+
     # Shutdown scheduler gracefully
     scheduler.shutdown(wait=False)
 
@@ -110,16 +157,24 @@ app = FastAPI(
     title="AWB Print Manager",
     description="API for managing AWB printing with Frisbo integration",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS Configuration — configurable via ALLOWED_ORIGINS env var
 import os
-cors_origins = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else [
-    "http://localhost:3000", "http://localhost:5173", "http://localhost:5174",
-    "http://localhost:5143",
-    "https://awb.arona.ro", "http://awb.arona.ro",
-]
+
+cors_origins = (
+    os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if os.getenv("ALLOWED_ORIGINS")
+    else [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5143",
+        "https://awb.arona.ro",
+        "http://awb.arona.ro",
+    ]
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -130,6 +185,7 @@ app.add_middleware(
 
 # Activity tracking middleware (must be added AFTER CORS)
 from app.middleware.activity_middleware import ActivityMiddleware
+
 app.add_middleware(ActivityMiddleware)
 
 # Include API routers
@@ -142,25 +198,40 @@ app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 app.include_router(sku_costs.router, prefix="/api", tags=["sku-costs"])
 app.include_router(presets.router, prefix="/api/presets", tags=["presets"])
-app.include_router(profitability_config.router, prefix="/api", tags=["profitability-config"])
+app.include_router(
+    profitability_config.router, prefix="/api", tags=["profitability-config"]
+)
 app.include_router(exchange_rates.router, prefix="/api", tags=["exchange-rates"])
 app.include_router(courier_csv.router, prefix="/api/courier-csv", tags=["courier-csv"])
-app.include_router(business_costs.router, prefix="/api/business-costs", tags=["business-costs"])
+app.include_router(
+    business_costs.router, prefix="/api/business-costs", tags=["business-costs"]
+)
 app.include_router(sku_risk.router, prefix="/api", tags=["sku-risk"])
 app.include_router(sales_velocity.router, prefix="/api", tags=["sales-velocity"])
 app.include_router(sku_profitability.router, prefix="/api", tags=["sku-profitability"])
-app.include_router(sku_marketing_costs.router, prefix="/api", tags=["sku-marketing-costs"])
+app.include_router(
+    sku_marketing_costs.router, prefix="/api", tags=["sku-marketing-costs"]
+)
 app.include_router(system.router, prefix="/api/system", tags=["system"])
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(purchase_orders.router, prefix="/api", tags=["purchase-orders"])
-app.include_router(purchase_order_mgmt.router, prefix="/api", tags=["purchase-orders-management"])
+app.include_router(
+    purchase_order_mgmt.router, prefix="/api", tags=["purchase-orders-management"]
+)
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
-app.include_router(purchase_order_import.router, prefix="/api", tags=["purchase-orders-import"])
+app.include_router(
+    purchase_order_import.router, prefix="/api", tags=["purchase-orders-import"]
+)
 app.include_router(comision_agentie.router, prefix="/api", tags=["comision-agentie"])
 app.include_router(custom_products.router, prefix="/api")
+app.include_router(
+    analytics_filter_presets.router,
+    prefix="/api/analytics-filter-presets",
+    tags=["analytics-filter-presets"],
+)
+
 
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "version": "1.0.0"}
-

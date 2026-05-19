@@ -28,6 +28,7 @@ export { courierCsvApi } from './courierCsv'
 export { businessCostsApi } from './businessCosts'
 export { productsApi } from './products'
 export { comisionApi } from './comision'
+export { analyticsFilterPresetsApi } from './analyticsFilterPresets'
 
 // Default export: the shared Axios instance
 export { default } from './client'

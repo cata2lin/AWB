@@ -30,6 +30,11 @@ export { default as ContributionMarginTable } from './ContributionMarginTable'
 export { default as SubsidiaryBadge } from './SubsidiaryBadge'
 export { default as CurrencyNotice } from './CurrencyNotice'
 
+// Analytics filter primitives (Livrabilitate Produse + future tabs)
+export { default as AdvancedFiltersDrawer } from './AdvancedFiltersDrawer'
+export { default as IncludeExcludeModal } from './IncludeExcludeModal'
+export { default as FilterPresetsBar } from './FilterPresetsBar'
+
 // Hooks (re-exported for ergonomics)
 export { default as useConfirm } from '../../hooks/useConfirm'
 export { default as useColumnVisibility } from '../../hooks/useColumnVisibility'

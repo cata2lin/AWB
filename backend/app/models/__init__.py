@@ -20,15 +20,32 @@ from app.models.po_sync_log import PoSyncLog
 from app.models.generated_barcode import GeneratedBarcode
 from app.models.system_setting import SystemSetting
 from app.models.custom_product import CustomProduct
+from app.models.analytics_filter_preset import AnalyticsFilterPreset
 
 __all__ = [
-    "Store", "Order", "OrderAwb", "Rule", "RulePreset",
-    "PrintBatch", "PrintBatchItem",
-    "SkuCost", "SyncLog", "CourierCsvImport",
-    "ProfitabilityConfig", "ExchangeRate", "BusinessCost",
-    "MarketingDailyCost", "SkuMarketingCost",
-    "User", "UserActivity",
+    "Store",
+    "Order",
+    "OrderAwb",
+    "Rule",
+    "RulePreset",
+    "PrintBatch",
+    "PrintBatchItem",
+    "SkuCost",
+    "SyncLog",
+    "CourierCsvImport",
+    "ProfitabilityConfig",
+    "ExchangeRate",
+    "BusinessCost",
+    "MarketingDailyCost",
+    "SkuMarketingCost",
+    "User",
+    "UserActivity",
     "Product",
-    "PurchaseOrder", "PurchaseOrderItem", "PoSyncLog", "GeneratedBarcode",
-    "SystemSetting", "CustomProduct",
+    "PurchaseOrder",
+    "PurchaseOrderItem",
+    "PoSyncLog",
+    "GeneratedBarcode",
+    "SystemSetting",
+    "CustomProduct",
+    "AnalyticsFilterPreset",
 ]

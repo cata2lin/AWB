@@ -41,6 +41,18 @@ export default function Modal({
 }) {
     const dialogRef = useRef(null)
     const lastActiveRef = useRef(null)
+    // Callbacks change every render in many call sites (inline arrow funcs).
+    // We stash the latest references so the focus-trap effect can read them
+    // without listing them as deps — otherwise the effect re-fires on every
+    // parent render and steals focus back from inputs the user is typing into.
+    const onCloseRef = useRef(onClose)
+    const closeOnEscRef = useRef(closeOnEsc)
+    const initialFocusRefRef = useRef(initialFocusRef)
+    useEffect(() => {
+        onCloseRef.current = onClose
+        closeOnEscRef.current = closeOnEsc
+        initialFocusRefRef.current = initialFocusRef
+    })
 
     // Lock body scroll while open
     useEffect(() => {
@@ -50,15 +62,15 @@ export default function Modal({
         return () => { document.body.style.overflow = original }
     }, [open])
 
-    // ESC + focus management
+    // ESC + focus management — runs exactly when the modal opens/closes.
     useEffect(() => {
         if (!open) return
         lastActiveRef.current = document.activeElement
 
         // Move initial focus
         const moveFocus = () => {
-            if (initialFocusRef?.current?.focus) {
-                initialFocusRef.current.focus()
+            if (initialFocusRefRef.current?.current?.focus) {
+                initialFocusRefRef.current.current.focus()
                 return
             }
             const root = dialogRef.current
@@ -72,9 +84,9 @@ export default function Modal({
         setTimeout(moveFocus, 0)
 
         const onKey = (e) => {
-            if (e.key === 'Escape' && closeOnEsc) {
+            if (e.key === 'Escape' && closeOnEscRef.current) {
                 e.stopPropagation()
-                onClose?.()
+                onCloseRef.current?.()
                 return
             }
             if (e.key === 'Tab') {
@@ -102,7 +114,7 @@ export default function Modal({
                 try { lastActiveRef.current.focus() } catch { /* element may be gone */ }
             }
         }
-    }, [open, onClose, closeOnEsc, initialFocusRef])
+    }, [open])
 
     if (!open) return null
 
