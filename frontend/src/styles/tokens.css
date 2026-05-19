@@ -1,0 +1,64 @@
+/**
+ * Design tokens — semantic aliases over Tailwind's palette.
+ *
+ * Convention:
+ *  - `primary`  = main action / brand accent  → blue
+ *  - `success`  = positive outcomes           → green
+ *  - `warning`  = caution / needs attention   → amber
+ *  - `danger`   = destructive / error         → red
+ *  - `info`     = neutral informative         → sky
+ *  - `accent`   = secondary highlight         → violet
+ *  - `surface`  = card / panel backgrounds    → white / zinc-800
+ *  - `surface-2`= raised / sticky bg          → zinc-50 / zinc-900
+ *  - `muted`    = secondary text / icons      → zinc-500 / zinc-400
+ *  - `border`   = default border              → zinc-200 / zinc-700
+ *
+ * Tailwind 4: @theme exposes these as utilities (bg-primary-500, text-success, etc.).
+ * Components migrate gradually — both `bg-blue-600` and `bg-primary-600` work during the
+ * transition. New code MUST use semantic tokens; old code is migrated by phase.
+ */
+
+@theme {
+  /* ── Primary (blue) ─────────────────────────────────────────────── */
+  --color-primary-50:  oklch(0.97 0.014 254.6);
+  --color-primary-100: oklch(0.93 0.034 256.5);
+  --color-primary-200: oklch(0.88 0.06 254.0);
+  --color-primary-300: oklch(0.81 0.10 252.7);
+  --color-primary-400: oklch(0.71 0.143 254.6);
+  --color-primary-500: oklch(0.62 0.19 259.9);
+  --color-primary-600: oklch(0.55 0.21 263.0);  /* main action */
+  --color-primary-700: oklch(0.49 0.20 264.5);  /* hover */
+  --color-primary-800: oklch(0.42 0.18 265.7);
+  --color-primary-900: oklch(0.38 0.14 265.5);
+
+  /* ── Accent (violet) ────────────────────────────────────────────── */
+  --color-accent-50:  oklch(0.97 0.015 305.4);
+  --color-accent-100: oklch(0.94 0.033 306.5);
+  --color-accent-200: oklch(0.89 0.066 306.3);
+  --color-accent-500: oklch(0.61 0.225 296.0);
+  --color-accent-600: oklch(0.55 0.236 295.7);
+  --color-accent-700: oklch(0.48 0.232 295.4);
+
+  /* ── Semantic single-stop tokens ────────────────────────────────── */
+  --color-success: oklch(0.65 0.20 142.5);   /* green-600 */
+  --color-success-fg: oklch(0.39 0.13 142.0); /* green-700 */
+  --color-warning: oklch(0.69 0.18 76.5);    /* amber-500 */
+  --color-warning-fg: oklch(0.56 0.16 71.5); /* amber-700 */
+  --color-danger:  oklch(0.62 0.24 27.3);    /* red-600 */
+  --color-danger-fg: oklch(0.51 0.20 27.7); /* red-700 */
+  --color-info:    oklch(0.69 0.16 230.0);   /* sky-500 */
+  --color-info-fg: oklch(0.49 0.13 230.0); /* sky-700 */
+
+  /* ── Z-index layer tokens (codified) ────────────────────────────── */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-topbar: 30;
+  --z-sidebar-drawer: 40;
+  --z-modal-backdrop: 50;
+  --z-modal: 51;
+  --z-toast: 60;
+  --z-confirm: 70;
+
+  /* ── Animation tokens ───────────────────────────────────────────── */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+}

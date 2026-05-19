@@ -7,6 +7,7 @@ import { RefreshCw, Save, Plus, X, Package, Check, Trash2, Send, RotateCw, PenLi
 import { STATUS_CFG, TOM_CLS } from './POList'
 import POProductPicker from './POProductPicker'
 import { productsApi } from '../services/api/products'
+import useConfirm from '../hooks/useConfirm'
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const fmtCur = n => n == null ? '—' : `${Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON`
@@ -14,6 +15,7 @@ const fmtUsd = n => n == null ? '' : `$${Number(n).toLocaleString('ro-RO', { min
 const round2 = n => Math.round(n * 100) / 100
 
 export default function PODetail({ h }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [showLog, setShowLog] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [itemSearch, setItemSearch] = useState(h.search || '')
@@ -23,6 +25,17 @@ export default function PODetail({ h }) {
   // Use SKU as unique key for variant editing — product_uid can be empty/shared
   const [editingVariantSku, setEditingVariantSku] = useState(null)
   const [variantForm, setVariantForm] = useState({ v1: '', v2: '' })
+
+  const handleDeletePO = async (po) => {
+    const ok = await confirm({
+      title: 'Șterge comanda draft',
+      description: `Sigur ștergi comanda ${po.po_number || ''}? Această acțiune este ireversibilă.`,
+      confirmLabel: 'Da, șterge',
+      cancelLabel: 'Anulează',
+      variant: 'danger',
+    })
+    if (ok) await h.deletePO(po.id)
+  }
 
   const handleSaveVariants = async (uid, sku) => {
     try {
@@ -118,7 +131,7 @@ export default function PODetail({ h }) {
           }}>
         <div className={`flex items-center gap-1 ${className.includes('text-right') ? 'justify-end' : className.includes('text-center') ? 'justify-center' : ''}`}>
           {label}
-          {isActive ? (sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-500" /> : <ArrowDown className="w-3 h-3 text-indigo-500" />) : <ArrowUpDown className="w-3 h-3 text-zinc-300 dark:text-zinc-600" />}
+          {isActive ? (sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-primary-500" /> : <ArrowDown className="w-3 h-3 text-primary-500" />) : <ArrowUpDown className="w-3 h-3 text-zinc-300 dark:text-zinc-600" />}
         </div>
       </th>
     )
@@ -143,9 +156,9 @@ export default function PODetail({ h }) {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-zinc-800 dark:text-white flex items-center gap-2">
             {isCreate ? (
-              <><Plus className="w-5 h-5 text-indigo-500" /> New Purchase Order</>
+              <><Plus className="w-5 h-5 text-primary-500" /> New Purchase Order</>
             ) : h.mode === 'edit' ? (
-              <><PenLine className="w-5 h-5 text-indigo-500" /> Editing {po.po_number}</>
+              <><PenLine className="w-5 h-5 text-primary-500" /> Editing {po.po_number}</>
             ) : (
               <><span className="font-mono text-lg">{po.po_number}</span>
               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_CFG[po.status]?.cls || ''}`}>
@@ -155,7 +168,7 @@ export default function PODetail({ h }) {
           </h3>
           <div className="flex items-center gap-2">
             {!isCreate && h.mode === 'detail' && ['DRAFT', 'SENT', 'ORDERED', 'APPROVED', 'PARTIALLY_RECEIVED'].includes(po?.status) && (
-              <button onClick={h.startEdit} className="p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 text-xs font-medium">
+              <button onClick={h.startEdit} className="p-1.5 text-zinc-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 text-xs font-medium">
                 <PenLine className="w-4 h-4" /> Edit
               </button>
             )}
@@ -199,7 +212,7 @@ export default function PODetail({ h }) {
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Expected Arrival</label>
               <input type="date" value={h.poForm.expected_arrival_date} onChange={e => h.setPoForm(p => ({ ...p, expected_arrival_date: e.target.value }))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white dark:[color-scheme:dark]" />
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Notes</label>
@@ -218,7 +231,7 @@ export default function PODetail({ h }) {
 
         {/* TOM Sync Bar (detail mode — only for TOM-enabled categories) */}
         {!isCreate && isTomEnabled && (
-          <div className="mt-4 flex items-center gap-3 flex-wrap p-3 rounded-lg bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-500/5 dark:to-indigo-500/5 border border-sky-200 dark:border-sky-500/20">
+          <div className="mt-4 flex items-center gap-3 flex-wrap p-3 rounded-lg bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20">
             <span className="text-xs font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider">TOM</span>
             {hasTom ? (
               <span className={`text-sm font-mono font-semibold ${TOM_CLS[po.tom_status] || 'text-zinc-400'}`}>
@@ -234,7 +247,7 @@ export default function PODetail({ h }) {
               )}
               {hasTom && (
                 <button onClick={() => h.tomAction(po.id, 'refresh')} disabled={!!h.tomBusy}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-40">
                   {h.tomBusy === 'refresh' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />} Refresh
                 </button>
               )}
@@ -265,9 +278,9 @@ export default function PODetail({ h }) {
         <div className="px-4 pt-3">
           <button onClick={() => setShowPicker(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold 
-              text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 
-              hover:bg-indigo-100 dark:hover:bg-indigo-500/15 
-              border-2 border-dashed border-indigo-300 dark:border-indigo-500/30
+              text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-500/10 
+              hover:bg-primary-100 dark:hover:bg-primary-500/15 
+              border-2 border-dashed border-primary-300 dark:border-primary-500/30
               rounded-xl transition-all hover:scale-[1.01]">
             <Plus className="w-5 h-5" />
             Search & Add Products
@@ -351,7 +364,7 @@ export default function PODetail({ h }) {
                             e.stopPropagation()
                             setEditingVariantSku(editingVariantSku === item.sku ? null : item.sku)
                             setVariantForm({ v1: item.tom_variant_1 || '', v2: item.tom_variant_2 || '' })
-                          }} className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 z-10 ml-auto flex-shrink-0" title="Edit TOM Variants">
+                          }} className="p-1 text-zinc-400 hover:text-primary-600 dark:hover:text-primary-400 z-10 ml-auto flex-shrink-0" title="Edit TOM Variants">
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -374,7 +387,7 @@ export default function PODetail({ h }) {
                             </div>
                             <div className="flex gap-2 pt-1">
                               <button onClick={() => setEditingVariantSku(null)} className="flex-1 px-2 py-1.5 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded hover:bg-zinc-200">Cancel</button>
-                              <button onClick={() => handleSaveVariants(item.product_uid, item.sku)} className="flex-1 px-2 py-1.5 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700">Save</button>
+                              <button onClick={() => handleSaveVariants(item.product_uid, item.sku)} className="flex-1 px-2 py-1.5 text-[10px] font-bold bg-primary-600 text-white rounded hover:bg-primary-700">Save</button>
                             </div>
                           </div>
                         </div>
@@ -495,7 +508,7 @@ export default function PODetail({ h }) {
           {isEditable ? (<>
             <button onClick={isCreate ? h.cancelCreate : () => { h.setMode('detail'); h.setToast(null) }} className="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
             <button onClick={isCreate ? h.submitCreate : h.saveEdit} disabled={h.saving || items.length === 0}
-              className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
+              className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-40">
               {h.saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {isCreate ? 'Create PO' : 'Save Changes'}
             </button>
           </>) : (<>
@@ -508,7 +521,7 @@ export default function PODetail({ h }) {
               <button onClick={() => h.updateStatus(po.id, 'APPROVED')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
                 <CheckCircle2 className="w-4 h-4" /> Approve
               </button>
-              <button onClick={() => h.deletePO(po.id)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
+              <button onClick={() => handleDeletePO(po)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
                 <Trash2 className="w-4 h-4" /> Delete
               </button>
             </>)}
@@ -552,6 +565,7 @@ export default function PODetail({ h }) {
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   )
 }

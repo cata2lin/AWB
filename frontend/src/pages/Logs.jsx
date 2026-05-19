@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { RefreshCw, Terminal, Server, Database, Clock, Search, Filter, AlertTriangle, CheckCircle, XCircle, Loader, Activity, Wifi, WifiOff, Users, UserCheck, UserX, Trash2, Plus } from 'lucide-react'
+import { toastError, toastSuccess } from '../utils/toast'
+import useConfirm from '../hooks/useConfirm'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -9,22 +11,23 @@ const getAuthHeaders = () => {
 }
 
 const LEVEL_STYLES = {
-    DEBUG: 'text-zinc-400',
-    INFO: 'text-blue-400',
-    WARNING: 'text-amber-400',
-    ERROR: 'text-red-400',
-    CRITICAL: 'text-red-500 font-bold',
+    DEBUG: 'text-zinc-500 dark:text-zinc-400',
+    INFO: 'text-blue-700 dark:text-blue-300',
+    WARNING: 'text-amber-700 dark:text-amber-300',
+    ERROR: 'text-red-700 dark:text-red-300',
+    CRITICAL: 'text-red-700 dark:text-red-200 font-bold',
 }
 
 const LEVEL_BG = {
-    DEBUG: 'bg-zinc-800',
-    INFO: 'bg-blue-900/30',
-    WARNING: 'bg-amber-900/30',
-    ERROR: 'bg-red-900/30',
-    CRITICAL: 'bg-red-900/50',
+    DEBUG: 'bg-zinc-100 dark:bg-zinc-800',
+    INFO: 'bg-blue-50 dark:bg-blue-900/30',
+    WARNING: 'bg-amber-50 dark:bg-amber-900/30',
+    ERROR: 'bg-red-50 dark:bg-red-900/30',
+    CRITICAL: 'bg-red-100 dark:bg-red-900/50',
 }
 
 export default function Logs() {
+    const { confirm, dialog: confirmDialog } = useConfirm()
     const [logs, setLogs] = useState([])
     const [systemInfo, setSystemInfo] = useState(null)
     const [syncHistory, setSyncHistory] = useState([])
@@ -111,17 +114,25 @@ export default function Logs() {
                 setShowAddUser(false)
                 setNewUser({ username: '', password: '', display_name: '', role: 'admin' })
                 fetchUserActivity()
+                toastSuccess('Utilizator creat')
             } else {
                 const err = await res.json()
-                alert(err.detail || 'Failed to create user')
+                toastError(err.detail || 'Eroare la crearea utilizatorului')
             }
         } catch (err) {
-            alert('Error creating user: ' + err.message)
+            toastError(err)
         }
     }
 
     const handleDeleteUser = async (userId, username) => {
-        if (!confirm(`Delete user "${username}"?`)) return
+        const ok = await confirm({
+            title: 'Șterge utilizator',
+            description: `Sigur ștergi utilizatorul "${username}"? Această acțiune este ireversibilă.`,
+            confirmLabel: 'Da, șterge',
+            cancelLabel: 'Anulează',
+            variant: 'danger',
+        })
+        if (!ok) return
         try {
             const res = await fetch(`${API}/api/auth/users/${userId}`, {
                 method: 'DELETE',
@@ -129,12 +140,13 @@ export default function Logs() {
             })
             if (res.ok) {
                 fetchUserActivity()
+                toastSuccess('Utilizator șters')
             } else {
                 const err = await res.json()
-                alert(err.detail || 'Failed to delete user')
+                toastError(err.detail || 'Eroare la ștergere')
             }
         } catch (err) {
-            alert('Error: ' + err.message)
+            toastError(err)
         }
     }
 
@@ -177,12 +189,12 @@ export default function Logs() {
     ]
 
     return (
-        <div className="p-6 space-y-4 animate-fade-in bg-zinc-50 dark:bg-zinc-950 min-h-screen">
+        <div className="p-6 space-y-4 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight flex items-center gap-2">
-                        <Activity className="w-6 h-6 text-indigo-500" /> System Monitor
+                        <Activity className="w-6 h-6 text-primary-500" /> System Monitor
                     </h1>
                     <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
                         Live logs, sync status, users & system health
@@ -201,7 +213,7 @@ export default function Logs() {
                     </button>
                     <button
                         onClick={fetchAll}
-                        className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors"
                     >
                         <RefreshCw className="w-4 h-4" /> Refresh
                     </button>
@@ -245,7 +257,7 @@ export default function Logs() {
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${activeTab === tab.id
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                            ? 'bg-primary-600 text-white '
                             : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
                             }`}
                     >
@@ -256,7 +268,7 @@ export default function Logs() {
 
             {loading ? (
                 <div className="flex items-center justify-center py-20">
-                    <Loader className="w-8 h-8 text-indigo-500 animate-spin" />
+                    <Loader className="w-8 h-8 text-primary-500 animate-spin" />
                 </div>
             ) : (
                 <>
@@ -280,7 +292,7 @@ export default function Logs() {
                                             onClick={() => { setSearchQuery(preset.search); setLevelFilter(preset.level) }}
                                             className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
                                                 searchQuery === preset.search && levelFilter === preset.level
-                                                    ? 'bg-indigo-600 text-white'
+                                                    ? 'bg-primary-600 text-white'
                                                     : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 border border-zinc-600'
                                             }`}
                                         >
@@ -295,7 +307,7 @@ export default function Logs() {
                                             placeholder="Search logs..."
                                             value={searchQuery}
                                             onChange={(e) => setSearchQuery(e.target.value)}
-                                            className="pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-600 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 w-48 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                            className="pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-600 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 w-48 focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
                                         />
                                     </div>
                                     <select
@@ -344,7 +356,7 @@ export default function Logs() {
                     {activeTab === 'sync' && (
                         <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden">
                             <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-2">
-                                <RefreshCw className="w-5 h-5 text-indigo-500" />
+                                <RefreshCw className="w-5 h-5 text-primary-500" />
                                 <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Sync History</h3>
                                 <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">{syncHistory.length} entries</span>
                             </div>
@@ -413,13 +425,25 @@ export default function Logs() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-2.5">
-                                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                                                        sync.sync_type === 'incremental'
-                                                            ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300'
-                                                            : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                                                    }`}>
-                                                        {sync.sync_type === 'incremental' ? '⚡ INCR' : '📦 FULL'}
-                                                    </span>
+                                                    {(() => {
+                                                        const t = sync.sync_type
+                                                        const map = {
+                                                            'incremental': { label: '⚡ INCR', cls: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300' },
+                                                            'recent_7d': { label: '📦 7D', cls: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300' },
+                                                            'window_30d': { label: '📦 30D', cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' },
+                                                            'deep_90d': { label: '📦 90D', cls: 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' },
+                                                            'full': { label: '📦 FULL', cls: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' },
+                                                            'custom': { label: '🛠 CUSTOM', cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' },
+                                                            '3_day': { label: '📦 3D', cls: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300' },
+                                                            '45_day': { label: '📦 45D', cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' },
+                                                        }
+                                                        const entry = map[t] || { label: (t || '—').toUpperCase(), cls: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300' }
+                                                        return (
+                                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${entry.cls}`}>
+                                                                {entry.label}
+                                                            </span>
+                                                        )
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-300">{formatTime(sync.started_at)}</td>
                                                 <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-300 font-mono">{formatDuration(sync.duration_seconds)}</td>
@@ -474,12 +498,12 @@ export default function Logs() {
                             {/* Users Table */}
                             <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden">
                                 <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-2">
-                                    <Users className="w-5 h-5 text-indigo-500" />
+                                    <Users className="w-5 h-5 text-primary-500" />
                                     <h3 className="text-lg font-bold text-zinc-900 dark:text-white">User Activity</h3>
                                     <div className="flex-1" />
                                     <button
                                         onClick={() => setShowAddUser(!showAddUser)}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition-colors"
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium transition-colors"
                                     >
                                         <Plus className="w-3.5 h-3.5" /> Add User
                                     </button>
@@ -582,7 +606,7 @@ export default function Logs() {
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${u.role === 'admin' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${u.role === 'admin' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>
                                                             {u.role}
                                                         </span>
                                                     </td>
@@ -591,7 +615,7 @@ export default function Logs() {
                                                     <td className="px-4 py-3 text-xs text-right font-medium text-zinc-800 dark:text-zinc-200">{u.requests_today.toLocaleString()}</td>
                                                     <td className="px-4 py-3 text-xs text-right font-medium text-zinc-800 dark:text-zinc-200">{u.requests_24h.toLocaleString()}</td>
                                                     <td className="px-4 py-3 text-xs text-right font-medium text-zinc-800 dark:text-zinc-200">{u.requests_total.toLocaleString()}</td>
-                                                    <td className="px-4 py-3 text-xs text-right font-medium text-indigo-600 dark:text-indigo-400">{u.avg_requests_per_hour}</td>
+                                                    <td className="px-4 py-3 text-xs text-right font-medium text-primary-600 dark:text-primary-400">{u.avg_requests_per_hour}</td>
                                                     <td className="px-4 py-3 text-right">
                                                         <button
                                                             onClick={() => handleDeleteUser(u.id, u.username)}
@@ -615,7 +639,7 @@ export default function Logs() {
                         <div className="space-y-4">
                             <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-5">
                                 <h3 className="text-base font-bold text-zinc-900 dark:text-white flex items-center gap-2 mb-4">
-                                    <Server className="w-5 h-5 text-indigo-500" /> Server
+                                    <Server className="w-5 h-5 text-primary-500" /> Server
                                 </h3>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div>
@@ -727,6 +751,7 @@ export default function Logs() {
                     )}
                 </>
             )}
+            {confirmDialog}
         </div>
     )
 }

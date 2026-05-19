@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/useAppStore'
 import { useStores, useSyncStatus, useTriggerSync, useOrderStats, useSyncHistory } from '../hooks/useApi'
@@ -6,8 +6,9 @@ import { printApi } from '../services/api'
 import { printBatchPdf } from '../utils/printUtils'
 import StoreCard from '../components/StoreCard'
 import PrintPreview from '../components/PrintPreview'
-import { Package, Printer, TrendingUp, RefreshCw, Clock, Download, Eye, AlertCircle, CheckCircle, ChevronDown, Calendar, Store, Activity, Filter } from 'lucide-react'
+import { Package, Printer, TrendingUp, RefreshCw, Clock, Download, Eye, AlertCircle, CheckCircle, ChevronDown, Calendar, Store, Activity, Filter, Search, X, CheckSquare, Square } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
+import { toastError, toastSuccess } from '../utils/toast'
 
 export default function Dashboard() {
     const { selectedStoreIds, batchSize, printChunkSize, printChunkDelay } = useAppStore()
@@ -25,6 +26,7 @@ export default function Dashboard() {
     const [customStoreUids, setCustomStoreUids] = useState([])
     const [customDateFrom, setCustomDateFrom] = useState('')
     const [customDateTo, setCustomDateTo] = useState('')
+    const [customStoreSearch, setCustomStoreSearch] = useState('')
 
     // Print Date Filter state
     const [printDateFrom, setPrintDateFrom] = useState('')
@@ -36,6 +38,42 @@ export default function Dashboard() {
     const { data: syncStatus } = useSyncStatus()
     const triggerSync = useTriggerSync()
     const { data: syncHistory = [] } = useSyncHistory(15)
+
+    // Group stores by country suffix (`.ro` / `.bg` / `.cz` / `.pl` / other)
+    // and filter by the search box. Memoised so we don't recompute per render.
+    // Must be declared AFTER `useStores()` — otherwise the `stores` reference in
+    // the dependency array hits the TDZ and throws ReferenceError at render.
+    const storeGroups = useMemo(() => {
+        const q = customStoreSearch.trim().toLowerCase()
+        const groups = { '.ro': [], '.bg': [], '.cz': [], '.pl': [], other: [] }
+        for (const s of stores) {
+            if (q && !(s.name || '').toLowerCase().includes(q)) continue
+            const name = (s.name || '').toLowerCase()
+            if (name.endsWith('.ro')) groups['.ro'].push(s)
+            else if (name.endsWith('.bg')) groups['.bg'].push(s)
+            else if (name.endsWith('.cz')) groups['.cz'].push(s)
+            else if (name.endsWith('.pl')) groups['.pl'].push(s)
+            else groups.other.push(s)
+        }
+        return groups
+    }, [stores, customStoreSearch])
+
+    const visibleStoreUids = useMemo(
+        () => Object.values(storeGroups).flatMap(g => g.map(s => s.uid)),
+        [storeGroups],
+    )
+    const allVisibleSelected = visibleStoreUids.length > 0 && visibleStoreUids.every(uid => customStoreUids.includes(uid))
+
+    /** Quick-set the date range to the last N days (Romania-local, today inclusive). */
+    const setQuickRange = (days) => {
+        const today = new Date()
+        const from = new Date(today)
+        from.setDate(today.getDate() - (days - 1))
+        const pad = (n) => String(n).padStart(2, '0')
+        const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+        setCustomDateFrom(fmt(from))
+        setCustomDateTo(fmt(today))
+    }
 
     const totalUnfulfilled = stats?.unprinted_orders ?? stores.reduce((sum, s) => sum + (s.unprinted_count || 0), 0)
 
@@ -50,19 +88,40 @@ export default function Dashboard() {
         ? stores.filter(s => selectedStoreIds.includes(s.uid)).reduce((sum, s) => sum + (s.unprinted_count || 0), 0)
         : totalUnfulfilled
 
-    const handleSync = (syncType = '45_day') => {
+    const handleSync = (syncType = 'window_30d') => {
         setShowSyncMenu(false)
-        triggerSync.mutate({ sync_type: syncType })
+        triggerSync.mutate(
+            { sync_type: syncType },
+            {
+                onSuccess: () => toastSuccess('Sincronizare pornită'),
+                onError: (err) => toastError(err),
+            }
+        )
     }
 
     const handleCustomSync = () => {
         if (!customDateFrom) return
-        triggerSync.mutate({
-            sync_type: 'custom',
-            store_uids: customStoreUids.length > 0 ? customStoreUids : null,
-            date_from: customDateFrom ? new Date(customDateFrom).toISOString() : null,
-            date_to: customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : null,
-        })
+        // Normalise date strings to Romania-local plain ISO (no Z, no millis).
+        // Frisbo's API accepts naive ISO datetimes — see app/services/frisbo/client.py.
+        // Selecting all stores (or none) is equivalent → send null so the backend
+        // can iterate all orgs without applying a Python-side filter at all.
+        const localIso = (yyyymmdd, end = false) => {
+            if (!yyyymmdd) return null
+            return end ? `${yyyymmdd}T23:59:59` : `${yyyymmdd}T00:00:00`
+        }
+        const isAllStores = customStoreUids.length === 0 || customStoreUids.length === stores.length
+        triggerSync.mutate(
+            {
+                sync_type: 'custom',
+                store_uids: isAllStores ? null : customStoreUids,
+                date_from: localIso(customDateFrom, false),
+                date_to: localIso(customDateTo, true),
+            },
+            {
+                onSuccess: () => toastSuccess(`Sincronizare personalizată pornită — ${isAllStores ? 'toate magazinele' : customStoreUids.length + ' magazine'}`),
+                onError: (err) => toastError(err),
+            }
+        )
         setShowCustomSync(false)
         setShowSyncMenu(false)
     }
@@ -83,6 +142,7 @@ export default function Dashboard() {
             setShowPreview(true)
         } catch (err) {
             setPrintError(`Failed to get preview: ${err.message}`)
+            toastError(err)
         }
     }
 
@@ -143,6 +203,7 @@ export default function Dashboard() {
             // Generate the batch
             const result = await printApi.generateBatch(allOrderUids)
             setPrintResult(result)
+            toastSuccess(`Batch generat: ${result.printed_orders ?? allOrderUids.length} comenzi`)
 
             // Open native print dialog
             if (result.batch_id) {
@@ -157,21 +218,28 @@ export default function Dashboard() {
         } catch (err) {
             const detail = err.response?.data?.detail || err.message
             setPrintError(`Print failed: ${detail}`)
+            toastError(detail)
         } finally {
             setIsPrinting(false)
         }
     }
 
-    // Sync type badge config
+    // Sync type badge config — covers the new 4-tier strategy plus legacy keys
+    // and product/custom/full syncs.
     const getSyncTypeBadge = (syncType) => {
         const config = {
-            '45_day': { label: '45 Days', className: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' },
             'incremental': { label: 'Incremental', className: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+            'recent_7d': { label: '7 Days', className: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300' },
+            'window_30d': { label: '30 Days', className: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' },
+            'deep_90d': { label: '90 Days', className: 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300' },
             'full': { label: 'Full', className: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300' },
             'custom': { label: 'Custom', className: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300' },
             'product': { label: 'Products', className: 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300' },
+            // Legacy keys (kept so historic SyncLog rows still render correctly)
+            '3_day': { label: '3 Days (legacy)', className: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300' },
+            '45_day': { label: '45 Days (legacy)', className: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' },
         }
-        return config[syncType] || { label: syncType || '45 Days', className: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300' }
+        return config[syncType] || { label: syncType || '—', className: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300' }
     }
 
     const getStatusBadge = (status) => {
@@ -197,7 +265,7 @@ export default function Dashboard() {
     if (storesLoading) {
         return (
             <div className="p-6 flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
             </div>
         )
     }
@@ -218,38 +286,50 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="p-6 pb-28 space-y-6 animate-fade-in bg-zinc-50 dark:bg-zinc-950 min-h-screen">
+        <div className="p-6 pb-28 space-y-6 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">Dashboard</h1>
                     <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
-                        Overview of all stores and pending orders
+                        Privire de ansamblu asupra magazinelor și comenzilor în așteptare
                     </p>
                 </div>
 
-                {/* Sync Button with Dropdown */}
+                {/* Last-sync badge + custom-sync trigger. Tier syncs live in the
+                    topbar SyncMenu now. */}
                 <div className="flex items-center gap-3">
                     {syncStatus?.last_sync && (
                         <span className="text-xs text-zinc-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            Last sync: {formatDistanceToNow(new Date(syncStatus.last_sync), { addSuffix: true })}
+                            Ultima sincronizare: {formatDistanceToNow(new Date(syncStatus.last_sync), { addSuffix: true })}
                         </span>
                     )}
-                    <div className="relative">
+                    <button
+                        type="button"
+                        onClick={() => setShowCustomSync((v) => !v)}
+                        disabled={triggerSync.isPending || syncStatus?.status === 'running'}
+                        className="px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-500/50 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 text-sm font-medium inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <Filter className="w-3.5 h-3.5" />
+                        Custom sync
+                    </button>
+                    {/* Legacy inline menu kept hidden to preserve handler bindings during the
+                        Phase 2 refactor — sync tiers now live in the topbar SyncMenu. */}
+                    <div className="relative hidden">
                         <div className="flex">
                             <button
-                                onClick={() => handleSync('45_day')}
+                                onClick={() => handleSync('window_30d')}
                                 disabled={triggerSync.isPending || syncStatus?.status === 'running'}
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-l-lg text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+                                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-l-lg text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 "
                             >
                                 <RefreshCw className={`w-4 h-4 ${(triggerSync.isPending || syncStatus?.status === 'running') ? 'animate-spin' : ''}`} />
-                                Sync 45 Days
+                                Sync 30 Days
                             </button>
                             <button
                                 onClick={() => setShowSyncMenu(!showSyncMenu)}
                                 disabled={triggerSync.isPending || syncStatus?.status === 'running'}
-                                className="px-2 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-r-lg border-l border-indigo-500/50 disabled:opacity-50 transition-all shadow-lg shadow-indigo-500/20"
+                                className="px-2 py-2 bg-primary-700 hover:bg-primary-800 text-white rounded-r-lg border-l border-primary-500/50 disabled:opacity-50 transition-all "
                             >
                                 <ChevronDown className="w-4 h-4" />
                             </button>
@@ -257,25 +337,45 @@ export default function Dashboard() {
 
                         {/* Dropdown Menu */}
                         {showSyncMenu && (
-                            <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-xl z-50 py-1 animate-fade-in">
-                                <button
-                                    onClick={() => handleSync('45_day')}
-                                    className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 flex items-center gap-3 transition-colors"
-                                >
-                                    <Clock className="w-4 h-4 text-blue-500" />
-                                    <div>
-                                        <div className="font-medium">Sync 45 Days</div>
-                                        <div className="text-xs text-zinc-400">Last 45 days of orders</div>
-                                    </div>
-                                </button>
+                            <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-xl z-50 py-1 animate-fade-in">
                                 <button
                                     onClick={() => handleSync('incremental')}
                                     className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 flex items-center gap-3 transition-colors"
                                 >
                                     <Activity className="w-4 h-4 text-emerald-500" />
                                     <div>
-                                        <div className="font-medium">Quick Refresh</div>
-                                        <div className="text-xs text-zinc-400">Only changed orders (fast)</div>
+                                        <div className="font-medium">Quick refresh</div>
+                                        <div className="text-xs text-zinc-400">Only orders changed since last sync</div>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => handleSync('recent_7d')}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 flex items-center gap-3 transition-colors"
+                                >
+                                    <Clock className="w-4 h-4 text-sky-500" />
+                                    <div>
+                                        <div className="font-medium">Sync 7 days</div>
+                                        <div className="text-xs text-zinc-400">Last 7 days, updated_at window</div>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => handleSync('window_30d')}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 flex items-center gap-3 transition-colors"
+                                >
+                                    <Clock className="w-4 h-4 text-blue-500" />
+                                    <div>
+                                        <div className="font-medium">Sync 30 days</div>
+                                        <div className="text-xs text-zinc-400">Last 30 days, catches late status changes</div>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => handleSync('deep_90d')}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 flex items-center gap-3 transition-colors"
+                                >
+                                    <Clock className="w-4 h-4 text-primary-500" />
+                                    <div>
+                                        <div className="font-medium">Deep sync (90 days)</div>
+                                        <div className="text-xs text-zinc-400">Long-tail catch-up</div>
                                     </div>
                                 </button>
                                 <button
@@ -324,75 +424,167 @@ export default function Dashboard() {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Date Range */}
-                        <div>
-                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 flex items-center gap-1">
-                                <Calendar className="w-3 h-3" /> Date From *
-                            </label>
-                            <input
-                                type="date"
-                                value={customDateFrom}
-                                onChange={(e) => setCustomDateFrom(e.target.value)}
-                                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white dark:[color-scheme:dark] text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 flex items-center gap-1">
-                                <Calendar className="w-3 h-3" /> Date To
-                            </label>
-                            <input
-                                type="date"
-                                value={customDateTo}
-                                onChange={(e) => setCustomDateTo(e.target.value)}
-                                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white dark:[color-scheme:dark] text-sm"
-                            />
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_1.4fr] gap-4">
+                        {/* Date Range — manual + quick presets */}
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" /> Date From <span className="text-amber-500">*</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    value={customDateFrom}
+                                    onChange={(e) => setCustomDateFrom(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white dark:[color-scheme:dark] text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" /> Date To
+                                </label>
+                                <input
+                                    type="date"
+                                    value={customDateTo}
+                                    onChange={(e) => setCustomDateTo(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white dark:[color-scheme:dark] text-sm"
+                                />
+                            </div>
                         </div>
 
-                        {/* Store Selection */}
+                        {/* Quick-period buttons */}
                         <div>
                             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 flex items-center gap-1">
-                                <Store className="w-3 h-3" /> Stores {customStoreUids.length > 0 ? `(${customStoreUids.length})` : '(all)'}
+                                <Clock className="w-3 h-3" /> Quick periods
                             </label>
-                            <div className="flex flex-wrap gap-1.5 max-h-[72px] overflow-auto">
-                                {stores.map(s => (
-                                    <label
-                                        key={s.uid}
-                                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg cursor-pointer border transition-colors ${
-                                            customStoreUids.includes(s.uid)
-                                                ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500/50 text-indigo-700 dark:text-indigo-300'
-                                                : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-600'
-                                        }`}
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { label: 'Azi', days: 1 },
+                                    { label: 'Ultimele 2 zile', days: 2 },
+                                    { label: 'Ultimele 7 zile', days: 7 },
+                                    { label: 'Ultimele 30 zile', days: 30 },
+                                ].map(p => (
+                                    <button
+                                        key={p.days}
+                                        onClick={() => setQuickRange(p.days)}
+                                        className="px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:border-amber-300 dark:hover:border-amber-500/50 hover:bg-amber-50 dark:hover:bg-amber-500/5 transition-colors"
                                     >
-                                        <input
-                                            type="checkbox"
-                                            checked={customStoreUids.includes(s.uid)}
-                                            onChange={() => toggleCustomStore(s.uid)}
-                                            className="hidden"
-                                        />
-                                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color_code || '#6B7280' }} />
-                                        {s.name}
-                                    </label>
+                                        {p.label}
+                                    </button>
                                 ))}
+                            </div>
+                        </div>
+
+                        {/* Store Selection — with search, Select all, country grouping */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                                    <Store className="w-3 h-3" />
+                                    Stores
+                                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${customStoreUids.length === 0 ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>
+                                        {customStoreUids.length === 0 ? 'toate' : `${customStoreUids.length} / ${stores.length}`}
+                                    </span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCustomStoreUids(allVisibleSelected ? [] : visibleStoreUids)}
+                                        className="text-[11px] font-medium text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+                                    >
+                                        {allVisibleSelected ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                                        {allVisibleSelected ? 'Niciunul' : 'Toate'}
+                                    </button>
+                                    {customStoreUids.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setCustomStoreUids([])}
+                                            className="text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                            title="Resetează la TOATE"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="relative mb-2">
+                                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    value={customStoreSearch}
+                                    onChange={(e) => setCustomStoreSearch(e.target.value)}
+                                    placeholder="Caută magazin..."
+                                    className="w-full pl-7 pr-7 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white text-xs"
+                                />
+                                {customStoreSearch && (
+                                    <button onClick={() => setCustomStoreSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="max-h-[180px] overflow-y-auto space-y-2 pr-1">
+                                {Object.entries(storeGroups).filter(([, list]) => list.length > 0).map(([country, list]) => (
+                                    <div key={country}>
+                                        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 mb-1">
+                                            <span>{country === 'other' ? 'Alte' : country.replace('.', '').toUpperCase()}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const groupUids = list.map(s => s.uid)
+                                                    const allInGroupSelected = groupUids.every(uid => customStoreUids.includes(uid))
+                                                    if (allInGroupSelected) {
+                                                        setCustomStoreUids(prev => prev.filter(uid => !groupUids.includes(uid)))
+                                                    } else {
+                                                        setCustomStoreUids(prev => [...new Set([...prev, ...groupUids])])
+                                                    }
+                                                }}
+                                                className="normal-case font-normal text-[10px] text-primary-600 dark:text-primary-400 hover:underline"
+                                            >
+                                                {list.every(s => customStoreUids.includes(s.uid)) ? 'des.' : `+${list.length}`}
+                                            </button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {list.map(s => {
+                                                const selected = customStoreUids.includes(s.uid)
+                                                return (
+                                                    <button
+                                                        key={s.uid}
+                                                        type="button"
+                                                        onClick={() => toggleCustomStore(s.uid)}
+                                                        className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border transition-colors ${selected
+                                                            ? 'bg-primary-50 dark:bg-primary-500/15 border-primary-300 dark:border-primary-500/50 text-primary-700 dark:text-primary-300'
+                                                            : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600'}`}
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color_code || '#6B7280' }} />
+                                                        {s.name}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                                {visibleStoreUids.length === 0 && (
+                                    <div className="text-xs text-zinc-400 text-center py-4">Niciun magazin găsit</div>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 mt-4">
+                    <div className="flex items-center gap-3 mt-4 flex-wrap">
                         <button
                             onClick={handleCustomSync}
                             disabled={!customDateFrom || triggerSync.isPending}
-                            className="px-5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2"
+                            className="px-5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2"
                         >
                             <RefreshCw className={`w-4 h-4 ${triggerSync.isPending ? 'animate-spin' : ''}`} />
                             Start Custom Sync
                         </button>
-                        <span className="text-xs text-zinc-400">
-                            {customStoreUids.length > 0
-                                ? `${customStoreUids.length} store(s) selected`
-                                : 'All stores'}
-                            {customDateFrom && ` · From ${customDateFrom}`}
-                            {customDateTo && ` to ${customDateTo}`}
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                            {customStoreUids.length === 0
+                                ? <span className="font-medium text-primary-600 dark:text-primary-400">Toate magazinele</span>
+                                : customStoreUids.length === stores.length
+                                    ? <span className="font-medium text-primary-600 dark:text-primary-400">Toate magazinele ({stores.length})</span>
+                                    : <span className="font-medium">{customStoreUids.length} magazine</span>}
+                            {customDateFrom && <> · de la <strong>{customDateFrom}</strong></>}
+                            {customDateTo && <> până la <strong>{customDateTo}</strong></>}
                         </span>
                     </div>
                 </div>
@@ -531,6 +723,7 @@ export default function Dashboard() {
                             setPrintResult(result)
                             setShowPreview(false)
                             setPreviewData(null)
+                            toastSuccess(`Batch generat: ${result.printed_orders ?? allOrderUids.length} comenzi`)
 
                             // Open native print dialog
                             if (result.batch_id) {
@@ -544,6 +737,7 @@ export default function Dashboard() {
                         } catch (err) {
                             const detail = err.response?.data?.detail || err.message
                             setPrintError(`Print failed: ${detail}`)
+                            toastError(detail)
                         } finally {
                             setIsPrinting(false)
                         }
@@ -563,9 +757,9 @@ export default function Dashboard() {
                         Stores will appear here after syncing orders from Frisbo.
                     </p>
                     <button
-                        onClick={() => handleSync('45_day')}
+                        onClick={() => handleSync('window_30d')}
                         disabled={triggerSync.isPending}
-                        className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 glow-btn"
+                        className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-all "
                     >
                         Sync Now
                     </button>
@@ -594,7 +788,7 @@ export default function Dashboard() {
             {/* ═══════════════════ System Monitoring ═══════════════════ */}
             <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
-                    <Activity className="w-5 h-5 text-indigo-500" />
+                    <Activity className="w-5 h-5 text-primary-500" />
                     <h2 className="text-lg font-semibold text-zinc-900 dark:text-white tracking-tight">System Monitoring</h2>
                     <span className="text-xs text-zinc-400 ml-auto">Last {syncHistory.length} syncs</span>
                 </div>
@@ -727,7 +921,7 @@ export default function Dashboard() {
                             <button
                                 onClick={handlePrint}
                                 disabled={isPrinting}
-                                className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white rounded-lg font-medium transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/25"
+                                className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium transition-all flex items-center gap-2 "
                             >
                                 {isPrinting ? (
                                     <>

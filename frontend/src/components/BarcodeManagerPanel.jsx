@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, RefreshCw, Hash, Package, Check, Zap, List, AlertTriangle } from 'lucide-react'
 import { barcodesApi } from '../services/api/analytics'
+import { toastError, toastWarning, toastSuccess } from '../utils/toast'
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 
@@ -43,22 +44,24 @@ export default function BarcodeManagerPanel() {
         setGenerating(prev => new Set([...prev, p.sku]))
         try {
             await barcodesApi.generate([{ sku: p.sku, product_uid: p.uid }])
+            toastSuccess('Cod de bare generat')
             fetchMissing()
             fetchRegistry()
-        } catch (err) { alert('Failed to generate barcode') }
+        } catch (err) { toastError(err); console.error(err) }
         finally { setGenerating(prev => { const n = new Set(prev); n.delete(p.sku); return n }) }
     }
 
     const generateBulk = async () => {
         const items = missing.filter(p => selected.has(p.sku))
-        if (items.length === 0) { alert('Select products first'); return }
+        if (items.length === 0) { toastWarning('Selectează produse mai întâi'); return }
         setLoading(true)
         try {
             await barcodesApi.generate(items.map(p => ({ sku: p.sku, product_uid: p.uid })))
+            toastSuccess(`${items.length} coduri de bare generate`)
             setSelected(new Set())
             fetchMissing()
             fetchRegistry()
-        } catch (err) { alert('Failed to generate barcodes') }
+        } catch (err) { toastError(err); console.error(err) }
         finally { setLoading(false) }
     }
 
@@ -94,7 +97,7 @@ export default function BarcodeManagerPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                     {view === 'missing' && selected.size > 0 && (
-                        <button onClick={generateBulk} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">
+                        <button onClick={generateBulk} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
                             <Zap className="w-3.5 h-3.5" /> Generate {selected.size} Barcodes
                         </button>
                     )}
@@ -143,7 +146,7 @@ export default function BarcodeManagerPanel() {
                                         <td className="px-3 py-2 text-right text-xs text-zinc-600 dark:text-zinc-300">{fmt(p.stock_available)}</td>
                                         <td className="px-3 py-2 text-center">
                                             <button onClick={() => generateSingle(p)} disabled={generating.has(p.sku)}
-                                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40 mx-auto">
+                                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-40 mx-auto">
                                                 {generating.has(p.sku) ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Hash className="w-3 h-3" />}
                                                 Generate EAN-13
                                             </button>

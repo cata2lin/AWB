@@ -41,6 +41,11 @@ export const useAppStore = create(
             darkMode: true,
             toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
 
+            // Sidebar collapsed state (icons-only)
+            sidebarCollapsed: false,
+            toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+            setSidebarCollapsed: (v) => set({ sidebarCollapsed: !!v }),
+
             // Stores
             stores: mockStores,
             selectedStoreIds: [],
@@ -200,6 +205,7 @@ export const useAppStore = create(
             name: 'awb-print-storage',
             partialize: (state) => ({
                 darkMode: state.darkMode,
+                sidebarCollapsed: state.sidebarCollapsed,
                 selectedStoreIds: state.selectedStoreIds,
                 rules: state.rules,
                 presets: state.presets,

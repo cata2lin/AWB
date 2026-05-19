@@ -3,8 +3,11 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { useRules, useCreateRule, useDeleteRule, useToggleRule, useReorderRules, useStores, usePresets, useActivePreset, useSavePreset, useLoadPreset, useDeletePreset } from '../hooks/useApi'
 import { GripVertical, Trash2, Plus, Power, AlertCircle, Loader2, Save, FolderOpen, ChevronDown, Check, X } from 'lucide-react'
 import AddRuleModal from '../components/AddRuleModal'
+import { toastError, toastSuccess } from '../utils/toast'
+import useConfirm from '../hooks/useConfirm'
 
 export default function Rules() {
+    const { confirm, dialog: confirmDialog } = useConfirm()
     // Fetch from API
     const { data: rules = [], isLoading, error } = useRules()
     const { data: stores = [] } = useStores()
@@ -37,14 +40,25 @@ export default function Rules() {
         reorderRulesMutation.mutate(ruleIds)
     }
 
-    const handleDelete = (id) => {
-        if (confirm('Are you sure you want to delete this rule?')) {
-            deleteRuleMutation.mutate(id)
-        }
+    const handleDelete = async (id) => {
+        const ok = await confirm({
+            title: 'Șterge regula',
+            description: 'Sigur ștergi această regulă? Această acțiune este ireversibilă.',
+            confirmLabel: 'Da, șterge',
+            cancelLabel: 'Anulează',
+            variant: 'danger',
+        })
+        if (!ok) return
+        deleteRuleMutation.mutate(id, {
+            onSuccess: () => toastSuccess('Regulă ștearsă'),
+            onError: (err) => toastError(err),
+        })
     }
 
     const handleToggle = (id) => {
-        toggleRuleMutation.mutate(id)
+        toggleRuleMutation.mutate(id, {
+            onError: (err) => toastError(err),
+        })
     }
 
     const handleSavePreset = () => {
@@ -58,22 +72,42 @@ export default function Rules() {
                 setIsSavePresetOpen(false)
                 setNewPresetName('')
                 setNewPresetDescription('')
-            }
+                toastSuccess('Preset salvat')
+            },
+            onError: (err) => toastError(err),
         })
     }
 
-    const handleLoadPreset = (presetId) => {
-        if (confirm('This will replace all current rules with the preset. Continue?')) {
-            loadPresetMutation.mutate(presetId)
-            setIsPresetDropdownOpen(false)
-        }
+    const handleLoadPreset = async (presetId) => {
+        const ok = await confirm({
+            title: 'Încarcă preset',
+            description: 'Acest preset va înlocui toate regulile curente. Continui?',
+            confirmLabel: 'Da, încarcă',
+            cancelLabel: 'Anulează',
+            variant: 'primary',
+        })
+        if (!ok) return
+        setIsPresetDropdownOpen(false)
+        loadPresetMutation.mutate(presetId, {
+            onSuccess: () => toastSuccess('Preset încărcat'),
+            onError: (err) => toastError(err),
+        })
     }
 
-    const handleDeletePreset = (e, presetId, presetName) => {
+    const handleDeletePreset = async (e, presetId, presetName) => {
         e.stopPropagation()
-        if (confirm(`Delete preset "${presetName}"?`)) {
-            deletePresetMutation.mutate(presetId)
-        }
+        const ok = await confirm({
+            title: 'Șterge preset',
+            description: `Sigur ștergi presetul "${presetName}"?`,
+            confirmLabel: 'Da, șterge',
+            cancelLabel: 'Anulează',
+            variant: 'danger',
+        })
+        if (!ok) return
+        deletePresetMutation.mutate(presetId, {
+            onSuccess: () => toastSuccess('Preset șters'),
+            onError: (err) => toastError(err),
+        })
     }
 
     // Get store names for condition display
@@ -89,7 +123,7 @@ export default function Rules() {
     if (isLoading) {
         return (
             <div className="p-6 flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
             </div>
         )
     }
@@ -109,18 +143,18 @@ export default function Rules() {
     }
 
     return (
-        <div className="p-6 space-y-6 animate-fade-in bg-zinc-50 dark:bg-zinc-950 min-h-screen">
+        <div className="p-6 space-y-5 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">Rules Configuration</h1>
+                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">Configurare Reguli</h1>
                     <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
-                        Drag and drop to set priority. Higher priority rules are applied first.
+                        Trage și plasează pentru a seta prioritatea. Regulile cu prioritate mai mare se aplică primele.
                     </p>
                     {activePreset && (
-                        <p className="text-indigo-600 dark:text-indigo-400 text-sm mt-1 flex items-center gap-1">
+                        <p className="text-primary-700 dark:text-primary-300 text-sm mt-1 flex items-center gap-1">
                             <Check className="w-4 h-4" />
-                            Active preset: <span className="font-medium">{activePreset.name}</span>
+                            Preset activ: <span className="font-medium">{activePreset.name}</span>
                         </p>
                     )}
                 </div>
@@ -160,7 +194,7 @@ export default function Rules() {
                                                 <div
                                                     key={preset.id}
                                                     onClick={() => handleLoadPreset(preset.id)}
-                                                    className={`px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer flex items-center justify-between group ${preset.is_active ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                                    className={`px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer flex items-center justify-between group ${preset.is_active ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}
                                                 >
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2">
@@ -168,7 +202,7 @@ export default function Rules() {
                                                                 {preset.name}
                                                             </p>
                                                             {preset.is_active && (
-                                                                <span className="px-1.5 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded">
+                                                                <span className="px-1.5 py-0.5 text-xs bg-primary-100 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400 rounded">
                                                                     Active
                                                                 </span>
                                                             )}
@@ -205,7 +239,7 @@ export default function Rules() {
                     {/* Add Rule Button */}
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg font-medium transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20 glow-btn"
+                        className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-all flex items-center gap-2 "
                     >
                         <Plus className="w-4 h-4" />
                         Add Rule
@@ -236,7 +270,7 @@ export default function Rules() {
                                     value={newPresetName}
                                     onChange={(e) => setNewPresetName(e.target.value)}
                                     placeholder="e.g., Weekend Configuration"
-                                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                 />
                             </div>
                             <div>
@@ -248,7 +282,7 @@ export default function Rules() {
                                     value={newPresetDescription}
                                     onChange={(e) => setNewPresetDescription(e.target.value)}
                                     placeholder="e.g., Optimized for weekend orders"
-                                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                 />
                             </div>
                             <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -281,9 +315,9 @@ export default function Rules() {
 
             {/* Loading indicator for preset operations */}
             {(loadPresetMutation.isPending || deletePresetMutation.isPending) && (
-                <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 flex items-center gap-3">
-                    <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
-                    <p className="text-indigo-600 dark:text-indigo-400">
+                <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4 flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-primary-600 animate-spin" />
+                    <p className="text-primary-600 dark:text-primary-400">
                         {loadPresetMutation.isPending ? 'Loading preset...' : 'Deleting preset...'}
                     </p>
                 </div>
@@ -304,7 +338,7 @@ export default function Rules() {
                                         <div
                                             ref={provided.innerRef}
                                             {...provided.draggableProps}
-                                            className={`bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-4 flex items-center gap-4 transition-all shadow-sm ${snapshot.isDragging ? 'shadow-lg ring-2 ring-indigo-500' : ''
+                                            className={`bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 p-4 flex items-center gap-4 transition-all shadow-sm ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary-500' : ''
                                                 } ${!rule.is_active ? 'opacity-50' : ''}`}
                                         >
                                             {/* Drag Handle */}
@@ -316,8 +350,8 @@ export default function Rules() {
                                             </div>
 
                                             {/* Priority Badge */}
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center">
-                                                <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                                            <div className="w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-500/20 flex items-center justify-center">
+                                                <span className="text-sm font-bold text-primary-600 dark:text-primary-400">
                                                     {rule.priority}
                                                 </span>
                                             </div>
@@ -453,7 +487,7 @@ export default function Rules() {
                     <p className="text-zinc-500 dark:text-zinc-400">No rules configured yet.</p>
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="mt-4 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg font-medium transition-all shadow-lg shadow-indigo-500/25 glow-btn"
+                        className="mt-4 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-all "
                     >
                         Create your first rule
                     </button>
@@ -462,6 +496,7 @@ export default function Rules() {
 
             {/* Add Rule Modal */}
             <AddRuleModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+            {confirmDialog}
         </div>
     )
 }

@@ -6,7 +6,7 @@ export const syncApi = {
         const { data } = await api.get('/sync/status')
         return data
     },
-    triggerSync: async ({ sync_type = '45_day', store_uids, date_from, date_to } = {}) => {
+    triggerSync: async ({ sync_type = 'window_30d', store_uids, date_from, date_to } = {}) => {
         const { data } = await api.post('/sync/trigger', {
             sync_type,
             store_uids: store_uids || null,

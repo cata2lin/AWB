@@ -1,6 +1,7 @@
 """
 Sync API endpoints for triggering and monitoring synchronization.
 """
+
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
@@ -13,7 +14,7 @@ from app.core.database import get_db
 from app.core.timezone import to_bucharest_iso
 from app.models import SyncLog
 from app.schemas import SyncStatusResponse, SyncTriggerResponse
-from app.services.sync_service import sync_orders
+from app.services.sync_service import sync_orders, SYNC_TYPE_ALIASES
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,10 +22,13 @@ logger = logging.getLogger(__name__)
 
 class SyncTriggerRequest(BaseModel):
     """Request body for triggering a sync."""
-    sync_type: str = "45_day"  # 45_day, full, custom
+
+    sync_type: str = (
+        "window_30d"  # incremental, recent_7d, window_30d, deep_90d, full, custom
+    )
     store_uids: Optional[List[str]] = None
     date_from: Optional[str] = None  # ISO date string
-    date_to: Optional[str] = None    # ISO date string
+    date_to: Optional[str] = None  # ISO date string
 
 
 @router.get("/status", response_model=SyncStatusResponse)
@@ -38,7 +42,7 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
         .limit(1)
     )
     last_sync = result.scalar_one_or_none()
-    
+
     # Check for running sync
     running_result = await db.execute(
         select(SyncLog)
@@ -47,26 +51,26 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
         .limit(1)
     )
     running_sync = running_result.scalar_one_or_none()
-    
+
     if running_sync:
         return SyncStatusResponse(
             status="running",
             last_sync=last_sync.completed_at if last_sync else None,
             orders_fetched=running_sync.orders_fetched,
-            orders_new=running_sync.orders_new
+            orders_new=running_sync.orders_new,
         )
-    
+
     # Calculate next sync time (30 mins from last sync)
     next_sync = None
     if last_sync and last_sync.completed_at:
         next_sync = last_sync.completed_at + timedelta(minutes=30)
-    
+
     return SyncStatusResponse(
         status="idle",
         last_sync=last_sync.completed_at if last_sync else None,
         orders_fetched=last_sync.orders_fetched if last_sync else 0,
         orders_new=last_sync.orders_new if last_sync else 0,
-        next_sync=next_sync
+        next_sync=next_sync,
     )
 
 
@@ -75,19 +79,22 @@ async def trigger_sync(
     background_tasks: BackgroundTasks,
     body: Optional[SyncTriggerRequest] = None,
     full_sync: bool = False,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Manually trigger a sync.
-    
+
     Accepts JSON body with sync_type, store_uids, date_from, date_to.
     Also supports legacy ?full_sync=true query param.
     """
     # Parse body or use query params
     req = body or SyncTriggerRequest()
-    if full_sync and req.sync_type == "45_day":
+    # Normalize legacy sync_type aliases ("3_day" -> "recent_7d", "45_day" -> "window_30d")
+    # so the SyncLog row and downstream label-rendering see the canonical name.
+    req.sync_type = SYNC_TYPE_ALIASES.get(req.sync_type, req.sync_type)
+    if full_sync and req.sync_type == "window_30d":
         req.sync_type = "full"
-    
+
     # Check if sync is already running
     result = await db.execute(
         select(SyncLog)
@@ -96,7 +103,7 @@ async def trigger_sync(
         .limit(1)
     )
     running_sync = result.scalar_one_or_none()
-    
+
     if running_sync:
         if running_sync.started_at:
             age = datetime.utcnow() - running_sync.started_at
@@ -107,22 +114,18 @@ async def trigger_sync(
                 await db.commit()
             else:
                 return SyncTriggerResponse(
-                    message="Sync already in progress",
-                    sync_id=0
+                    message="Sync already in progress", sync_id=0
                 )
         else:
-            return SyncTriggerResponse(
-                message="Sync already in progress",
-                sync_id=0
-            )
-    
+            return SyncTriggerResponse(message="Sync already in progress", sync_id=0)
+
     # Create sync log entry with type info
     sync_log = SyncLog(status="running", sync_type=req.sync_type)
     db.add(sync_log)
     await db.flush()
     await db.refresh(sync_log)
     sync_id = sync_log.id
-    
+
     # Trigger background sync with all params
     is_full = req.sync_type == "full"
     background_tasks.add_task(
@@ -134,12 +137,18 @@ async def trigger_sync(
         date_from=req.date_from,
         date_to=req.date_to,
     )
-    
-    type_labels = {"45_day": "45-day", "3_day": "3-day safety net", "full": "Full", "custom": "Custom", "incremental": "Incremental"}
+
+    type_labels = {
+        "incremental": "Incremental",
+        "recent_7d": "Recent 7-day",
+        "window_30d": "30-day window",
+        "deep_90d": "Deep 90-day",
+        "full": "Full",
+        "custom": "Custom",
+    }
     label = type_labels.get(req.sync_type, req.sync_type)
     return SyncTriggerResponse(
-        message=f"{label} sync triggered successfully",
-        sync_id=sync_id
+        message=f"{label} sync triggered successfully", sync_id=sync_id
     )
 
 
@@ -149,40 +158,33 @@ async def cancel_sync(db: AsyncSession = Depends(get_db)):
     Cancel all running syncs — marks them as cancelled so new syncs can start.
     Use this when syncs get stuck after program restarts.
     """
-    result = await db.execute(
-        select(SyncLog).where(SyncLog.status == "running")
-    )
+    result = await db.execute(select(SyncLog).where(SyncLog.status == "running"))
     running = result.scalars().all()
-    
+
     cancelled_count = 0
     for sync_log in running:
         sync_log.status = "cancelled"
         sync_log.completed_at = datetime.utcnow()
         sync_log.error_message = "Manually cancelled by user"
         cancelled_count += 1
-    
+
     await db.commit()
     logger.info(f"Cancelled {cancelled_count} running sync(s)")
-    
+
     return {
         "message": f"Cancelled {cancelled_count} running sync(s)",
-        "cancelled_count": cancelled_count
+        "cancelled_count": cancelled_count,
     }
 
 
 @router.get("/history")
-async def get_sync_history(
-    limit: int = 20,
-    db: AsyncSession = Depends(get_db)
-):
+async def get_sync_history(limit: int = 20, db: AsyncSession = Depends(get_db)):
     """Get sync history with type and filter details."""
     result = await db.execute(
-        select(SyncLog)
-        .order_by(SyncLog.started_at.desc())
-        .limit(limit)
+        select(SyncLog).order_by(SyncLog.started_at.desc()).limit(limit)
     )
     logs = result.scalars().all()
-    
+
     return [
         {
             "id": log.id,
@@ -197,7 +199,7 @@ async def get_sync_history(
             "store_uids": getattr(log, "store_uids", None),
             "date_from": getattr(log, "date_from", None),
             "date_to": getattr(log, "date_to", None),
-            "error_message": log.error_message
+            "error_message": log.error_message,
         }
         for log in logs
     ]
@@ -212,15 +214,15 @@ async def trigger_product_sync(
     Manually trigger a product/inventory sync.
     """
     from app.services.product_sync_service import sync_products
-    
+
     sync_log = SyncLog(status="running", sync_type="product")
     db.add(sync_log)
     await db.flush()
     await db.refresh(sync_log)
     sync_id = sync_log.id
-    
+
     background_tasks.add_task(sync_products, sync_id)
-    
+
     return {
         "message": "Product sync triggered successfully",
         "sync_id": sync_id,
@@ -244,4 +246,3 @@ async def trigger_inventory_stock_sync(background_tasks: BackgroundTasks):
         "message": "Inventory stock sync completed",
         **asdict(result),
     }
-

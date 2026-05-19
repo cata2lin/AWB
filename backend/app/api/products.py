@@ -5,6 +5,7 @@ Grouping logic: products are grouped by BARCODE first, then by SKU for any
 remaining products. This means a product with SKU "10" and barcode "786..."
 will be grouped with another product that has SKU "10" but no barcode.
 """
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ router = APIRouter()
 
 
 # ── Helpers ──
+
 
 def _product_to_listing(p, store_names):
     """Convert a Product ORM object to a listing dict."""
@@ -61,7 +63,7 @@ def _build_groups(all_products):
     # Phase 1: group products with barcodes
     barcode_groups = {}  # barcode -> [products]
     sku_to_barcode = {}  # sku -> barcode (maps SKUs to their barcode group)
-    remaining = []       # products without barcode
+    remaining = []  # products without barcode
 
     for p in all_products:
         bc = (p.barcode or "").strip()
@@ -94,45 +96,55 @@ def _build_groups(all_products):
     return barcode_groups, sku_only_groups, ungrouped
 
 
-def _merge_group(group, group_key, store_names, sku_cost_map, ro_store_uids=None, intl_store_uids=None):
+def _merge_group(
+    group,
+    group_key,
+    store_names,
+    sku_cost_map,
+    ro_store_uids=None,
+    intl_store_uids=None,
+):
     """Merge a list of product listings into one grouped result dict."""
     # Sort: most recently synced first
     group.sort(
-        key=lambda p: p.synced_at or p.frisbo_updated_at or p.frisbo_created_at or p.synced_at,
+        key=lambda p: (
+            p.synced_at or p.frisbo_updated_at or p.frisbo_created_at or p.synced_at
+        ),
         reverse=True,
     )
 
-    # Pick primary: user-set > RO+image > RO > any+image > fallback
+    # Pick primary for DISPLAY (image, title, store): user-set > RO+image > RO > any+image > fallback.
+    # The user-set `primary_listing_uid` only affects DISPLAY, never stock.
     if ro_store_uids is not None:
-        primary, has_explicit = pick_best_primary(group, ro_store_uids, intl_store_uids or set())
+        primary, _has_explicit = pick_best_primary(
+            group, ro_store_uids, intl_store_uids or set()
+        )
     else:
         # Fallback if store classification not available
         primary = group[0]
-        has_explicit = False
         for p in group:
             if p.primary_listing_uid:
                 for q in group:
                     if q.uid == p.primary_listing_uid:
                         primary = q
-                        has_explicit = True
                 break
 
     # ── Stock resolution ──
-    # The InventorySync stock sync writes stock_available BY BARCODE first.
-    # To get the authoritative stock, prefer the barcode-holding product
-    # (directly updated by the sync) unless a user-set primary exists.
+    # InventorySync's `stock_sync_service` writes `stock_available` BY BARCODE
+    # every 15 min. Always prefer the barcode-holding product for authoritative
+    # stock — a barcode-less primary chosen for display reasons would surface
+    # stale stock from the original Frisbo sync.
     stock_product = primary
-    if not has_explicit:
-        for p in group:
-            if (p.barcode or "").strip():
-                stock_product = p
-                break
+    for p in group:
+        if (p.barcode or "").strip():
+            stock_product = p
+            break
 
     # Merge stores from all listings
     all_store_uids = []
     seen = set()
     for p in group:
-        for uid in (p.store_uids or []):
+        for uid in p.store_uids or []:
             if uid not in seen:
                 all_store_uids.append(uid)
                 seen.add(uid)
@@ -173,7 +185,9 @@ def _merge_group(group, group_key, store_names, sku_cost_map, ro_store_uids=None
         "state": primary.state,
         "images": images,
         "store_uids": all_store_uids,
-        "stores": [{"uid": uid, "name": store_names.get(uid, uid)} for uid in all_store_uids],
+        "stores": [
+            {"uid": uid, "name": store_names.get(uid, uid)} for uid in all_store_uids
+        ],
         "stock_available": stock_product.stock_available,
         "stock_committed": stock_product.stock_committed,
         "stock_incoming": stock_product.stock_incoming,
@@ -189,20 +203,33 @@ def _merge_group(group, group_key, store_names, sku_cost_map, ro_store_uids=None
     }
 
 
-async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
-                            exclude_filter, missing_barcode_filter, sort_field,
-                            sort_direction, skip=None, limit=None):
+async def _fetch_and_group(
+    db,
+    search,
+    store_uid,
+    state,
+    has_stock,
+    has_cost,
+    exclude_filter,
+    missing_barcode_filter,
+    sort_field,
+    sort_direction,
+    skip=None,
+    limit=None,
+):
     """Shared logic for grouped list and Excel export."""
     query = select(Product)
 
     if search:
         sp = f"%{search}%"
-        query = query.where(or_(
-            Product.title_1.ilike(sp),
-            Product.title_2.ilike(sp),
-            Product.sku.ilike(sp),
-            Product.barcode.ilike(sp),
-        ))
+        query = query.where(
+            or_(
+                Product.title_1.ilike(sp),
+                Product.title_2.ilike(sp),
+                Product.sku.ilike(sp),
+                Product.barcode.ilike(sp),
+            )
+        )
     if state:
         query = query.where(Product.state == state)
     if has_stock is True:
@@ -211,9 +238,9 @@ async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
         query = query.where(Product.stock_available == 0)
     if store_uid:
         query = query.where(cast(Product.store_uids, String).contains(store_uid))
-    if exclude_filter == 'excluded':
+    if exclude_filter == "excluded":
         query = query.where(Product.exclude_from_stock == True)
-    elif exclude_filter == 'active':
+    elif exclude_filter == "active":
         query = query.where(Product.exclude_from_stock == False)
 
     result = await db.execute(query.order_by(Product.synced_at.desc()))
@@ -221,13 +248,16 @@ async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
 
     # Load SKU costs
     from app.models.sku_cost import SkuCost
+
     costs_result = await db.execute(select(SkuCost.sku, SkuCost.cost))
-    sku_cost_map = {row[0]: float(row[1]) for row in costs_result.all() if row[1] is not None}
+    sku_cost_map = {
+        row[0]: float(row[1]) for row in costs_result.all() if row[1] is not None
+    }
 
     # Resolve store names
     all_store_uid_set = set()
     for p in all_products:
-        for uid in (p.store_uids or []):
+        for uid in p.store_uids or []:
             all_store_uid_set.add(uid)
 
     store_names = {}
@@ -246,47 +276,56 @@ async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
     merged = []
 
     for bc, group in barcode_groups.items():
-        merged.append(_merge_group(group, bc, store_names, sku_cost_map, ro_uids, intl_uids))
+        merged.append(
+            _merge_group(group, bc, store_names, sku_cost_map, ro_uids, intl_uids)
+        )
 
     for sku, group in sku_only_groups.items():
-        merged.append(_merge_group(group, sku, store_names, sku_cost_map, ro_uids, intl_uids))
+        merged.append(
+            _merge_group(group, sku, store_names, sku_cost_map, ro_uids, intl_uids)
+        )
 
     for p in ungrouped:
         cost = sku_cost_map.get(p.sku) if p.sku else None
-        merged.append({
-            "uid": p.uid,
-            "id": p.id,
-            "barcode": p.barcode,
-            "title_1": p.title_1,
-            "title_2": p.title_2,
-            "sku": p.sku,
-            "state": p.state,
-            "images": p.images,
-            "store_uids": p.store_uids or [],
-            "stores": [{"uid": uid, "name": store_names.get(uid, uid)} for uid in (p.store_uids or [])],
-            "stock_available": p.stock_available,
-            "stock_committed": p.stock_committed,
-            "stock_incoming": p.stock_incoming,
-            "exclude_from_stock": p.exclude_from_stock,
-            "cost": cost,
-            "grouped_count": 1,
-            "grouped_uids": [p.uid],
-            "primary_uid": p.uid,
-            "has_missing_barcode": not (p.barcode or "").strip(),
-            "listings": [_product_to_listing(p, store_names)],
-            "synced_at": p.synced_at,
-            "frisbo_updated_at": p.frisbo_updated_at,
-        })
+        merged.append(
+            {
+                "uid": p.uid,
+                "id": p.id,
+                "barcode": p.barcode,
+                "title_1": p.title_1,
+                "title_2": p.title_2,
+                "sku": p.sku,
+                "state": p.state,
+                "images": p.images,
+                "store_uids": p.store_uids or [],
+                "stores": [
+                    {"uid": uid, "name": store_names.get(uid, uid)}
+                    for uid in (p.store_uids or [])
+                ],
+                "stock_available": p.stock_available,
+                "stock_committed": p.stock_committed,
+                "stock_incoming": p.stock_incoming,
+                "exclude_from_stock": p.exclude_from_stock,
+                "cost": cost,
+                "grouped_count": 1,
+                "grouped_uids": [p.uid],
+                "primary_uid": p.uid,
+                "has_missing_barcode": not (p.barcode or "").strip(),
+                "listings": [_product_to_listing(p, store_names)],
+                "synced_at": p.synced_at,
+                "frisbo_updated_at": p.frisbo_updated_at,
+            }
+        )
 
     # Post-grouping filters
-    if has_cost == 'yes':
+    if has_cost == "yes":
         merged = [m for m in merged if m.get("cost") is not None]
-    elif has_cost == 'no':
+    elif has_cost == "no":
         merged = [m for m in merged if m.get("cost") is None]
 
-    if missing_barcode_filter == 'yes':
+    if missing_barcode_filter == "yes":
         merged = [m for m in merged if m.get("has_missing_barcode")]
-    elif missing_barcode_filter == 'no':
+    elif missing_barcode_filter == "no":
         merged = [m for m in merged if not m.get("has_missing_barcode")]
 
     # Sort
@@ -306,7 +345,7 @@ async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
     total = len(merged)
 
     if skip is not None and limit is not None:
-        page = merged[skip:skip + limit]
+        page = merged[skip : skip + limit]
     else:
         page = merged
 
@@ -314,6 +353,7 @@ async def _fetch_and_group(db, search, store_uid, state, has_stock, has_cost,
 
 
 # ── List (ungrouped, kept for backward compat) ──
+
 
 @router.get("/")
 async def list_products(
@@ -334,8 +374,10 @@ async def list_products(
     if search:
         sp = f"%{search}%"
         sf = or_(
-            Product.title_1.ilike(sp), Product.title_2.ilike(sp),
-            Product.sku.ilike(sp), Product.barcode.ilike(sp),
+            Product.title_1.ilike(sp),
+            Product.title_2.ilike(sp),
+            Product.sku.ilike(sp),
+            Product.barcode.ilike(sp),
         )
         query = query.where(sf)
         count_query = count_query.where(sf)
@@ -350,11 +392,15 @@ async def list_products(
         count_query = count_query.where(Product.stock_available == 0)
     if store_uid:
         query = query.where(cast(Product.store_uids, String).contains(store_uid))
-        count_query = count_query.where(cast(Product.store_uids, String).contains(store_uid))
+        count_query = count_query.where(
+            cast(Product.store_uids, String).contains(store_uid)
+        )
 
     scm = {
-        "title_1": Product.title_1, "sku": Product.sku,
-        "stock_available": Product.stock_available, "synced_at": Product.synced_at,
+        "title_1": Product.title_1,
+        "sku": Product.sku,
+        "stock_available": Product.stock_available,
+        "synced_at": Product.synced_at,
     }
     sc = scm.get(sort_field, Product.title_1)
     query = query.order_by(sc.desc() if sort_direction == "desc" else sc.asc())
@@ -369,55 +415,92 @@ async def list_products(
             suids.update(p.store_uids)
     sn = {}
     if suids:
-        sr = await db.execute(select(Store.uid, Store.name).where(Store.uid.in_(list(suids))))
+        sr = await db.execute(
+            select(Store.uid, Store.name).where(Store.uid.in_(list(suids)))
+        )
         sn = {r[0]: r[1] for r in sr.all()}
 
     return {
-        "total": total, "skip": skip, "limit": limit,
-        "products": [{
-            "id": p.id, "uid": p.uid, "barcode": p.barcode,
-            "title_1": p.title_1, "title_2": p.title_2, "sku": p.sku,
-            "state": p.state, "images": p.images, "store_uids": p.store_uids,
-            "stores": [{"uid": u, "name": sn.get(u, u)} for u in (p.store_uids or [])],
-            "stock_available": p.stock_available, "stock_committed": p.stock_committed,
-            "stock_incoming": p.stock_incoming, "exclude_from_stock": p.exclude_from_stock,
-            "synced_at": p.synced_at, "frisbo_updated_at": p.frisbo_updated_at,
-        } for p in products],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "products": [
+            {
+                "id": p.id,
+                "uid": p.uid,
+                "barcode": p.barcode,
+                "title_1": p.title_1,
+                "title_2": p.title_2,
+                "sku": p.sku,
+                "state": p.state,
+                "images": p.images,
+                "store_uids": p.store_uids,
+                "stores": [
+                    {"uid": u, "name": sn.get(u, u)} for u in (p.store_uids or [])
+                ],
+                "stock_available": p.stock_available,
+                "stock_committed": p.stock_committed,
+                "stock_incoming": p.stock_incoming,
+                "exclude_from_stock": p.exclude_from_stock,
+                "synced_at": p.synced_at,
+                "frisbo_updated_at": p.frisbo_updated_at,
+            }
+            for p in products
+        ],
     }
 
 
 # ── Stats ──
 
+
 @router.get("/stats")
 async def get_product_stats(db: AsyncSession = Depends(get_db)):
     """Product KPI statistics. Stock totals exclude flagged products."""
     total = (await db.execute(select(func.count(Product.id)))).scalar() or 0
-    active = (await db.execute(
-        select(func.count(Product.id)).where(Product.state == "active")
-    )).scalar() or 0
-    in_stock = (await db.execute(
-        select(func.count(Product.id)).where(Product.stock_available > 0)
-    )).scalar() or 0
-    out_of_stock = (await db.execute(
-        select(func.count(Product.id)).where(Product.stock_available == 0, Product.state == "active")
-    )).scalar() or 0
+    active = (
+        await db.execute(
+            select(func.count(Product.id)).where(Product.state == "active")
+        )
+    ).scalar() or 0
+    in_stock = (
+        await db.execute(
+            select(func.count(Product.id)).where(Product.stock_available > 0)
+        )
+    ).scalar() or 0
+    out_of_stock = (
+        await db.execute(
+            select(func.count(Product.id)).where(
+                Product.stock_available == 0, Product.state == "active"
+            )
+        )
+    ).scalar() or 0
 
     ne = Product.exclude_from_stock == False
-    total_stock = (await db.execute(select(func.sum(Product.stock_available)).where(ne))).scalar() or 0
-    total_committed = (await db.execute(select(func.sum(Product.stock_committed)).where(ne))).scalar() or 0
-    excluded_count = (await db.execute(
-        select(func.count(Product.id)).where(Product.exclude_from_stock == True)
-    )).scalar() or 0
+    total_stock = (
+        await db.execute(select(func.sum(Product.stock_available)).where(ne))
+    ).scalar() or 0
+    total_committed = (
+        await db.execute(select(func.sum(Product.stock_committed)).where(ne))
+    ).scalar() or 0
+    excluded_count = (
+        await db.execute(
+            select(func.count(Product.id)).where(Product.exclude_from_stock == True)
+        )
+    ).scalar() or 0
 
     return {
-        "total_products": total, "active_products": active,
-        "in_stock": in_stock, "out_of_stock": out_of_stock,
-        "total_stock_available": total_stock, "total_stock_committed": total_committed,
+        "total_products": total,
+        "active_products": active,
+        "in_stock": in_stock,
+        "out_of_stock": out_of_stock,
+        "total_stock_available": total_stock,
+        "total_stock_committed": total_committed,
         "excluded_count": excluded_count,
     }
 
 
 # ── Grouped Products ──
+
 
 @router.get("/grouped/")
 async def list_grouped_products(
@@ -436,14 +519,24 @@ async def list_grouped_products(
 ):
     """List products grouped by barcode/SKU with individual listings."""
     total, page, _ = await _fetch_and_group(
-        db, search, store_uid, state, has_stock, has_cost,
-        exclude_filter, missing_barcode, sort_field, sort_direction,
-        skip=skip, limit=limit,
+        db,
+        search,
+        store_uid,
+        state,
+        has_stock,
+        has_cost,
+        exclude_filter,
+        missing_barcode,
+        sort_field,
+        sort_direction,
+        skip=skip,
+        limit=limit,
     )
     return {"total": total, "skip": skip, "limit": limit, "products": page}
 
 
 # ── Exclusion Toggle ──
+
 
 class ExcludeRequest(BaseModel):
     exclude: bool
@@ -467,37 +560,48 @@ async def toggle_exclude(
     if barcode:
         # Toggle entire barcode group + any SKU-matched products
         await db.execute(
-            update(Product).where(Product.barcode == barcode)
+            update(Product)
+            .where(Product.barcode == barcode)
             .values(exclude_from_stock=body.exclude)
         )
         if sku:
             await db.execute(
-                update(Product).where(Product.sku == sku)
+                update(Product)
+                .where(Product.sku == sku)
                 .values(exclude_from_stock=body.exclude)
             )
-        affected = (await db.execute(
-            select(func.count(Product.id)).where(
-                or_(Product.barcode == barcode, Product.sku == sku) if sku
-                else Product.barcode == barcode
+        affected = (
+            await db.execute(
+                select(func.count(Product.id)).where(
+                    or_(Product.barcode == barcode, Product.sku == sku)
+                    if sku
+                    else Product.barcode == barcode
+                )
             )
-        )).scalar() or 1
+        ).scalar() or 1
     elif sku:
         await db.execute(
-            update(Product).where(Product.sku == sku)
+            update(Product)
+            .where(Product.sku == sku)
             .values(exclude_from_stock=body.exclude)
         )
-        affected = (await db.execute(
-            select(func.count(Product.id)).where(Product.sku == sku)
-        )).scalar() or 1
+        affected = (
+            await db.execute(select(func.count(Product.id)).where(Product.sku == sku))
+        ).scalar() or 1
     else:
         product.exclude_from_stock = body.exclude
         affected = 1
 
     await db.commit()
-    return {"uid": product_uid, "exclude_from_stock": body.exclude, "affected_products": affected}
+    return {
+        "uid": product_uid,
+        "exclude_from_stock": body.exclude,
+        "affected_products": affected,
+    }
 
 
 # ── Set Primary Listing ──
+
 
 class SetPrimaryRequest(BaseModel):
     primary_uid: str  # UID of the listing to use as source of truth
@@ -539,8 +643,7 @@ async def set_primary_listing(
 
     # Update all products in the group
     result = await db.execute(
-        update(Product).where(group_filter)
-        .values(primary_listing_uid=body.primary_uid)
+        update(Product).where(group_filter).values(primary_listing_uid=body.primary_uid)
     )
     affected = result.rowcount or 1
 
@@ -553,6 +656,7 @@ async def set_primary_listing(
 
 
 # ── Excel Export ──
+
 
 @router.get("/export/excel")
 async def export_products_excel(
@@ -572,8 +676,16 @@ async def export_products_excel(
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
     total, products, sku_cost_map = await _fetch_and_group(
-        db, search, store_uid, state, has_stock, has_cost,
-        exclude_filter, missing_barcode, sort_field, sort_direction,
+        db,
+        search,
+        store_uid,
+        state,
+        has_stock,
+        has_cost,
+        exclude_filter,
+        missing_barcode,
+        sort_field,
+        sort_direction,
     )
 
     wb = Workbook()
@@ -583,17 +695,32 @@ async def export_products_excel(
     ws.title = "Produse Grupate"
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
-    header_fill = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+    header_fill = PatternFill(
+        start_color="374151", end_color="374151", fill_type="solid"
+    )
     thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin'),
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
     )
 
     headers = [
-        "Nr.", "Titlu Produs", "Varianta", "SKU", "Cod de bare",
-        "Magazine", "Stoc Disponibil", "Stoc Committed", "Stoc Incoming",
-        "Cost/buc (RON)", "Stare", "Exclus din Stoc", "Nr. Listări",
-        "Barcode Lipsă", "Ultima Sincronizare",
+        "Nr.",
+        "Titlu Produs",
+        "Varianta",
+        "SKU",
+        "Cod de bare",
+        "Magazine",
+        "Stoc Disponibil",
+        "Stoc Committed",
+        "Stoc Incoming",
+        "Cost/buc (RON)",
+        "Stare",
+        "Exclus din Stoc",
+        "Nr. Listări",
+        "Barcode Lipsă",
+        "Ultima Sincronizare",
     ]
 
     for col, header in enumerate(headers, 1):
@@ -605,7 +732,9 @@ async def export_products_excel(
 
     for idx, p in enumerate(products, 1):
         row = idx + 1
-        stores_str = ", ".join(s.get("name", s.get("uid", "")) for s in (p.get("stores") or []))
+        stores_str = ", ".join(
+            s.get("name", s.get("uid", "")) for s in (p.get("stores") or [])
+        )
         synced = str(p.get("synced_at") or "")[:19]
 
         values = [
@@ -638,15 +767,29 @@ async def export_products_excel(
             cell_val = ws.cell(row=row, column=col).value
             if cell_val:
                 max_len = max(max_len, len(str(cell_val)))
-        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = min(max_len + 3, 50)
+        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = min(
+            max_len + 3, 50
+        )
 
     # ── Sheet 2: Individual Listings ──
     ws2 = wb.create_sheet("Listări Individuale")
 
     detail_headers = [
-        "Nr.", "Grup (Barcode/SKU)", "UID Listing", "Titlu", "Varianta",
-        "SKU", "Cod de bare", "Magazine", "Stoc Disponibil", "Stoc Committed",
-        "Stoc Incoming", "Stare", "Organizație", "Barcode Lipsă", "Ultima Sincronizare",
+        "Nr.",
+        "Grup (Barcode/SKU)",
+        "UID Listing",
+        "Titlu",
+        "Varianta",
+        "SKU",
+        "Cod de bare",
+        "Magazine",
+        "Stoc Disponibil",
+        "Stoc Committed",
+        "Stoc Incoming",
+        "Stare",
+        "Organizație",
+        "Barcode Lipsă",
+        "Ultima Sincronizare",
     ]
 
     for col, header in enumerate(detail_headers, 1):
@@ -659,8 +802,10 @@ async def export_products_excel(
     row_num = 2
     for p in products:
         group_key = p.get("barcode") or p.get("sku") or p.get("uid", "")
-        for listing in (p.get("listings") or []):
-            stores_str = ", ".join(s.get("name", s.get("uid", "")) for s in (listing.get("stores") or []))
+        for listing in p.get("listings") or []:
+            stores_str = ", ".join(
+                s.get("name", s.get("uid", "")) for s in (listing.get("stores") or [])
+            )
             synced = str(listing.get("synced_at") or "")[:19]
 
             values = [
@@ -692,7 +837,9 @@ async def export_products_excel(
             cv = ws2.cell(row=row, column=col).value
             if cv:
                 max_len = max(max_len, len(str(cv)))
-        ws2.column_dimensions[ws2.cell(row=1, column=col).column_letter].width = min(max_len + 3, 50)
+        ws2.column_dimensions[ws2.cell(row=1, column=col).column_letter].width = min(
+            max_len + 3, 50
+        )
 
     # Save to buffer
     buffer = io.BytesIO()
@@ -708,6 +855,7 @@ async def export_products_excel(
 
 # ── COGS Template Download ──
 
+
 @router.get("/import/cogs-template")
 async def download_cogs_template():
     """Download an Excel template for COGS import (SKU + COGS columns)."""
@@ -719,10 +867,14 @@ async def download_cogs_template():
     ws.title = "COGS Import Template"
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
-    header_fill = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+    header_fill = PatternFill(
+        start_color="374151", end_color="374151", fill_type="solid"
+    )
     thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin'),
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
     )
 
     # Headers
@@ -746,9 +898,15 @@ async def download_cogs_template():
         ws.cell(row=idx, column=2).border = thin_border
 
     # Instructions
-    ws.cell(row=5, column=1, value="⚠ Înlocuiți exemplele de mai sus cu datele dvs.").font = Font(color="CC0000", italic=True)
-    ws.cell(row=6, column=1, value="Coloana A = SKU (text, obligatoriu)").font = Font(italic=True)
-    ws.cell(row=7, column=1, value="Coloana B = Cost (COGS) în RON (număr)").font = Font(italic=True)
+    ws.cell(
+        row=5, column=1, value="⚠ Înlocuiți exemplele de mai sus cu datele dvs."
+    ).font = Font(color="CC0000", italic=True)
+    ws.cell(row=6, column=1, value="Coloana A = SKU (text, obligatoriu)").font = Font(
+        italic=True
+    )
+    ws.cell(
+        row=7, column=1, value="Coloana B = Cost (COGS) în RON (număr)"
+    ).font = Font(italic=True)
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -765,6 +923,7 @@ async def download_cogs_template():
 
 from fastapi import UploadFile, File
 
+
 @router.post("/import/cogs")
 async def import_cogs_excel(
     file: UploadFile = File(...),
@@ -780,21 +939,30 @@ async def import_cogs_excel(
     from datetime import datetime
 
     # Validate file type
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        raise HTTPException(status_code=400, detail="Fișierul trebuie să fie format .xlsx")
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(
+            status_code=400, detail="Fișierul trebuie să fie format .xlsx"
+        )
 
     try:
         contents = await file.read()
         wb = load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
         ws = wb.active
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Nu pot citi fișierul Excel: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Nu pot citi fișierul Excel: {str(e)}"
+        )
 
     # Parse rows — skip header
     imported = []
     errors = []
-    for row_num, row in enumerate(ws.iter_rows(min_row=2, max_col=2, values_only=True), 2):
-        sku_val, cost_val = row[0] if len(row) > 0 else None, row[1] if len(row) > 1 else None
+    for row_num, row in enumerate(
+        ws.iter_rows(min_row=2, max_col=2, values_only=True), 2
+    ):
+        sku_val, cost_val = (
+            row[0] if len(row) > 0 else None,
+            row[1] if len(row) > 1 else None,
+        )
 
         if not sku_val:
             continue  # skip empty rows
@@ -807,7 +975,9 @@ async def import_cogs_excel(
         try:
             cost = float(cost_val) if cost_val is not None else 0.0
         except (ValueError, TypeError):
-            errors.append(f"Rând {row_num}: cost invalid '{cost_val}' pentru SKU '{sku}'")
+            errors.append(
+                f"Rând {row_num}: cost invalid '{cost_val}' pentru SKU '{sku}'"
+            )
             continue
 
         imported.append({"sku": sku, "cost": cost})
@@ -815,16 +985,16 @@ async def import_cogs_excel(
     wb.close()
 
     if not imported:
-        raise HTTPException(status_code=400, detail="Nu s-au găsit date valide în fișier.")
+        raise HTTPException(
+            status_code=400, detail="Nu s-au găsit date valide în fișier."
+        )
 
     # Upsert into sku_costs
     created = 0
     updated = 0
 
     for item in imported:
-        result = await db.execute(
-            select(SkuCost).where(SkuCost.sku == item["sku"])
-        )
+        result = await db.execute(select(SkuCost).where(SkuCost.sku == item["sku"]))
         existing = result.scalar_one_or_none()
 
         if existing:
@@ -854,10 +1024,12 @@ async def import_cogs_excel(
 # IMPORTANT: This MUST be the LAST route — /{product_uid} is a catch-all
 # that would shadow /export/excel, /import/cogs-template etc. if placed before them.
 
+
 # ── Variants update ──
 class UpdateVariantsRequest(BaseModel):
     tom_variant_1: Optional[str] = None
     tom_variant_2: Optional[str] = None
+
 
 @router.patch("/{product_uid}/variants")
 async def update_product_variants(
@@ -873,15 +1045,16 @@ async def update_product_variants(
 
     product.tom_variant_1 = body.tom_variant_1
     product.tom_variant_2 = body.tom_variant_2
-    
+
     # We could also apply this to the entire barcode/SKU group if requested,
     # but for now, we apply it to the specific listing they edit.
     await db.commit()
     return {
         "uid": product.uid,
         "tom_variant_1": product.tom_variant_1,
-        "tom_variant_2": product.tom_variant_2
+        "tom_variant_2": product.tom_variant_2,
     }
+
 
 @router.get("/{product_uid}")
 async def get_product(product_uid: str, db: AsyncSession = Depends(get_db)):
@@ -893,15 +1066,26 @@ async def get_product(product_uid: str, db: AsyncSession = Depends(get_db)):
 
     sn = {}
     if product.store_uids:
-        sr = await db.execute(select(Store.uid, Store.name).where(Store.uid.in_(product.store_uids)))
+        sr = await db.execute(
+            select(Store.uid, Store.name).where(Store.uid.in_(product.store_uids))
+        )
         sn = {r[0]: r[1] for r in sr.all()}
 
     return {
-        "id": product.id, "uid": product.uid, "barcode": product.barcode,
-        "title_1": product.title_1, "title_2": product.title_2, "sku": product.sku,
-        "state": product.state, "images": product.images,
-        "stores": [{"uid": u, "name": sn.get(u, u)} for u in (product.store_uids or [])],
-        "stock_available": product.stock_available, "stock_committed": product.stock_committed,
-        "stock_incoming": product.stock_incoming, "exclude_from_stock": product.exclude_from_stock,
+        "id": product.id,
+        "uid": product.uid,
+        "barcode": product.barcode,
+        "title_1": product.title_1,
+        "title_2": product.title_2,
+        "sku": product.sku,
+        "state": product.state,
+        "images": product.images,
+        "stores": [
+            {"uid": u, "name": sn.get(u, u)} for u in (product.store_uids or [])
+        ],
+        "stock_available": product.stock_available,
+        "stock_committed": product.stock_committed,
+        "stock_incoming": product.stock_incoming,
+        "exclude_from_stock": product.exclude_from_stock,
         "synced_at": product.synced_at,
     }

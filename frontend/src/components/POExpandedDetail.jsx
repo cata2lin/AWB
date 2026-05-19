@@ -32,7 +32,7 @@ export default function POExpandedDetail({ po, data, tomBusy, onUpdateStatus, on
 
       {/* TOM Sync Bar — categories with tom_enabled */}
       {isTomEnabled && (
-        <div className="flex items-center gap-2 flex-wrap p-2.5 rounded-lg bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-500/5 dark:to-indigo-500/5 border border-sky-200 dark:border-sky-500/20">
+        <div className="flex items-center gap-2 flex-wrap p-2.5 rounded-lg bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20">
           <span className="text-[10px] font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider mr-1">TOM</span>
           {hasTom ? (
             <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${TOM_STATUS_CLS[data.tom_status] || 'bg-zinc-100 text-zinc-500'}`}>
@@ -60,7 +60,7 @@ export default function POExpandedDetail({ po, data, tomBusy, onUpdateStatus, on
             {/* Refresh — only if sent */}
             {hasTom && (
               <button onClick={() => onTomAction('refresh')} disabled={!!tomBusy}
-                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-40">
+                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-40">
                 {tomBusy === 'refresh' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />} Refresh
               </button>
             )}

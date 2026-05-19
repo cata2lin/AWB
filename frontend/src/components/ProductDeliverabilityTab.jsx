@@ -5,6 +5,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Search, RefreshCw, ChevronUp, ChevronDown, TrendingDown, Package, X, Download } from 'lucide-react'
 import { analyticsApi } from '../services/api/analytics'
+import ColumnsMenu from './ui/ColumnsMenu'
+import { useColumnVisibility } from '../hooks/useColumnVisibility'
+import { exportCsv } from '../utils/csvExport'
 
 const fmt = n => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const fmtPct = n => `${Number(n || 0).toFixed(1)}%`
@@ -80,13 +83,13 @@ function MiniBar({ value, max, colorClass }) {
   )
 }
 
-function SortIcon({ col, active, dir }) {
+function SortIcon({ active, dir }) {
   if (!active) return <ChevronUp className="w-3 h-3 text-zinc-300 dark:text-zinc-600" />
-  return dir === 'desc' ? <ChevronDown className="w-3 h-3 text-indigo-500" /> : <ChevronUp className="w-3 h-3 text-indigo-500" />
+  return dir === 'desc' ? <ChevronDown className="w-3 h-3 text-primary-500" /> : <ChevronUp className="w-3 h-3 text-primary-500" />
 }
 
 const COLS = [
-  { key: 'product_name', label: 'Produs / SKU', align: 'left', sticky: true },
+  { key: 'product_name', label: 'Produs / SKU', align: 'left', sticky: true, alwaysVisible: true },
   { key: 'status_badge', label: 'Status', align: 'center' },
   { key: 'stock_available', label: 'Stoc', align: 'right' },
   { key: 'total_orders', label: 'Comenzi', align: 'right' },
@@ -102,6 +105,9 @@ const COLS = [
   { key: 'expedition_rate', label: 'Rată Expediție', align: 'right' },
 ]
 
+// `header` alias for the shared ColumnsMenu primitive — it reads `header`, not `label`.
+const MENU_COLS = COLS.map((c) => ({ key: c.key, header: c.label, alwaysVisible: c.alwaysVisible }))
+
 export default function ProductDeliverabilityTab({ selectedStores = [] }) {
   const [period, setPeriod] = useState(getLastCompleteMonth)
   const [customFrom, setCustomFrom] = useState('')
@@ -112,8 +118,14 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [visibleCols, setVisibleCols] = useState(() =>
-    Object.fromEntries(COLS.map(c => [c.key, true]))
+  const {
+    visibleKeys,
+    setVisibleKeys,
+    defaultVisibleKeys,
+  } = useColumnVisibility('livrabilitate-produse', MENU_COLS)
+  const visibleCols = useMemo(
+    () => Object.fromEntries(COLS.map(c => [c.key, c.alwaysVisible || visibleKeys.includes(c.key)])),
+    [visibleKeys],
   )
   const [filterMode, setFilterMode] = useState('all') // 'all' | 'low_delivery' | 'high_return' | 'high_cancel'
 
@@ -173,20 +185,21 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
 
   const maxOrders = useMemo(() => Math.max(...(data?.products || []).map(r => r.total_orders), 1), [data])
 
-  // CSV export
-  const exportCsv = () => {
+  // CSV export — uses the shared util so format/quoting is consistent across reports.
+  const handleExportCsv = () => {
     if (!displayedRows.length) return
-    const headers = COLS.filter(c => visibleCols[c.key]).map(c => c.label)
-    const rows = displayedRows.map(r => COLS.filter(c => visibleCols[c.key]).map(c => {
-      const v = r[c.key]
-      if (['delivery_rate', 'return_rate', 'cancellation_rate', 'expedition_rate'].includes(c.key)) return `${v}%`
-      return v
+    const cols = COLS.filter(c => visibleCols[c.key] && c.key !== 'status_badge').map(c => ({
+      key: c.key,
+      label: c.label,
+      accessor: (r) => {
+        if (c.key === 'product_name') return r.product_name || r.sku || ''
+        if (['delivery_rate', 'return_rate', 'cancellation_rate', 'expedition_rate'].includes(c.key)) {
+          return r[c.key] != null ? `${r[c.key]}%` : ''
+        }
+        return r[c.key] ?? ''
+      },
     }))
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `livrabilitate_produse_${period}.csv`; a.click()
-    URL.revokeObjectURL(url)
+    exportCsv({ filename: `livrabilitate_produse_${period}`, columns: cols, rows: displayedRows })
   }
 
   const totals = data?.totals || {}
@@ -217,7 +230,7 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
         <div className="flex items-center gap-2">
           <span className="text-xs text-zinc-500 font-medium">Perioadă:</span>
         <select value={period} onChange={e => { setPeriod(e.target.value); setCustomFrom(''); setCustomTo('') }}
-            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:ring-2 focus:ring-indigo-500/30">
+            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:ring-2 focus:ring-primary-500/30">
             <optgroup label="Perioade rapide">
               {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </optgroup>
@@ -230,10 +243,10 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
         {period === 'custom' && (
           <div className="flex items-center gap-2">
             <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-              className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" />
+              className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 dark:[color-scheme:dark]" />
             <span className="text-zinc-400">→</span>
             <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-              className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" />
+              className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 dark:[color-scheme:dark]" />
           </div>
         )}
 
@@ -247,15 +260,22 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
         </div>
 
         <button onClick={fetchData} disabled={loading}
-          className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          className="flex items-center gap-2 px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
           {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           Actualizează
         </button>
 
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={exportCsv} title="Export CSV"
-            className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-colors">
+          <ColumnsMenu
+            columns={MENU_COLS}
+            visibleKeys={visibleKeys}
+            onChange={setVisibleKeys}
+            defaultVisibleKeys={defaultVisibleKeys}
+          />
+          <button onClick={handleExportCsv} title="Export CSV"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700">
             <Download className="w-4 h-4" />
+            CSV
           </button>
         </div>
       </div>
@@ -290,7 +310,7 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
             <button key={f.key} onClick={() => setFilterMode(f.key)}
               className={`px-3 py-1 text-xs font-medium rounded-lg transition-all border ${
                 filterMode === f.key
-                  ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30'
+                  ? 'bg-primary-50 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 border-primary-200 dark:border-primary-500/30'
                   : 'bg-white dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300'
               }`}>
               {f.label} {f.count != null && <span className="ml-1 opacity-60">({f.count})</span>}
@@ -302,7 +322,7 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Caută SKU sau produs…"
-            className="pl-8 pr-8 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 w-64 focus:ring-2 focus:ring-indigo-500/30" />
+            className="pl-8 pr-8 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 w-64 focus:ring-2 focus:ring-primary-500/30" />
           {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"><X className="w-3.5 h-3.5" /></button>}
         </div>
       </div>
@@ -311,7 +331,7 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
       <div className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden">
         {loading && (
           <div className="flex items-center justify-center py-16 text-zinc-400">
-            <RefreshCw className="w-6 h-6 animate-spin mr-3 text-indigo-400" />
+            <RefreshCw className="w-6 h-6 animate-spin mr-3 text-primary-400" />
             <span>Se încarcă datele…</span>
           </div>
         )}
@@ -343,16 +363,16 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
         )}
 
         {!loading && displayedRows.length > 0 && (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
                   {COLS.filter(c => visibleCols[c.key]).map(col => (
                     <th key={col.key}
                       onClick={() => col.key !== 'status_badge' && toggleSort(col.key)}
-                      className={`px-3 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider whitespace-nowrap select-none
-                        ${col.key !== 'status_badge' ? 'cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200' : 'cursor-default'}
-                        ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'} ${col.sticky ? 'sticky left-0 bg-zinc-50 dark:bg-zinc-800/80 z-10' : ''}`}>
+                      className={`px-3 py-3 text-xs font-semibold text-zinc-600 dark:text-zinc-200 uppercase tracking-wider whitespace-nowrap select-none
+                        ${col.key !== 'status_badge' ? 'cursor-pointer hover:text-zinc-900 dark:hover:text-white' : 'cursor-default'}
+                        ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'} ${col.sticky ? 'sticky left-0 bg-zinc-50 dark:bg-zinc-900 z-20' : ''}`}>
                       <span className="flex items-center gap-1 justify-end">
                         {col.align === 'right' && <SortIcon col={col.key} active={sort.col === col.key} dir={sort.dir} />}
                         {col.label}
@@ -362,12 +382,12 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
                   ))}
                 </tr>
                 {/* Totals row */}
-                <tr className="border-b-2 border-zinc-300 dark:border-zinc-600 bg-zinc-100/80 dark:bg-zinc-700/40 font-semibold">
+                <tr className="border-b-2 border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-800 font-semibold">
                   {COLS.filter(c => visibleCols[c.key]).map(col => (
-                    <td key={col.key} className={`px-3 py-2.5 text-xs ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.sticky ? 'sticky left-0 bg-zinc-100 dark:bg-zinc-700 z-10' : ''}`}>
-                      {col.key === 'product_name' && <span className="text-zinc-500 dark:text-zinc-400">TOTAL ({displayedRows.length} produse)</span>}
+                    <td key={col.key} className={`px-3 py-2.5 text-xs text-zinc-900 dark:text-zinc-100 ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.sticky ? 'sticky left-0 bg-zinc-100 dark:bg-zinc-800 z-20' : ''}`}>
+                      {col.key === 'product_name' && <span className="text-zinc-600 dark:text-zinc-300">TOTAL ({displayedRows.length} produse)</span>}
                       {col.key === 'status_badge' && <DeliveryBadge rate={totals.delivery_rate} />}
-                      {col.key === 'stock_available' && '—'}
+                      {col.key === 'stock_available' && <span className="text-zinc-500 dark:text-zinc-400">—</span>}
                       {col.key === 'total_orders' && fmt(totals.total_orders)}
                       {col.key === 'total_units' && fmt(totals.total_units)}
                       {col.key === 'delivered' && fmt(totals.delivered)}
@@ -416,7 +436,7 @@ export default function ProductDeliverabilityTab({ selectedStores = [] }) {
                     {visibleCols.total_orders && (
                       <td className="px-3 py-2.5 text-right">
                         <span className="font-semibold text-zinc-700 dark:text-zinc-300">{fmt(row.total_orders)}</span>
-                        <MiniBar value={row.total_orders} max={maxOrders} colorClass="bg-indigo-400" />
+                        <MiniBar value={row.total_orders} max={maxOrders} colorClass="bg-primary-400" />
                       </td>
                     )}
                     {visibleCols.total_units && <td className="px-3 py-2.5 text-right text-zinc-600 dark:text-zinc-400">{fmt(row.total_units)}</td>}

@@ -16,7 +16,7 @@ export default function POCreateModal({ h, analyticsProducts = [], poCategories 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-700">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-indigo-500" /> Create Purchase Order
+            <ShoppingCart className="w-5 h-5 text-primary-500" /> Create Purchase Order
           </h2>
           <button onClick={h.resetCreate}><X className="w-5 h-5 text-zinc-400 hover:text-zinc-600" /></button>
         </div>
@@ -60,7 +60,7 @@ export default function POCreateModal({ h, analyticsProducts = [], poCategories 
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Expected Arrival</label>
               <input type="date" value={h.createForm.expected_arrival_date} onChange={e => h.setCreateForm(p => ({ ...p, expected_arrival_date: e.target.value }))}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-700 text-zinc-900 dark:text-white dark:[color-scheme:dark]" />
             </div>
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Notes</label>
@@ -93,7 +93,7 @@ export default function POCreateModal({ h, analyticsProducts = [], poCategories 
                   <span className="text-zinc-500 truncate flex-1">{p.product_name}</span>
                   <span className="text-zinc-400">Stk:{fmt(p.stock_available)}</span>
                   <span className="text-zinc-400">{p.barcode || 'no barcode'}</span>
-                  <Plus className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                  <Plus className="w-4 h-4 text-primary-500 flex-shrink-0" />
                 </button>
               ))}
             </div>
@@ -160,7 +160,7 @@ export default function POCreateModal({ h, analyticsProducts = [], poCategories 
             <div className="flex items-center gap-2">
               <button onClick={h.resetCreate} className="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
               <button onClick={h.submitCreate} disabled={h.saving || h.createForm.items.length === 0}
-                className="flex items-center gap-1.5 px-5 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-40">
+                className="flex items-center gap-1.5 px-5 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-40">
                 {h.saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Create PO
               </button>
             </div>

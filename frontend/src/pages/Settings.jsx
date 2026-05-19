@@ -3,10 +3,13 @@ import { useAppStore } from '../store/useAppStore'
 import { useStores, useUpdateStore, useSyncStatus } from '../hooks/useApi'
 import { profitabilityConfigApi, businessCostsApi, courierCsvApi } from '../services/api'
 import TomSettingsPanel from '../components/TomSettingsPanel'
+import { toastError, toastSuccess } from '../utils/toast'
+import useConfirm from '../hooks/useConfirm'
 import { Download, Upload, Palette, RefreshCw, Clock, AlertCircle, DollarSign, Save, Check, Plus, Trash2, Copy, ChevronLeft, ChevronRight, Edit2, X, FileUp, Loader, Truck, Zap, RotateCcw, FolderOpen, HardDrive } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 export default function Settings() {
+    const { confirm, dialog: confirmDialog } = useConfirm()
     const { batchSize, setBatchSize, printChunkSize, setPrintChunkSize, printChunkDelay, setPrintChunkDelay } = useAppStore()
     const { data: stores = [], isLoading, error } = useStores()
     const { data: syncStatus } = useSyncStatus()
@@ -141,12 +144,21 @@ export default function Settings() {
     }
 
     const handleDeleteCost = async (id) => {
-        if (!confirm('Ștergi acest cost?')) return
+        const ok = await confirm({
+            title: 'Șterge cost',
+            description: 'Sigur ștergi acest cost? Acțiunea este ireversibilă.',
+            confirmLabel: 'Da, șterge',
+            cancelLabel: 'Anulează',
+            variant: 'danger',
+        })
+        if (!ok) return
         try {
             await businessCostsApi.deleteCost(id)
+            toastSuccess('Cost șters')
             await refreshBizCosts()
         } catch (err) {
             console.error('Failed to delete:', err)
+            toastError(err)
         }
     }
 
@@ -169,12 +181,12 @@ export default function Settings() {
         setBizSaving(true)
         try {
             const result = await businessCostsApi.cloneMonth(cloneSource, bizCostMonth)
-            alert(`Clonat ${result.cloned} costuri fixe din ${cloneSource}. ${result.skipped_duplicates} duplicate ignorate.`)
+            toastSuccess(`Clonat ${result.cloned} costuri din ${cloneSource}. ${result.skipped_duplicates} duplicate ignorate.`)
             setCloneSource('')
             await refreshBizCosts()
         } catch (err) {
             console.error('Clone failed:', err)
-            alert('Clonare eșuată: ' + (err.response?.data?.detail || err.message))
+            toastError(err)
         } finally {
             setBizSaving(false)
         }
@@ -201,9 +213,11 @@ export default function Settings() {
             const result = await profitabilityConfigApi.updateConfig(profitConfig)
             setProfitConfig(result.config)
             setConfigSaved(true)
+            toastSuccess('Configurație salvată')
             setTimeout(() => setConfigSaved(false), 3000)
         } catch (err) {
             setConfigError('Failed to save profitability config')
+            toastError(err)
         } finally {
             setConfigSaving(false)
         }
@@ -240,7 +254,7 @@ export default function Settings() {
                     step={step}
                     value={profitConfig?.[field] ?? ''}
                     onChange={(e) => handleConfigChange(field, type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)}
-                    className="w-24 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-right text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-24 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-right text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 />
                 {suffix && <span className="text-xs text-zinc-500 dark:text-zinc-400 w-8">{suffix}</span>}
             </div>
@@ -248,7 +262,7 @@ export default function Settings() {
     )
 
     return (
-        <div className="p-6 space-y-6 animate-fade-in bg-zinc-50 dark:bg-zinc-950 min-h-screen">
+        <div className="p-6 space-y-6 animate-fade-in">
             {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">Settings</h1>
@@ -305,7 +319,7 @@ export default function Settings() {
                         disabled={configSaving || configLoading}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${configSaved
                             ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-lg shadow-indigo-500/20'
+                            : 'bg-primary-600 hover:bg-primary-700 text-white '
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                         {configSaved ? <><Check className="w-4 h-4" /> Saved</> : <><Save className="w-4 h-4" /> {configSaving ? 'Saving...' : 'Save'}</>}
@@ -321,7 +335,7 @@ export default function Settings() {
 
                 {configLoading ? (
                     <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
                     </div>
                 ) : profitConfig && (
                     <div className="space-y-6">
@@ -353,7 +367,7 @@ export default function Settings() {
                                     <select
                                         value={profitConfig.gt_commission_store_uid || ''}
                                         onChange={(e) => handleConfigChange('gt_commission_store_uid', e.target.value || null)}
-                                        className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                     >
                                         <option value="">— None —</option>
                                         {stores.map(s => <option key={s.uid} value={s.uid}>{s.name}</option>)}
@@ -678,7 +692,7 @@ export default function Settings() {
                                                     </span>
                                                 </td>
                                                 <td className="py-2 pr-2">
-                                                    <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
+                                                    <span className="text-xs px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
                                                         {{ cogs: '📦 COGS', operational: '🏢 Oper.', marketing: '📣 Mkt.', fixed: '💼 Fixe' }[cost.pnl_section] || '💼 Fixe'}
                                                     </span>
                                                 </td>
@@ -692,7 +706,7 @@ export default function Settings() {
                                                 </td>
                                                 <td className="py-2 text-right">
                                                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => { setEditingCostId(cost.id); setEditingCost({ category: cost.category, label: cost.label, amount: cost.amount, has_tva: cost.has_tva ?? true, pnl_section: cost.pnl_section || 'fixed' }) }} className="p-1 text-zinc-400 hover:text-indigo-600"><Edit2 className="w-3.5 h-3.5" /></button>
+                                                        <button onClick={() => { setEditingCostId(cost.id); setEditingCost({ category: cost.category, label: cost.label, amount: cost.amount, has_tva: cost.has_tva ?? true, pnl_section: cost.pnl_section || 'fixed' }) }} className="p-1 text-zinc-400 hover:text-primary-600"><Edit2 className="w-3.5 h-3.5" /></button>
                                                         <button onClick={() => handleDeleteCost(cost.id)} className="p-1 text-zinc-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                                                     </div>
                                                 </td>
@@ -733,7 +747,7 @@ export default function Settings() {
                             type="number"
                             value={batchSize}
                             onChange={(e) => setBatchSize(Number(e.target.value))}
-                            className="w-24 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-right text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            className="w-24 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-right text-zinc-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         />
                     </div>
                 </div>
@@ -835,7 +849,7 @@ export default function Settings() {
 
                 {isLoading && (
                     <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
                     </div>
                 )}
 
@@ -878,7 +892,7 @@ export default function Settings() {
                 {/* Server folder scan */}
                 <div className="mb-5 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700/50">
                     <div className="flex items-center gap-2 mb-2">
-                        <HardDrive className="w-4 h-4 text-indigo-500" />
+                        <HardDrive className="w-4 h-4 text-primary-500" />
                         <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Import din folder server</span>
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
@@ -892,12 +906,12 @@ export default function Settings() {
                                     const data = await courierCsvApi.scanFolder()
                                     setFolderData(data)
                                 } catch (err) {
-                                    alert('Eroare scanare: ' + err.message)
+                                    toastError(err)
                                 }
                                 setFolderScanning(false)
                             }}
                             disabled={folderScanning}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/30 hover:bg-indigo-200 dark:hover:bg-indigo-800/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                            className="flex items-center gap-2 px-3 py-1.5 bg-primary-100 dark:bg-primary-900/30 hover:bg-primary-200 dark:hover:bg-primary-800/40 text-primary-700 dark:text-primary-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                         >
                             {folderScanning ? <Loader className="w-3 h-3 animate-spin" /> : <FolderOpen className="w-3 h-3" />}
                             Scanează folder
@@ -905,17 +919,26 @@ export default function Settings() {
                         {folderData && folderData.exists && folderData.file_count > 0 && (
                             <button
                                 onClick={async () => {
-                                    if (!confirm(`Importă toate cele ${folderData.file_count} fișiere CSV cu auto-detect?`)) return
+                                    const ok = await confirm({
+                                        title: 'Importă fișiere CSV',
+                                        description: `Importă toate cele ${folderData.file_count} fișiere CSV cu auto-detect?`,
+                                        confirmLabel: 'Da, importă',
+                                        cancelLabel: 'Anulează',
+                                        variant: 'primary',
+                                    })
+                                    if (!ok) return
                                     setFolderImporting(true)
                                     setFolderImportResult(null)
                                     try {
                                         const res = await courierCsvApi.importFolder()
                                         setFolderImportResult(res)
+                                        toastSuccess(`Import finalizat: ${res.imported ?? 0} fișiere`)
                                         // Refresh history
                                         const h = await courierCsvApi.getImportHistory(10)
                                         setCsvHistory(h.imports || [])
                                     } catch (err) {
                                         setFolderImportResult({ status: 'error', message: err.message })
+                                        toastError(err)
                                     }
                                     setFolderImporting(false)
                                 }}
@@ -1046,9 +1069,9 @@ export default function Settings() {
                             setCsvEstimating(true)
                             try {
                                 const res = await courierCsvApi.triggerEstimation()
-                                alert(`Estimare completă: ${res.orders_updated} comenzi actualizate, ${res.orders_no_match} fără potrivire`)
+                                toastSuccess(`Estimare completă: ${res.orders_updated} comenzi actualizate, ${res.orders_no_match} fără potrivire`)
                             } catch (err) {
-                                alert('Eroare: ' + err.message)
+                                toastError(err)
                             }
                             setCsvEstimating(false)
                         }}
@@ -1122,7 +1145,14 @@ export default function Settings() {
                                                 {imp.has_saved_file && (
                                                     <button
                                                         onClick={async () => {
-                                                            if (!confirm(`Re-importă '${imp.filename}' cu logica actuală de procesare?`)) return
+                                                            const ok = await confirm({
+                                                                title: 'Re-importă CSV',
+                                                                description: `Re-importă '${imp.filename}' cu logica actuală de procesare?`,
+                                                                confirmLabel: 'Da, re-importă',
+                                                                cancelLabel: 'Anulează',
+                                                                variant: 'primary',
+                                                            })
+                                                            if (!ok) return
                                                             setCsvReimporting(imp.id)
                                                             try {
                                                                 const res = await courierCsvApi.reimportCsv(imp.id)
@@ -1142,12 +1172,12 @@ export default function Settings() {
                                                                     } catch { clearInterval(poll); setCsvReimporting(null) }
                                                                 }, 2000)
                                                             } catch (err) {
-                                                                alert('Re-import eșuat: ' + err.message)
+                                                                toastError(err)
                                                                 setCsvReimporting(null)
                                                             }
                                                         }}
                                                         disabled={csvReimporting === imp.id}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800/40 transition-colors disabled:opacity-50"
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-800/40 transition-colors disabled:opacity-50"
                                                         title="Re-importă cu logica curentă"
                                                     >
                                                         <RotateCcw className={`w-3 h-3 ${csvReimporting === imp.id ? 'animate-spin' : ''}`} />
@@ -1182,6 +1212,7 @@ export default function Settings() {
                     </button>
                 </div>
             </div>
+            {confirmDialog}
         </div>
     )
 }

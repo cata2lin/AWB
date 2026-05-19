@@ -1,8 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-    Search, RefreshCw, Plus, Save, Edit2, XCircle, Tag, Trash2,
+    Search, RefreshCw, Plus, Save, Edit2, XCircle, Tag, Trash2, Download, ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react'
 import { skuCostsApi } from '../../services/api'
+import { toastError, toastInfo, toastSuccess } from '../../utils/toast'
+import ColumnsMenu from '../../components/ui/ColumnsMenu'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { exportCsv } from '../../utils/csvExport'
+
+const SKU_COSTS_COLUMNS = [
+    { key: 'sku',    header: 'SKU',         alwaysVisible: true },
+    { key: 'name',   header: 'Nume' },
+    { key: 'cost',   header: 'Cost (RON)' },
+    { key: 'actions',header: 'Acțiuni',     alwaysVisible: true },
+]
 
 export default function SkuCostsTab() {
     const [skuCosts, setSkuCosts] = useState([])
@@ -14,6 +25,36 @@ export default function SkuCostsTab() {
     const [bulkEditMode, setBulkEditMode] = useState(false)
     const [selectedSkus, setSelectedSkus] = useState(new Set())
     const [bulkCostValue, setBulkCostValue] = useState('')
+    const [sort, setSort] = useState({ col: null, dir: 'asc' })
+
+    const {
+        visibleKeys,
+        setVisibleKeys,
+        defaultVisibleKeys,
+    } = useColumnVisibility('costuri-sku', SKU_COSTS_COLUMNS)
+    const colVisible = (key) => visibleKeys.includes(key) || SKU_COSTS_COLUMNS.find(c => c.key === key)?.alwaysVisible
+
+    const sortedSkuCosts = useMemo(() => {
+        if (!sort.col) return skuCosts
+        const arr = [...skuCosts]
+        arr.sort((a, b) => {
+            const va = a[sort.col] ?? ''
+            const vb = b[sort.col] ?? ''
+            if (typeof va === 'number' && typeof vb === 'number') return sort.dir === 'asc' ? va - vb : vb - va
+            return sort.dir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va))
+        })
+        return arr
+    }, [skuCosts, sort])
+
+    const toggleSort = (col) => {
+        setSort(prev => prev.col === col
+            ? (prev.dir === 'asc' ? { col, dir: 'desc' } : { col: null, dir: 'asc' })
+            : { col, dir: 'asc' })
+    }
+    const sortIcon = (col) => {
+        if (sort.col !== col) return <ArrowUpDown className="w-3 h-3 opacity-40" />
+        return sort.dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+    }
 
     const loadSkuCosts = async () => {
         try {
@@ -42,7 +83,7 @@ export default function SkuCostsTab() {
             const result = await skuCostsApi.discoverSkus()
             const discovered = result.skus || []
             if (discovered.length === 0) {
-                alert('No new SKUs found in orders. All SKUs already have costs assigned.')
+                toastInfo('Niciun SKU nou. Toate SKU-urile au costuri.')
                 return
             }
             const skusToAdd = discovered.map(sku => ({
@@ -54,10 +95,10 @@ export default function SkuCostsTab() {
             await skuCostsApi.bulkUpsert(skusToAdd)
             await loadSkuCosts()
             setDiscoveredSkus([])
-            alert(`Added ${discovered.length} SKUs from orders. Please update their costs.`)
+            toastSuccess(`${discovered.length} SKU-uri adăugate. Actualizează costurile.`)
         } catch (err) {
             console.error('Failed to discover SKUs:', err)
-            alert('Failed to discover SKUs: ' + (err.message || 'Unknown error'))
+            toastError(err)
         }
     }
 
@@ -239,12 +280,31 @@ export default function SkuCostsTab() {
                         <select
                             value={skuCostFilter}
                             onChange={(e) => setSkuCostFilter(e.target.value)}
-                            className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-700 dark:text-white border border-zinc-200 dark:border-zinc-600 rounded-lg text-sm"
+                            className="px-3 py-1.5 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white border border-zinc-200 dark:border-zinc-600 rounded-lg text-sm"
                         >
                             <option value="all">Toate SKU-urile</option>
                             <option value="no_cost">Fără cost setat</option>
                             <option value="has_cost">Cu cost setat</option>
                         </select>
+                        <ColumnsMenu
+                            columns={SKU_COSTS_COLUMNS}
+                            visibleKeys={visibleKeys}
+                            onChange={setVisibleKeys}
+                            defaultVisibleKeys={defaultVisibleKeys}
+                        />
+                        <button
+                            onClick={() => {
+                                const cols = SKU_COSTS_COLUMNS.filter(c => colVisible(c.key) && c.key !== 'actions').map(c => ({
+                                    key: c.key, label: c.header,
+                                    accessor: (r) => c.key === 'cost' ? (r.cost ?? 0) : (r[c.key] ?? ''),
+                                }))
+                                exportCsv({ filename: 'costuri_sku', columns: cols, rows: sortedSkuCosts })
+                            }}
+                            title="Export CSV"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                        >
+                            <Download className="w-4 h-4" /> CSV
+                        </button>
                         <button
                             onClick={() => {
                                 setBulkEditMode(!bulkEditMode)
@@ -253,7 +313,7 @@ export default function SkuCostsTab() {
                             }}
                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${bulkEditMode
                                 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                                : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-white hover:bg-zinc-200'
+                                : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-600'
                                 }`}
                         >
                             <Edit2 className="w-4 h-4 inline mr-1" />
@@ -310,20 +370,38 @@ export default function SkuCostsTab() {
                                         />
                                     </th>
                                 )}
-                                <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 uppercase">SKU</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 uppercase">Nume</th>
-                                <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 uppercase">Cost (RON)</th>
-                                <th className="text-right px-4 py-3 text-xs font-medium text-zinc-500 uppercase">Acțiuni</th>
+                                {colVisible('sku') && (
+                                    <th onClick={() => toggleSort('sku')}
+                                        className="text-left px-4 py-3 text-xs font-medium text-zinc-600 dark:text-zinc-200 uppercase cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                        <span className="inline-flex items-center gap-1">SKU {sortIcon('sku')}</span>
+                                    </th>
+                                )}
+                                {colVisible('name') && (
+                                    <th onClick={() => toggleSort('name')}
+                                        className="text-left px-4 py-3 text-xs font-medium text-zinc-600 dark:text-zinc-200 uppercase cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                        <span className="inline-flex items-center gap-1">Nume {sortIcon('name')}</span>
+                                    </th>
+                                )}
+                                {colVisible('cost') && (
+                                    <th onClick={() => toggleSort('cost')}
+                                        className="text-right px-4 py-3 text-xs font-medium text-zinc-600 dark:text-zinc-200 uppercase cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                        <span className="inline-flex items-center gap-1 justify-end">Cost (RON) {sortIcon('cost')}</span>
+                                    </th>
+                                )}
+                                {colVisible('actions') && (
+                                    <th className="text-right px-4 py-3 text-xs font-medium text-zinc-600 dark:text-zinc-200 uppercase">Acțiuni</th>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700">
-                            {skuCosts.length === 0 ? (
+                            {sortedSkuCosts.length === 0 ? (
                                 <tr>
-                                    <td colSpan={bulkEditMode ? 5 : 4} className="px-4 py-8 text-center text-zinc-500">
+                                    <td colSpan={(bulkEditMode ? 1 : 0) + SKU_COSTS_COLUMNS.filter(c => colVisible(c.key)).length}
+                                        className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
                                         Niciun cost SKU configurat. Adaugă primul SKU sau descoperă din comenzi.
                                     </td>
                                 </tr>
-                            ) : skuCosts.map(sku => (
+                            ) : sortedSkuCosts.map(sku => (
                                 <tr key={sku.sku} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
                                     {bulkEditMode && (
                                         <td className="w-10 px-3 py-3">
@@ -340,36 +418,43 @@ export default function SkuCostsTab() {
                                             />
                                         </td>
                                     )}
-                                    <td className="px-4 py-3 text-sm font-mono text-zinc-900 dark:text-white">
-                                        {sku.sku}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-zinc-600 dark:text-white">
-                                        {editingSku === sku.sku ? (
-                                            <input
-                                                type="text"
-                                                defaultValue={sku.name}
-                                                id={`name-${sku.sku}`}
-                                                className="w-full px-2 py-1 bg-zinc-50 dark:bg-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 rounded text-sm"
-                                            />
-                                        ) : (
-                                            sku.name || '-'
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-right text-zinc-900 dark:text-white">
-                                        {editingSku === sku.sku ? (
-                                            <input
-                                                type="number"
-                                                defaultValue={sku.cost}
-                                                id={`cost-${sku.sku}`}
-                                                step="0.01"
-                                                className="w-24 px-2 py-1 bg-zinc-50 dark:bg-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 rounded text-sm text-right"
-                                            />
-                                        ) : (
-                                            <span className={sku.cost === 0 ? 'text-amber-500 font-medium' : ''}>
-                                                {sku.cost === 0 ? '⚠ 0 RON' : `${sku.cost} RON`}
-                                            </span>
-                                        )}
-                                    </td>
+                                    {colVisible('sku') && (
+                                        <td className="px-4 py-3 text-sm font-mono text-zinc-900 dark:text-white">
+                                            {sku.sku}
+                                        </td>
+                                    )}
+                                    {colVisible('name') && (
+                                        <td className="px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200">
+                                            {editingSku === sku.sku ? (
+                                                <input
+                                                    type="text"
+                                                    defaultValue={sku.name}
+                                                    id={`name-${sku.sku}`}
+                                                    className="w-full px-2 py-1 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 rounded text-sm"
+                                                />
+                                            ) : (
+                                                sku.name || '-'
+                                            )}
+                                        </td>
+                                    )}
+                                    {colVisible('cost') && (
+                                        <td className="px-4 py-3 text-sm text-right text-zinc-900 dark:text-white">
+                                            {editingSku === sku.sku ? (
+                                                <input
+                                                    type="number"
+                                                    defaultValue={sku.cost}
+                                                    id={`cost-${sku.sku}`}
+                                                    step="0.01"
+                                                    className="w-24 px-2 py-1 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 rounded text-sm text-right"
+                                                />
+                                            ) : (
+                                                <span className={sku.cost === 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>
+                                                    {sku.cost === 0 ? '⚠ 0 RON' : `${sku.cost} RON`}
+                                                </span>
+                                            )}
+                                        </td>
+                                    )}
+                                    {colVisible('actions') && (
                                     <td className="px-4 py-3 text-sm text-right">
                                         {editingSku === sku.sku ? (
                                             <div className="flex gap-2 justify-end">
@@ -379,13 +464,13 @@ export default function SkuCostsTab() {
                                                         const cost = parseFloat(document.getElementById(`cost-${sku.sku}`)?.value) || 0
                                                         handleSaveSkuCost(sku.sku, { name, cost })
                                                     }}
-                                                    className="p-1.5 bg-green-100 dark:bg-green-900/30 text-green-600 rounded hover:bg-green-200"
+                                                    className="p-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded hover:bg-green-200 dark:hover:bg-green-900/50"
                                                 >
                                                     <Save className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => setEditingSku(null)}
-                                                    className="p-1.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-white rounded hover:bg-zinc-200"
+                                                    className="p-1.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded hover:bg-zinc-200 dark:hover:bg-zinc-600"
                                                 >
                                                     <XCircle className="w-4 h-4" />
                                                 </button>
@@ -394,19 +479,20 @@ export default function SkuCostsTab() {
                                             <div className="flex gap-2 justify-end">
                                                 <button
                                                     onClick={() => setEditingSku(sku.sku)}
-                                                    className="p-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded hover:bg-blue-200"
+                                                    className="p-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50"
                                                 >
                                                     <Tag className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteSkuCost(sku.sku)}
-                                                    className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 rounded hover:bg-red-200"
+                                                    className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
                                             </div>
                                         )}
                                     </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>

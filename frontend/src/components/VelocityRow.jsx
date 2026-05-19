@@ -137,7 +137,7 @@ const VelocityRow = memo(({
                                                         <span className="font-medium text-emerald-600 dark:text-emerald-400 border-b border-emerald-600/30 border-dashed">{var_data.sku}</span>
                                                     </td>
                                                     <td className="py-1.5 pr-3">
-                                                        <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{var_data.store_name}</span>
+                                                        <span className="px-1.5 py-0.5 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-full">{var_data.store_name}</span>
                                                     </td>
                                                     <td className="text-right py-1.5 px-2 text-zinc-500 dark:text-zinc-400">{var_data.gross_units.toLocaleString()}</td>
                                                     <td className="text-right py-1.5 px-2 font-medium text-zinc-700 dark:text-zinc-300">{var_data.units_sold.toLocaleString()}</td>

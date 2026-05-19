@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useAppStore } from './store/useAppStore'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import Sidebar from './components/Sidebar'
+import AppShell from './components/AppShell'
 import Dashboard from './pages/Dashboard'
 import Orders from './pages/Orders'
 import Duplicates from './pages/Duplicates'
@@ -13,9 +13,10 @@ import PurchaseOrders from './pages/PurchaseOrders'
 import Logs from './pages/Logs'
 import ComisionAgentie from './pages/ComisionAgentie'
 import CustomProducts from './pages/CustomProducts'
+import UiPreview from './pages/UiPreview'
 import Login from './pages/Login'
 import ErrorBoundary from './components/ErrorBoundary'
-import { Loader } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 function AppContent() {
   const { darkMode } = useAppStore()
@@ -24,7 +25,7 @@ function AppContent() {
   if (loading) {
     return (
       <div className="dark min-h-screen bg-zinc-950 flex items-center justify-center">
-        <Loader className="w-8 h-8 text-indigo-500 animate-spin" />
+        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
       </div>
     )
   }
@@ -36,27 +37,25 @@ function AppContent() {
   return (
     <div className={darkMode ? 'dark' : ''}>
       <BrowserRouter>
-        <div className="flex h-screen bg-zinc-100 dark:bg-zinc-950">
-          <Sidebar user={user} onLogout={logout} />
-          <main className="flex-1 overflow-auto">
-            <ErrorBoundary>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/orders" element={<Orders />} />
-                <Route path="/duplicates" element={<Duplicates />} />
-                <Route path="/rules" element={<Rules />} />
-                <Route path="/analytics" element={<Analytics />} />
-                <Route path="/purchase-orders" element={<PurchaseOrders />} />
-                <Route path="/purchase-orders/:poNumber" element={<PurchaseOrders />} />
-                <Route path="/history" element={<History />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/comision-agentie" element={<ComisionAgentie />} />
-                <Route path="/custom-products" element={<CustomProducts />} />
-                <Route path="/logs" element={<Logs />} />
-              </Routes>
-            </ErrorBoundary>
-          </main>
-        </div>
+        <AppShell user={user} onLogout={logout}>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/orders" element={<Orders />} />
+              <Route path="/duplicates" element={<Duplicates />} />
+              <Route path="/rules" element={<Rules />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/purchase-orders" element={<PurchaseOrders />} />
+              <Route path="/purchase-orders/:poNumber" element={<PurchaseOrders />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/comision-agentie" element={<ComisionAgentie />} />
+              <Route path="/custom-products" element={<CustomProducts />} />
+              <Route path="/logs" element={<Logs />} />
+              <Route path="/__ui" element={<UiPreview />} />
+            </Routes>
+          </ErrorBoundary>
+        </AppShell>
       </BrowserRouter>
     </div>
   )

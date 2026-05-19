@@ -1,8 +1,26 @@
 import { Fragment, useState } from 'react'
 import {
-    AlertTriangle, Search, RefreshCw, Truck, Store,
+    AlertTriangle, Search, RefreshCw, Truck, Store, Download,
 } from 'lucide-react'
 import { analyticsApi } from '../../services/api'
+import ColumnsMenu from '../../components/ui/ColumnsMenu'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { exportCsv } from '../../utils/csvExport'
+
+const SKU_RISK_COLUMNS = [
+    { key: 'sku',                    header: 'SKU',          alwaysVisible: true },
+    { key: 'units_sold',             header: 'Unități' },
+    { key: 'orders_with_sku',        header: 'Comenzi' },
+    { key: 'problem_units',          header: 'Probl. Units' },
+    { key: 'problem_rate',           header: 'Probl. Rate' },
+    { key: 'contamination_rate',     header: 'Contaminare %' },
+    { key: 'units_back_to_sender',   header: 'BTS' },
+    { key: 'units_cancelled',        header: 'Anulate' },
+    { key: 'units_refused',          header: 'Refuzate' },
+    { key: 'shipping_anomaly_rate',  header: 'Anom. Shipping' },
+    { key: 'avg_ship_cost_per_unit', header: 'Avg Ship/u' },
+    { key: 'risk_score',             header: 'Risk Score',   alwaysVisible: true },
+]
 
 export default function SkuRiskTab({ stores = [] }) {
     const [skuRiskData, setSkuRiskData] = useState(null)
@@ -17,6 +35,13 @@ export default function SkuRiskTab({ stores = [] }) {
     const [skuRiskExpanded, setSkuRiskExpanded] = useState(null)
     const [skuRiskAnomalyPage, setSkuRiskAnomalyPage] = useState(0)
     const [skuRiskSearch, setSkuRiskSearch] = useState('')
+
+    const {
+        visibleKeys,
+        setVisibleKeys,
+        defaultVisibleKeys,
+    } = useColumnVisibility('sku-risk', SKU_RISK_COLUMNS)
+    const colVisible = (key) => visibleKeys.includes(key) || SKU_RISK_COLUMNS.find(c => c.key === key)?.alwaysVisible
 
     const fetchSkuRisk = async () => {
         setSkuRiskLoading(true)
@@ -142,68 +167,97 @@ export default function SkuRiskTab({ stores = [] }) {
             {skuRiskData && !skuRiskLoading && (
                 <>
                     {/* Section B: Worst SKUs Table */}
-                    <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-clip">
-                        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+                    <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2">
                             <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
                                 <AlertTriangle className="w-4 h-4 text-red-500" />
                                 SKU-uri problematice — Ranked by Risk Score
                             </h3>
+                            <div className="flex items-center gap-2">
+                                <ColumnsMenu
+                                    columns={SKU_RISK_COLUMNS}
+                                    visibleKeys={visibleKeys}
+                                    onChange={setVisibleKeys}
+                                    defaultVisibleKeys={defaultVisibleKeys}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const cols = SKU_RISK_COLUMNS.filter(c => colVisible(c.key)).map(c => ({
+                                            key: c.key,
+                                            label: c.header,
+                                            accessor: (s) => {
+                                                if (c.key === 'risk_score') return s.risk_score ?? ''
+                                                if (c.key.endsWith('_rate')) return `${s[c.key] ?? 0}%`
+                                                return s[c.key] ?? ''
+                                            },
+                                        }))
+                                        exportCsv({ filename: `sku_risk_${skuRiskDays}z`, columns: cols, rows: sortedSkus })
+                                    }}
+                                    title="Export CSV"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                                    <Download className="w-4 h-4" /> CSV
+                                </button>
+                            </div>
                         </div>
                         <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
                             <table className="w-full">
                                 <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                     <tr>
-                                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 w-8">#</th>
-                                        <SortHeader col="sku" label="SKU" />
-                                        <SortHeader col="units_sold" label="Unități" tip="Total unități vândute" />
-                                        <SortHeader col="orders_with_sku" label="Comenzi" tip="Comenzi care conțin acest SKU" />
-                                        <SortHeader col="problem_units" label="Prob. Units" tip="Unități în comenzi returnate/refuzate/anulate" />
-                                        <SortHeader col="problem_rate" label="Prob. Rate" tip="Problem units / total units × 100" />
-                                        <SortHeader col="contamination_rate" label="Contam. %" tip="% comenzi cu SKU care sunt problematice" />
-                                        <SortHeader col="units_back_to_sender" label="BTS" tip="Back to Sender" />
-                                        <SortHeader col="units_cancelled" label="Anul." />
-                                        <SortHeader col="units_refused" label="Refuz." />
-                                        <SortHeader col="shipping_anomaly_rate" label="Ship. Anom." tip="% comenzi cu anomalie de shipping" />
-                                        <SortHeader col="avg_ship_cost_per_unit" label="Avg Ship/u" tip="Cost mediu transport alocat / unitate" />
-                                        <SortHeader col="risk_score" label="Risk Score" tip="Scor 0–100: 45% problem rate + 25% contamination + 20% shipping anomaly + 10% delivery problems" />
+                                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-300 w-8">#</th>
+                                        {colVisible('sku') && <SortHeader col="sku" label="SKU" />}
+                                        {colVisible('units_sold') && <SortHeader col="units_sold" label="Unități" tip="Total unități vândute" />}
+                                        {colVisible('orders_with_sku') && <SortHeader col="orders_with_sku" label="Comenzi" tip="Comenzi care conțin acest SKU" />}
+                                        {colVisible('problem_units') && <SortHeader col="problem_units" label="Prob. Units" tip="Unități în comenzi returnate/refuzate/anulate" />}
+                                        {colVisible('problem_rate') && <SortHeader col="problem_rate" label="Prob. Rate" tip="Problem units / total units × 100" />}
+                                        {colVisible('contamination_rate') && <SortHeader col="contamination_rate" label="Contam. %" tip="% comenzi cu SKU care sunt problematice" />}
+                                        {colVisible('units_back_to_sender') && <SortHeader col="units_back_to_sender" label="BTS" tip="Back to Sender" />}
+                                        {colVisible('units_cancelled') && <SortHeader col="units_cancelled" label="Anul." />}
+                                        {colVisible('units_refused') && <SortHeader col="units_refused" label="Refuz." />}
+                                        {colVisible('shipping_anomaly_rate') && <SortHeader col="shipping_anomaly_rate" label="Ship. Anom." tip="% comenzi cu anomalie de shipping" />}
+                                        {colVisible('avg_ship_cost_per_unit') && <SortHeader col="avg_ship_cost_per_unit" label="Avg Ship/u" tip="Cost mediu transport alocat / unitate" />}
+                                        {colVisible('risk_score') && <SortHeader col="risk_score" label="Risk Score" tip="Scor 0–100: 45% problem rate + 25% contamination + 20% shipping anomaly + 10% delivery problems" />}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                                     {sortedSkus.length === 0 && (
-                                        <tr><td colSpan={13} className="px-4 py-8 text-center text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
+                                        <tr><td colSpan={1 + SKU_RISK_COLUMNS.filter(c => colVisible(c.key)).length} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">Nu sunt date. Apasă "Analizează".</td></tr>
                                     )}
                                     {sortedSkus.map((s, i) => (
                                         <Fragment key={s.sku}>
                                             <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/30 cursor-pointer ${skuRiskExpanded === s.sku ? 'bg-zinc-50 dark:bg-zinc-700/30' : ''}`}
                                                 onClick={() => setSkuRiskExpanded(skuRiskExpanded === s.sku ? null : s.sku)}>
-                                                <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
-                                                <td className="px-3 py-2">
-                                                    <div className="text-sm font-medium text-zinc-900 dark:text-white">{s.sku}</div>
-                                                    {s.product_name && <div className="text-xs text-zinc-500 truncate max-w-[200px]">{s.product_name}</div>}
-                                                    {s.stores_count > 1 && <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">{s.stores_count} magazine</span>}
-                                                </td>
-                                                <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.units_sold}</td>
-                                                <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.orders_with_sku}</td>
-                                                <td className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400">{s.problem_units || '—'}</td>
-                                                <td className="px-3 py-2 text-sm font-semibold"><span className={s.problem_rate > 15 ? 'text-red-600' : s.problem_rate > 5 ? 'text-amber-600' : 'text-green-600'}>{s.problem_rate}%</span></td>
-                                                <td className="px-3 py-2 text-sm"><span className={s.contamination_rate > 15 ? 'text-red-600' : s.contamination_rate > 5 ? 'text-amber-600' : 'text-zinc-600 dark:text-zinc-300'}>{s.contamination_rate}%</span></td>
-                                                <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_back_to_sender || '—'}</td>
-                                                <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_cancelled || '—'}</td>
-                                                <td className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400">{s.units_refused || '—'}</td>
-                                                <td className="px-3 py-2 text-sm"><span className={s.shipping_anomaly_rate > 10 ? 'text-red-600' : 'text-zinc-600 dark:text-zinc-400'}>{s.shipping_anomaly_rate}%</span></td>
-                                                <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300">{s.avg_ship_cost_per_unit > 0 ? `${s.avg_ship_cost_per_unit} RON` : '—'}</td>
-                                                <td className="px-3 py-2">
-                                                    {s.risk_score !== null ? (
-                                                        <span className={`text-sm font-bold ${riskColor(s.risk_score)} px-2 py-0.5 rounded-md ${riskBg(s.risk_score)}`}>{s.risk_score}</span>
-                                                    ) : (
-                                                        <span className="text-xs text-zinc-400 italic">low data</span>
-                                                    )}
-                                                </td>
+                                                <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{i + 1}</td>
+                                                {colVisible('sku') && (
+                                                    <td className="px-3 py-2">
+                                                        <div className="text-sm font-medium text-zinc-900 dark:text-white">{s.sku}</div>
+                                                        {s.product_name && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">{s.product_name}</div>}
+                                                        {s.stores_count > 1 && <span className="text-[10px] px-1.5 py-0.5 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-full">{s.stores_count} magazine</span>}
+                                                    </td>
+                                                )}
+                                                {colVisible('units_sold') && <td className="px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100">{s.units_sold}</td>}
+                                                {colVisible('orders_with_sku') && <td className="px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100">{s.orders_with_sku}</td>}
+                                                {colVisible('problem_units') && <td className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400">{s.problem_units || '—'}</td>}
+                                                {colVisible('problem_rate') && <td className="px-3 py-2 text-sm font-semibold"><span className={s.problem_rate > 15 ? 'text-red-600 dark:text-red-400' : s.problem_rate > 5 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}>{s.problem_rate}%</span></td>}
+                                                {colVisible('contamination_rate') && <td className="px-3 py-2 text-sm"><span className={s.contamination_rate > 15 ? 'text-red-600 dark:text-red-400' : s.contamination_rate > 5 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-200'}>{s.contamination_rate}%</span></td>}
+                                                {colVisible('units_back_to_sender') && <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200">{s.units_back_to_sender || '—'}</td>}
+                                                {colVisible('units_cancelled') && <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200">{s.units_cancelled || '—'}</td>}
+                                                {colVisible('units_refused') && <td className="px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200">{s.units_refused || '—'}</td>}
+                                                {colVisible('shipping_anomaly_rate') && <td className="px-3 py-2 text-sm"><span className={s.shipping_anomaly_rate > 10 ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-200'}>{s.shipping_anomaly_rate}%</span></td>}
+                                                {colVisible('avg_ship_cost_per_unit') && <td className="px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100">{s.avg_ship_cost_per_unit > 0 ? `${s.avg_ship_cost_per_unit} RON` : '—'}</td>}
+                                                {colVisible('risk_score') && (
+                                                    <td className="px-3 py-2">
+                                                        {s.risk_score !== null ? (
+                                                            <span className={`text-sm font-bold ${riskColor(s.risk_score)} px-2 py-0.5 rounded-md ${riskBg(s.risk_score)}`}>{s.risk_score}</span>
+                                                        ) : (
+                                                            <span className="text-xs text-zinc-500 dark:text-zinc-400 italic">low data</span>
+                                                        )}
+                                                    </td>
+                                                )}
                                             </tr>
                                             {/* Expanded detail */}
                                             {skuRiskExpanded === s.sku && (
                                                 <tr className="bg-zinc-50 dark:bg-zinc-900/40">
-                                                    <td colSpan={13} className="px-4 py-4">
+                                                    <td colSpan={1 + SKU_RISK_COLUMNS.filter(c => colVisible(c.key)).length} className="px-4 py-4">
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                             {/* Per-store breakdown */}
                                                             <div>

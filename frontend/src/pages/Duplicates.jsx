@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useStores } from '../hooks/useApi'
 import { ordersApi, printApi } from '../services/api'
 import MultiSelectFilter from '../components/MultiSelectFilter'
+import { toastError, toastSuccess } from '../utils/toast'
 import {
     Search, Package, ChevronDown, AlertTriangle, Users, Globe, X, Loader2,
     ExternalLink, Mail, MapPin, Phone, Calendar, Truck, Copy, Filter,
@@ -12,7 +13,7 @@ import {
 const STATUS_CONFIG = {
     'new': { label: 'New', cls: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' },
     'processing': { label: 'Processing', cls: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300' },
-    'ready_to_ship': { label: 'Ready to Ship', cls: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
+    'ready_to_ship': { label: 'Ready to Ship', cls: 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300' },
     'shipped': { label: 'Shipped', cls: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300' },
     'in_transit': { label: 'In Transit', cls: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300' },
     'out_for_delivery': { label: 'Out for Delivery', cls: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300' },
@@ -187,10 +188,10 @@ export default function Duplicates() {
                 <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-zinc-400" />
                     <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }}
-                        className="px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white" />
+                        className="px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white dark:[color-scheme:dark]" />
                     <span className="text-zinc-400 text-xs">to</span>
                     <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0) }}
-                        className="px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white" />
+                        className="px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white dark:[color-scheme:dark]" />
                 </div>
             </div>
 
@@ -212,7 +213,7 @@ export default function Duplicates() {
                         }}
                         className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-colors ${
                             sortBy === opt.key
-                                ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-400 font-medium'
+                                ? 'bg-primary-50 dark:bg-primary-500/10 border-primary-300 dark:border-primary-600 text-primary-700 dark:text-primary-400 font-medium'
                                 : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700/50'
                         }`}>
                         {opt.label}
@@ -379,7 +380,7 @@ export default function Duplicates() {
                                                                             </div>}
                                                                             {o.tracking_number && <div className="flex items-center justify-between">
                                                                                 <span className="text-zinc-500">Tracking</span>
-                                                                                <span className="font-mono text-xs text-indigo-500">{o.tracking_number}</span>
+                                                                                <span className="font-mono text-xs text-primary-500">{o.tracking_number}</span>
                                                                             </div>}
                                                                             {o.payment_gateway && <div className="flex items-center justify-between">
                                                                                 <span className="text-zinc-500">Payment</span>
@@ -403,10 +404,12 @@ export default function Duplicates() {
                                                                                 e.stopPropagation()
                                                                                 try {
                                                                                     await printApi.releaseHold(o.uid)
+                                                                                    toastSuccess('Hold eliberat')
                                                                                     // Refresh data
                                                                                     fetchData()
                                                                                 } catch (err) {
                                                                                     console.error('Release hold failed:', err)
+                                                                                    toastError(err)
                                                                                 }
                                                                             }}
                                                                             className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 text-[10px] font-medium hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"

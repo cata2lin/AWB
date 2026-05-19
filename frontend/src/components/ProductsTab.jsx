@@ -7,10 +7,26 @@ import { useState, useEffect, useCallback } from 'react'
 import {
     Package, Search, RefreshCw, ChevronDown, ChevronUp, ChevronRight,
     Image as ImageIcon, Store, Box, AlertTriangle, Download,
-    Eye, EyeOff, Layers, AlertCircle, Star, Check
+    Eye, EyeOff, Layers, AlertCircle, Star, Check, FileSpreadsheet
 } from 'lucide-react'
 import { productsApi } from '../services/api/products'
 import { skuCostsApi } from '../services/api'
+import ColumnsMenu from './ui/ColumnsMenu'
+import { useColumnVisibility } from '../hooks/useColumnVisibility'
+import { exportCsv } from '../utils/csvExport'
+
+const PRODUCT_COLUMNS = [
+    { key: 'index',           header: '#',          alwaysVisible: true },
+    { key: 'image',           header: 'Imagine' },
+    { key: 'title',           header: 'Produs',     alwaysVisible: true },
+    { key: 'sku',             header: 'SKU' },
+    { key: 'stores',          header: 'Magazine' },
+    { key: 'stock_available', header: 'Disponibil' },
+    { key: 'stock_committed', header: 'Committed' },
+    { key: 'cost',            header: 'Cost/buc' },
+    { key: 'state',           header: 'Stare' },
+    { key: 'exclude',         header: 'Excludere' },
+]
 
 export default function ProductsTab({ stores = [] }) {
     const [products, setProducts] = useState([])
@@ -42,6 +58,13 @@ export default function ProductsTab({ stores = [] }) {
     const [editingCost, setEditingCost] = useState(null)
     const [expandedGroup, setExpandedGroup] = useState(null)
     const [settingPrimary, setSettingPrimary] = useState(null) // uid being saved
+
+    const {
+        visibleKeys,
+        setVisibleKeys,
+        defaultVisibleKeys,
+    } = useColumnVisibility('produse', PRODUCT_COLUMNS)
+    const colVisible = (key) => visibleKeys.includes(key) || PRODUCT_COLUMNS.find((c) => c.key === key)?.alwaysVisible
 
     const buildParams = useCallback(() => {
         const params = { sort_field: sortField, sort_direction: sortDir }
@@ -106,6 +129,29 @@ export default function ProductsTab({ stores = [] }) {
         try { await productsApi.exportExcel(buildParams()) }
         catch (err) { console.error('Export failed:', err) }
         finally { setExporting(false) }
+    }
+
+    // CSV export — current page of products, visible columns only.
+    const handleExportCsv = () => {
+        const cols = PRODUCT_COLUMNS.filter((c) => colVisible(c.key) && c.key !== 'index' && c.key !== 'image' && c.key !== 'exclude')
+        exportCsv({
+            filename: 'produse',
+            columns: cols.map((c) => ({
+                key: c.key,
+                label: c.header,
+                accessor: (row) => {
+                    if (c.key === 'title')           return row.title_1 || ''
+                    if (c.key === 'sku')             return row.sku || ''
+                    if (c.key === 'stores')          return (row.stores || []).map((s) => s.name || s.uid).join(' | ')
+                    if (c.key === 'stock_available') return row.stock_available ?? 0
+                    if (c.key === 'stock_committed') return row.stock_committed ?? 0
+                    if (c.key === 'cost')            return row.cost ?? skuCosts[row.sku] ?? ''
+                    if (c.key === 'state')           return row.state || ''
+                    return ''
+                },
+            })),
+            rows: products,
+        })
     }
 
     // COGS import from Excel
@@ -191,8 +237,8 @@ export default function ProductsTab({ stores = [] }) {
     const SortIcon = ({ field }) => {
         if (sortField !== field) return <ChevronDown className="w-3 h-3 text-zinc-400 opacity-0 group-hover:opacity-100" />
         return sortDir === 'asc'
-            ? <ChevronUp className="w-3.5 h-3.5 text-indigo-400" />
-            : <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
+            ? <ChevronUp className="w-3.5 h-3.5 text-primary-400" />
+            : <ChevronDown className="w-3.5 h-3.5 text-primary-400" />
     }
 
     const fmt = (n) => n != null ? Number(n).toLocaleString('ro-RO') : '0'
@@ -206,7 +252,8 @@ export default function ProductsTab({ stores = [] }) {
         deleted: 'bg-red-500/10 text-red-500 border-red-500/20',
     }[s] || 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20')
 
-    // Listing sub-row with "use as primary" button
+    // Listing sub-row with "use as primary" button — column order mirrors the
+    // header so visibility toggles keep cells aligned.
     const renderListingRow = (listing, parentProduct) => {
         const isPrimary = parentProduct.primary_uid === listing.uid
         const isSaving = settingPrimary === listing.uid
@@ -214,70 +261,90 @@ export default function ProductsTab({ stores = [] }) {
             <tr key={listing.uid}
                 className={`border-l-2 transition-colors ${isPrimary
                     ? 'border-l-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/10'
-                    : 'border-l-indigo-400 bg-indigo-50/20 dark:bg-indigo-900/10'}`}>
-                <td className="px-3 py-2 pl-8 text-xs text-zinc-400">
-                    <div className="flex items-center gap-1">
-                        ↳
-                        {isPrimary && <Check className="w-3 h-3 text-emerald-500" />}
-                    </div>
-                </td>
-                <td className="px-3 py-2">
-                    {listing.images?.[0]?.src ? (
-                        <img src={listing.images[0].src} alt="" className="w-8 h-8 rounded object-cover border border-zinc-200 dark:border-zinc-700" loading="lazy"
-                            onError={(e) => { e.target.style.display = 'none' }} />
-                    ) : (
-                        <div className="w-8 h-8 rounded bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center">
-                            <ImageIcon className="w-3 h-3 text-zinc-400" />
+                    : 'border-l-primary-400 bg-primary-50/20 dark:bg-primary-900/10'}`}>
+                {colVisible('index') && (
+                    <td className="px-3 py-2 pl-8 text-xs text-zinc-500 dark:text-zinc-400">
+                        <div className="flex items-center gap-1">
+                            ↳
+                            {isPrimary && <Check className="w-3 h-3 text-emerald-500" />}
                         </div>
-                    )}
-                </td>
-                <td className="px-3 py-2">
-                    <div className="text-xs text-zinc-600 dark:text-zinc-300">{listing.title_1 || '—'}</div>
-                    {listing.missing_barcode && (
-                        <span className="inline-flex items-center gap-0.5 text-amber-500 text-xs mt-0.5">
-                            <AlertCircle className="w-3 h-3" /> Barcode lipsă
-                        </span>
-                    )}
-                </td>
-                <td className="px-3 py-2 text-xs font-mono text-zinc-500">{listing.sku || '—'}</td>
-                <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-1">
-                        {(listing.stores || []).map(s => (
-                            <span key={s.uid} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded text-xs">
-                                <Store className="w-2.5 h-2.5" />{s.name || s.uid?.slice(0, 8)}
+                    </td>
+                )}
+                {colVisible('image') && (
+                    <td className="px-3 py-2">
+                        {listing.images?.[0]?.src ? (
+                            <img src={listing.images[0].src} alt="" className="w-8 h-8 rounded object-cover border border-zinc-200 dark:border-zinc-700" loading="lazy"
+                                onError={(e) => { e.target.style.display = 'none' }} />
+                        ) : (
+                            <div className="w-8 h-8 rounded bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center">
+                                <ImageIcon className="w-3 h-3 text-zinc-400" />
+                            </div>
+                        )}
+                    </td>
+                )}
+                {colVisible('title') && (
+                    <td className="px-3 py-2">
+                        <div className="text-xs text-zinc-700 dark:text-zinc-200">{listing.title_1 || '—'}</div>
+                        {listing.missing_barcode && (
+                            <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400 text-xs mt-0.5">
+                                <AlertCircle className="w-3 h-3" /> Barcode lipsă
                             </span>
-                        ))}
-                    </div>
-                </td>
-                <td className={`px-3 py-2 text-right text-xs font-semibold ${stockColor(listing.stock_available)}`}>
-                    {fmt(listing.stock_available)}
-                </td>
-                <td className="px-3 py-2 text-right text-xs text-zinc-400">{fmt(listing.stock_committed)}</td>
-                <td className="px-3 py-2 text-right">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handleSetPrimary(parentProduct, listing.uid) }}
-                        disabled={isPrimary || isSaving}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${isPrimary
-                            ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 cursor-default'
-                            : isSaving
-                            ? 'bg-zinc-200 dark:bg-zinc-600 text-zinc-400 cursor-wait'
-                            : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400'
-                        }`}
-                        title={isPrimary ? 'Aceasta e sursa activă pentru stoc/imagine' : 'Folosește stocul și imaginea din această listare'}>
-                        {isPrimary ? <><Check className="w-3 h-3" /> Activ</>
-                            : isSaving ? <><RefreshCw className="w-3 h-3 animate-spin" /> Se salvează...</>
-                            : <><Star className="w-3 h-3" /> Folosește</>}
-                    </button>
-                </td>
-                <td className="px-3 py-2 text-center">
-                    <span className={`inline-flex px-1.5 py-0.5 rounded-full text-xs border ${stateColor(listing.state)}`}>
-                        {listing.state}
-                    </span>
-                </td>
-                <td className="px-3 py-2" />
+                        )}
+                    </td>
+                )}
+                {colVisible('sku') && (
+                    <td className="px-3 py-2 text-xs font-mono text-zinc-600 dark:text-zinc-300">{listing.sku || '—'}</td>
+                )}
+                {colVisible('stores') && (
+                    <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                            {(listing.stores || []).map(s => (
+                                <span key={s.uid} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded text-xs">
+                                    <Store className="w-2.5 h-2.5" />{s.name || s.uid?.slice(0, 8)}
+                                </span>
+                            ))}
+                        </div>
+                    </td>
+                )}
+                {colVisible('stock_available') && (
+                    <td className={`px-3 py-2 text-right text-xs font-semibold ${stockColor(listing.stock_available)}`}>
+                        {fmt(listing.stock_available)}
+                    </td>
+                )}
+                {colVisible('stock_committed') && (
+                    <td className="px-3 py-2 text-right text-xs text-zinc-600 dark:text-zinc-300">{fmt(listing.stock_committed)}</td>
+                )}
+                {colVisible('cost') && (
+                    <td className="px-3 py-2 text-right">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleSetPrimary(parentProduct, listing.uid) }}
+                            disabled={isPrimary || isSaving}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${isPrimary
+                                ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 cursor-default'
+                                : isSaving
+                                ? 'bg-zinc-200 dark:bg-zinc-600 text-zinc-500 dark:text-zinc-300 cursor-wait'
+                                : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-200 hover:bg-primary-100 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-300'
+                            }`}
+                            title={isPrimary ? 'Aceasta e sursa activă pentru stoc/imagine' : 'Folosește stocul și imaginea din această listare'}>
+                            {isPrimary ? <><Check className="w-3 h-3" /> Activ</>
+                                : isSaving ? <><RefreshCw className="w-3 h-3 animate-spin" /> Se salvează...</>
+                                : <><Star className="w-3 h-3" /> Folosește</>}
+                        </button>
+                    </td>
+                )}
+                {colVisible('state') && (
+                    <td className="px-3 py-2 text-center">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded-full text-xs border ${stateColor(listing.state)}`}>
+                            {listing.state}
+                        </span>
+                    </td>
+                )}
+                {colVisible('exclude') && <td className="px-3 py-2" />}
             </tr>
         )
     }
+
+    const visibleColCount = PRODUCT_COLUMNS.filter((c) => colVisible(c.key)).length
 
     return (
         <div className="space-y-6">
@@ -310,7 +377,7 @@ export default function ProductsTab({ stores = [] }) {
                     <input type="text" value={search}
                         onChange={(e) => { setSearch(e.target.value); setSkip(0) }}
                         placeholder="Caută titlu, SKU, cod de bare..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all" />
+                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all" />
                 </div>
 
                 {[
@@ -328,16 +395,30 @@ export default function ProductsTab({ stores = [] }) {
                 ))}
 
                 <button onClick={handleSync} disabled={syncing}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
+                    className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
                     <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
                     {syncing ? 'Sync...' : 'Sync'}
                 </button>
 
                 <button onClick={handleExport} disabled={exporting}
                     className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
-                    <Download className={`w-4 h-4 ${exporting ? 'animate-bounce' : ''}`} />
+                    <FileSpreadsheet className={`w-4 h-4 ${exporting ? 'animate-bounce' : ''}`} />
                     {exporting ? 'Export...' : 'Excel'}
                 </button>
+
+                <button onClick={handleExportCsv}
+                    className="flex items-center gap-2 px-3 py-2.5 bg-zinc-100 dark:bg-zinc-700/50 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-xl text-sm font-medium transition-colors"
+                    title="Descarcă CSV cu coloanele vizibile">
+                    <Download className="w-4 h-4" />
+                    CSV
+                </button>
+
+                <ColumnsMenu
+                    columns={PRODUCT_COLUMNS}
+                    visibleKeys={visibleKeys}
+                    onChange={setVisibleKeys}
+                    defaultVisibleKeys={defaultVisibleKeys}
+                />
 
                 <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600" />
 
@@ -379,46 +460,56 @@ export default function ProductsTab({ stores = [] }) {
             )}
 
             {/* Table */}
-            <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
+            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden shadow-sm">
+                <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
                     <table className="w-full">
-                        <thead>
-                            <tr className="border-b border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-800/80">
-                                <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase w-12">#</th>
-                                <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">Img</th>
-                                <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase cursor-pointer group"
-                                    onClick={() => toggleSort('title_1')}>
-                                    <span className="flex items-center gap-1">Produs <SortIcon field="title_1" /></span>
-                                </th>
-                                <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase cursor-pointer group"
-                                    onClick={() => toggleSort('sku')}>
-                                    <span className="flex items-center gap-1">SKU <SortIcon field="sku" /></span>
-                                </th>
-                                <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">Magazine</th>
-                                <th className="px-3 py-3 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase cursor-pointer group"
-                                    onClick={() => toggleSort('stock_available')}>
-                                    <span className="flex items-center justify-end gap-1">Disponibil <SortIcon field="stock_available" /></span>
-                                </th>
-                                <th className="px-3 py-3 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase cursor-pointer group"
-                                    onClick={() => toggleSort('stock_committed')}>
-                                    <span className="flex items-center justify-end gap-1">Committed <SortIcon field="stock_committed" /></span>
-                                </th>
-                                <th className="px-3 py-3 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase cursor-pointer group"
-                                    onClick={() => toggleSort('cost')}>
-                                    <span className="flex items-center justify-end gap-1">Cost/buc <SortIcon field="cost" /></span>
-                                </th>
-                                <th className="px-3 py-3 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">Stare</th>
-                                <th className="px-3 py-3 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase w-16">Excl.</th>
+                        <thead className="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-900">
+                            <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                                {colVisible('index') && <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase w-12">#</th>}
+                                {colVisible('image') && <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase">Img</th>}
+                                {colVisible('title') && (
+                                    <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase cursor-pointer group hover:text-zinc-900 dark:hover:text-white"
+                                        onClick={() => toggleSort('title_1')}>
+                                        <span className="flex items-center gap-1">Produs <SortIcon field="title_1" /></span>
+                                    </th>
+                                )}
+                                {colVisible('sku') && (
+                                    <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase cursor-pointer group hover:text-zinc-900 dark:hover:text-white"
+                                        onClick={() => toggleSort('sku')}>
+                                        <span className="flex items-center gap-1">SKU <SortIcon field="sku" /></span>
+                                    </th>
+                                )}
+                                {colVisible('stores') && <th className="px-3 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase">Magazine</th>}
+                                {colVisible('stock_available') && (
+                                    <th className="px-3 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase cursor-pointer group hover:text-zinc-900 dark:hover:text-white"
+                                        onClick={() => toggleSort('stock_available')}>
+                                        <span className="flex items-center justify-end gap-1">Disponibil <SortIcon field="stock_available" /></span>
+                                    </th>
+                                )}
+                                {colVisible('stock_committed') && (
+                                    <th className="px-3 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase cursor-pointer group hover:text-zinc-900 dark:hover:text-white"
+                                        onClick={() => toggleSort('stock_committed')}>
+                                        <span className="flex items-center justify-end gap-1">Committed <SortIcon field="stock_committed" /></span>
+                                    </th>
+                                )}
+                                {colVisible('cost') && (
+                                    <th className="px-3 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase cursor-pointer group hover:text-zinc-900 dark:hover:text-white"
+                                        onClick={() => toggleSort('cost')}>
+                                        <span className="flex items-center justify-end gap-1">Cost/buc <SortIcon field="cost" /></span>
+                                    </th>
+                                )}
+                                {colVisible('state') && <th className="px-3 py-3 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase">Stare</th>}
+                                {colVisible('exclude') && <th className="px-3 py-3 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase w-16">Excl.</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                             {loading ? (
-                                <tr><td colSpan={10} className="px-6 py-12 text-center">
-                                    <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin mx-auto mb-2" />
-                                    <span className="text-zinc-500 text-sm">Se încarcă produsele...</span>
+                                <tr><td colSpan={visibleColCount} className="px-6 py-12 text-center">
+                                    <RefreshCw className="w-6 h-6 text-primary-500 animate-spin mx-auto mb-2" />
+                                    <span className="text-zinc-500 dark:text-zinc-400 text-sm">Se încarcă produsele...</span>
                                 </td></tr>
                             ) : products.length === 0 ? (
-                                <tr><td colSpan={10} className="px-6 py-12 text-center text-zinc-500 text-sm">
+                                <tr><td colSpan={visibleColCount} className="px-6 py-12 text-center text-zinc-500 dark:text-zinc-400 text-sm">
                                     Niciun produs găsit. Apasă "Sync" pentru a sincroniza din Frisbo.
                                 </td></tr>
                             ) : products.map((p, idx) => {
@@ -434,108 +525,128 @@ export default function ProductsTab({ stores = [] }) {
                                         className={`transition-colors ${isGrouped ? 'cursor-pointer' : ''} ${isExcluded
                                             ? 'opacity-50 bg-zinc-50/50 dark:bg-zinc-900/30'
                                             : 'hover:bg-zinc-50 dark:hover:bg-zinc-700/30'
-                                        } ${isExpanded ? 'bg-indigo-50/40 dark:bg-indigo-900/15' : ''}`}
+                                        } ${isExpanded ? 'bg-primary-50/40 dark:bg-primary-900/15' : ''}`}
                                         onClick={() => isGrouped && setExpandedGroup(isExpanded ? null : p.uid)}>
-                                        <td className="px-3 py-3 text-sm text-zinc-400">
-                                            <div className="flex items-center gap-1">
-                                                {isGrouped && (
-                                                    <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                                )}
-                                                {skip + idx + 1}
-                                            </div>
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            {firstImg ? (
-                                                <img src={firstImg} alt={p.title_1}
-                                                    className="w-10 h-10 rounded-lg object-cover border border-zinc-200 dark:border-zinc-700"
-                                                    loading="lazy" onError={(e) => { e.target.style.display = 'none' }} />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center">
-                                                    <ImageIcon className="w-4 h-4 text-zinc-400" />
+                                        {colVisible('index') && (
+                                            <td className="px-3 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+                                                <div className="flex items-center gap-1">
+                                                    {isGrouped && (
+                                                        <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                                    )}
+                                                    {skip + idx + 1}
                                                 </div>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <div className="flex items-center gap-2">
-                                                <div className={`text-sm font-medium truncate max-w-[250px] ${isExcluded ? 'line-through text-zinc-500' : 'text-zinc-900 dark:text-white'}`}>
-                                                    {p.title_1 || '—'}
-                                                </div>
-                                                {isGrouped && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-md text-xs font-semibold flex-shrink-0"
-                                                        title={`${p.grouped_count} listări grupate — click pentru detalii`}>
-                                                        <Layers className="w-3 h-3" />×{p.grouped_count}
-                                                    </span>
+                                            </td>
+                                        )}
+                                        {colVisible('image') && (
+                                            <td className="px-3 py-3">
+                                                {firstImg ? (
+                                                    <img src={firstImg} alt={p.title_1}
+                                                        className="w-10 h-10 rounded-lg object-cover border border-zinc-200 dark:border-zinc-700"
+                                                        loading="lazy" onError={(e) => { e.target.style.display = 'none' }} />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center">
+                                                        <ImageIcon className="w-4 h-4 text-zinc-400" />
+                                                    </div>
                                                 )}
-                                                {p.has_missing_barcode && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-md text-xs font-medium flex-shrink-0"
-                                                        title="Una sau mai multe listări nu au cod de bare">
-                                                        <AlertCircle className="w-3 h-3" />
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {p.title_2 && <div className="text-xs text-zinc-500 truncate max-w-[250px]">{p.title_2}</div>}
-                                            {p.barcode && <div className="text-xs text-zinc-400 font-mono">{p.barcode}</div>}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <span className="text-sm font-mono text-zinc-600 dark:text-zinc-300">{p.sku || '—'}</span>
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <div className="flex flex-wrap gap-1">
-                                                {(p.stores || []).slice(0, 4).map(s => (
-                                                    <span key={s.uid} className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-medium">
-                                                        <Store className="w-3 h-3" />{s.name || s.uid?.slice(0, 8)}
-                                                    </span>
-                                                ))}
-                                                {(p.stores || []).length > 4 && <span className="text-xs text-zinc-400">+{p.stores.length - 4}</span>}
-                                            </div>
-                                        </td>
-                                        <td className={`px-3 py-3 text-right text-sm font-semibold ${stockColor(p.stock_available)}`}>
-                                            {fmt(p.stock_available)}
-                                        </td>
-                                        <td className="px-3 py-3 text-right text-sm text-zinc-500 dark:text-zinc-400">
-                                            {fmt(p.stock_committed)}
-                                        </td>
-                                        <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                                            {isEditing ? (
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <input type="number"
-                                                        className="w-20 px-2 py-1 text-sm text-right bg-white dark:bg-zinc-700 border border-indigo-400 rounded-lg focus:ring-2 focus:ring-indigo-500 text-zinc-900 dark:text-white"
-                                                        value={editingCost.value}
-                                                        onChange={(e) => setEditingCost({ ...editingCost, value: e.target.value })}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') handleSaveCost(p.sku, editingCost.value)
-                                                            if (e.key === 'Escape') setEditingCost(null)
-                                                        }}
-                                                        autoFocus />
-                                                    <button className="text-xs text-indigo-500 hover:text-indigo-700 font-medium"
-                                                        onClick={() => handleSaveCost(p.sku, editingCost.value)}>✓</button>
+                                            </td>
+                                        )}
+                                        {colVisible('title') && (
+                                            <td className="px-3 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`text-sm font-medium truncate max-w-[250px] ${isExcluded ? 'line-through text-zinc-500 dark:text-zinc-400' : 'text-zinc-900 dark:text-white'}`}>
+                                                        {p.title_1 || '—'}
+                                                    </div>
+                                                    {isGrouped && (
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 rounded-md text-xs font-semibold flex-shrink-0"
+                                                            title={`${p.grouped_count} listări grupate — click pentru detalii`}>
+                                                            <Layers className="w-3 h-3" />×{p.grouped_count}
+                                                        </span>
+                                                    )}
+                                                    {p.has_missing_barcode && (
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-md text-xs font-medium flex-shrink-0"
+                                                            title="Una sau mai multe listări nu au cod de bare">
+                                                            <AlertCircle className="w-3 h-3" />
+                                                        </span>
+                                                    )}
                                                 </div>
-                                            ) : (
+                                                {p.title_2 && <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[250px]">{p.title_2}</div>}
+                                                {p.barcode && <div className="text-xs text-zinc-400 dark:text-zinc-500 font-mono">{p.barcode}</div>}
+                                            </td>
+                                        )}
+                                        {colVisible('sku') && (
+                                            <td className="px-3 py-3">
+                                                <span className="text-sm font-mono text-zinc-700 dark:text-zinc-200">{p.sku || '—'}</span>
+                                            </td>
+                                        )}
+                                        {colVisible('stores') && (
+                                            <td className="px-3 py-3">
+                                                <div className="flex flex-wrap gap-1">
+                                                    {(p.stores || []).slice(0, 4).map(s => (
+                                                        <span key={s.uid} className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-full text-xs font-medium">
+                                                            <Store className="w-3 h-3" />{s.name || s.uid?.slice(0, 8)}
+                                                        </span>
+                                                    ))}
+                                                    {(p.stores || []).length > 4 && <span className="text-xs text-zinc-500 dark:text-zinc-400">+{p.stores.length - 4}</span>}
+                                                </div>
+                                            </td>
+                                        )}
+                                        {colVisible('stock_available') && (
+                                            <td className={`px-3 py-3 text-right text-sm font-semibold ${stockColor(p.stock_available)}`}>
+                                                {fmt(p.stock_available)}
+                                            </td>
+                                        )}
+                                        {colVisible('stock_committed') && (
+                                            <td className="px-3 py-3 text-right text-sm text-zinc-600 dark:text-zinc-300">
+                                                {fmt(p.stock_committed)}
+                                            </td>
+                                        )}
+                                        {colVisible('cost') && (
+                                            <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                                {isEditing ? (
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <input type="number"
+                                                            className="w-20 px-2 py-1 text-sm text-right bg-white dark:bg-zinc-700 border border-primary-400 rounded-lg focus:ring-2 focus:ring-primary-500 text-zinc-900 dark:text-white"
+                                                            value={editingCost.value}
+                                                            onChange={(e) => setEditingCost({ ...editingCost, value: e.target.value })}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') handleSaveCost(p.sku, editingCost.value)
+                                                                if (e.key === 'Escape') setEditingCost(null)
+                                                            }}
+                                                            autoFocus />
+                                                        <button className="text-xs text-primary-500 hover:text-primary-700 font-medium"
+                                                            onClick={() => handleSaveCost(p.sku, editingCost.value)}>✓</button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        className={`text-sm font-medium px-2 py-1 rounded-lg transition-colors ${cost
+                                                            ? 'text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                                                            : 'text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 italic'}`}
+                                                        onClick={() => setEditingCost({ sku: p.sku, value: cost || 0 })}
+                                                        title="Click pentru a edita costul">
+                                                        {cost ? `${Number(cost).toFixed(2)}` : 'Adaugă'}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        )}
+                                        {colVisible('state') && (
+                                            <td className="px-3 py-3 text-center">
+                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${stateColor(p.state)}`}>
+                                                    {p.state || '?'}
+                                                </span>
+                                            </td>
+                                        )}
+                                        {colVisible('exclude') && (
+                                            <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                 <button
-                                                    className={`text-sm font-medium px-2 py-1 rounded-lg transition-colors ${cost
-                                                        ? 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700'
-                                                        : 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 italic'}`}
-                                                    onClick={() => setEditingCost({ sku: p.sku, value: cost || 0 })}
-                                                    title="Click pentru a edita costul">
-                                                    {cost ? `${Number(cost).toFixed(2)}` : 'Adaugă'}
+                                                    onClick={() => handleToggleExclude(p.uid, p.exclude_from_stock)}
+                                                    className={`p-1.5 rounded-lg transition-colors ${isExcluded
+                                                        ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50'
+                                                        : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:text-zinc-700 dark:hover:text-zinc-200'}`}
+                                                    title={isExcluded ? 'Include în calcul stoc' : 'Exclude din calcul stoc'}>
+                                                    {isExcluded ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3 text-center">
-                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${stateColor(p.state)}`}>
-                                                {p.state || '?'}
-                                            </span>
-                                        </td>
-                                        <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                            <button
-                                                onClick={() => handleToggleExclude(p.uid, p.exclude_from_stock)}
-                                                className={`p-1.5 rounded-lg transition-colors ${isExcluded
-                                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-500 hover:bg-red-200 dark:hover:bg-red-900/50'
-                                                    : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:text-zinc-600'}`}
-                                                title={isExcluded ? 'Include în calcul stoc' : 'Exclude din calcul stoc'}>
-                                                {isExcluded ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
-                                        </td>
+                                            </td>
+                                        )}
                                     </tr>
                                     {/* Expanded individual listings */}
                                     {isExpanded && isGrouped && (p.listings || []).map((l) => renderListingRow(l, p))}

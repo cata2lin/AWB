@@ -122,7 +122,7 @@ export default function TomSettingsPanel() {
             <button onClick={saveTom} disabled={tomSaving || tomLoading}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg font-medium text-sm transition-all ${tomSaved
                 ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                : 'bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white shadow-lg shadow-sky-500/20'
+                : 'bg-primary-600 hover:bg-primary-700 text-white shadow-sm'
               } disabled:opacity-50`}>
               {tomSaved ? <><Check className="w-4 h-4" /> Saved</> : <><Save className="w-4 h-4" /> {tomSaving ? 'Saving...' : 'Save'}</>}
             </button>
@@ -233,7 +233,7 @@ export default function TomSettingsPanel() {
                   <div className="flex items-center gap-1 flex-wrap">
                     <Store className="w-3 h-3 text-zinc-400 flex-shrink-0" />
                     {(cat.stores || []).map(s => (
-                      <span key={s} className="inline-flex items-center gap-0.5 text-[10px] bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded">
+                      <span key={s} className="inline-flex items-center gap-0.5 text-[10px] bg-primary-100 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
                         {s}
                         <button onClick={() => updateCategory(cat.key, 'stores', cat.stores.filter(x => x !== s))} className="hover:text-red-500">×</button>
                       </span>

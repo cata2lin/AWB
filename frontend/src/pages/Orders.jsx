@@ -9,6 +9,7 @@ import {
     User, MapPin, Mail, Filter, X, Printer, FileText, Calendar, Tag, Truck, Store, Save, Lock,
     DollarSign, RotateCcw, ExternalLink, Loader2, Download, RefreshCw, Phone, Copy
 } from 'lucide-react'
+import { toastError, toastSuccess } from '../utils/toast'
 
 export default function Orders() {
     // Stores data
@@ -317,7 +318,7 @@ export default function Orders() {
             await ordersApi.exportOrders(buildFilterParams())
         } catch (err) {
             console.error('Export failed:', err)
-            alert('Export failed. Check console for details.')
+            toastError('Export eșuat. Verifică consola.')
         } finally {
             setIsExporting(false)
         }
@@ -374,7 +375,7 @@ export default function Orders() {
             zinc: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300',
             slate: 'bg-slate-200 dark:bg-slate-600/30 text-slate-600 dark:text-slate-300',
             blue: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300',
-            indigo: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+            indigo: 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300',
             amber: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300',
             purple: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300',
             cyan: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
@@ -413,7 +414,7 @@ export default function Orders() {
             red: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300',
             purple: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300',
             cyan: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
-            indigo: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+            indigo: 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300',
         }
         return { label: config.label, className: colorClasses[config.color] }
     }
@@ -451,7 +452,7 @@ export default function Orders() {
             zinc: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300',
             blue: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300',
             cyan: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
-            indigo: 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+            indigo: 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300',
             purple: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300',
             sky: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300',
             green: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300',
@@ -473,7 +474,7 @@ export default function Orders() {
             className="flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
         >
             {children}
-            <ArrowUpDown className={`w-3 h-3 ${sortField === field ? 'text-indigo-500' : 'opacity-50'}`} />
+            <ArrowUpDown className={`w-3 h-3 ${sortField === field ? 'text-primary-500' : 'opacity-50'}`} />
         </button>
     )
 
@@ -492,7 +493,7 @@ export default function Orders() {
     }
 
     return (
-        <div className="p-6 space-y-4 animate-fade-in bg-zinc-50 dark:bg-zinc-950 min-h-screen">
+        <div className="p-6 space-y-4 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
@@ -526,14 +527,14 @@ export default function Orders() {
                     <button
                         onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${showAdvancedFilters
-                            ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                            ? 'bg-primary-50 dark:bg-primary-500/10 border-primary-300 dark:border-primary-500 text-primary-600 dark:text-primary-400'
                             : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
                             }`}
                     >
                         <Filter className="w-4 h-4" />
                         Filters
                         {hasActiveFilters && (
-                            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                            <span className="w-2 h-2 rounded-full bg-primary-500"></span>
                         )}
                     </button>
                 </div>
@@ -549,7 +550,7 @@ export default function Orders() {
                         placeholder="Search order #, tracking, customer, SKU..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder:text-zinc-400"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-zinc-400"
                     />
                 </div>
 
@@ -561,7 +562,7 @@ export default function Orders() {
                         placeholder="Search phone..."
                         value={phoneSearch}
                         onChange={(e) => setPhoneSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder:text-zinc-400"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-zinc-400"
                     />
                 </div>
 
@@ -767,7 +768,7 @@ export default function Orders() {
             {/* Loading State */}
             {isLoading && (
                 <div className="flex items-center justify-center h-64">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                 </div>
             )}
 
@@ -787,33 +788,33 @@ export default function Orders() {
             {/* Orders Table */}
             {!isLoading && orders.length > 0 && (
                 <>
-                    {/* Pagination Info */}
-                    <div className="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
-                        <span>
-                            Showing <strong className="text-zinc-900 dark:text-white">{startItem.toLocaleString()}</strong> to{' '}
-                            <strong className="text-zinc-900 dark:text-white">{endItem.toLocaleString()}</strong> of{' '}
-                            <strong className="text-zinc-900 dark:text-white">{totalCount.toLocaleString()}</strong> orders
-                        </span>
-                        {orderTotals && (
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20">
-                                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">Total:</span>
-                                    <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
-                                        {orderTotals.total_ron?.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON
-                                    </span>
-                                </div>
-                                {orderTotals.per_currency?.length > 1 && (
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        {orderTotals.per_currency.map(c => (
-                                            <span key={c.currency} className="text-xs px-2 py-1 rounded-md bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
-                                                {c.count} × {c.currency}: {c.total?.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                {c.currency !== 'RON' && <span className="text-zinc-400"> (×{c.rate_to_ron})</span>}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
+                    {/* Filtered totals — own row above pagination so currency chips can
+                        wrap without crushing the pagination controls. */}
+                    {orderTotals && (
+                        <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 rounded-xl px-3 py-2">
+                            <div className="flex items-baseline gap-1.5 px-3 py-1 rounded-lg bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/20">
+                                <span className="text-[10px] uppercase tracking-wider text-primary-600/80 dark:text-primary-400/80 font-semibold">Total filtrat</span>
+                                <span className="text-sm font-bold text-primary-700 dark:text-primary-200">
+                                    {orderTotals.total_ron?.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON
+                                </span>
                             </div>
-                        )}
+                            {orderTotals.per_currency?.length > 1 && orderTotals.per_currency.map(c => (
+                                <span key={c.currency}
+                                    className="inline-flex items-baseline gap-1 text-xs px-2 py-1 rounded-md bg-zinc-100 dark:bg-zinc-700/60 text-zinc-700 dark:text-zinc-200"
+                                    title={c.currency !== 'RON' ? `Curs BNR aplicat: ×${c.rate_to_ron}` : 'Comenzi în RON (fără conversie)'}>
+                                    <span className="font-mono text-zinc-500 dark:text-zinc-400">{c.count.toLocaleString('ro-RO')}</span>
+                                    <span className="font-semibold">{c.currency}</span>
+                                    <span className="tabular-nums">{c.total?.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </span>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Pagination row — Showing X–Y of Z on the left, page nav on the right. */}
+                    <div className="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400 gap-4">
+                        <span>
+                            Showing <strong className="text-zinc-900 dark:text-white">{startItem.toLocaleString()}</strong>–<strong className="text-zinc-900 dark:text-white">{endItem.toLocaleString()}</strong> of <strong className="text-zinc-900 dark:text-white">{totalCount.toLocaleString()}</strong> orders
+                        </span>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setPage(p => Math.max(0, p - 1))}
@@ -822,7 +823,7 @@ export default function Orders() {
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
-                            <span className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg font-medium">
+                            <span className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-lg font-medium">
                                 Page {page + 1} of {totalPages.toLocaleString() || 1}
                             </span>
                             <button
@@ -897,10 +898,10 @@ export default function Orders() {
                                                                 <>
                                                                     <button
                                                                         onClick={(e) => { e.stopPropagation(); window.open(`https://admin.shopify.com/store/${shopifySlug}/orders?query=${encodeURIComponent(order.order_number)}`, '_blank') }}
-                                                                        className="p-0.5 rounded hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                                                                        className="p-0.5 rounded hover:bg-primary-100 dark:hover:bg-primary-500/20 transition-colors"
                                                                         title="Deschide în Shopify"
                                                                     >
-                                                                        <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
+                                                                        <ExternalLink className="w-3.5 h-3.5 text-primary-500" />
                                                                     </button>
                                                                     {myshopifyDomain && (
                                                                         <button
@@ -987,7 +988,7 @@ export default function Orders() {
                                                             )}
                                                         </div>
                                                         {order.tracking_number ? (
-                                                            <code className="text-xs text-indigo-600 dark:text-indigo-400 font-mono">
+                                                            <code className="text-xs text-primary-600 dark:text-primary-400 font-mono">
                                                                 {order.tracking_number}
                                                             </code>
                                                         ) : (
@@ -1179,7 +1180,7 @@ export default function Orders() {
                                                                                 {awbCache[order.uid].awbs.map((awb) => (
                                                                                     <tr key={awb.id} className={`${awb.awb_type === 'return' ? 'bg-red-50/50 dark:bg-red-900/10' : ''} ${awb.is_billable === false ? 'opacity-50' : ''}`}>
                                                                                         <td className="px-2 py-1.5">
-                                                                                            <code className="text-indigo-600 dark:text-indigo-400 font-mono">{awb.tracking_number}</code>
+                                                                                            <code className="text-primary-600 dark:text-primary-400 font-mono">{awb.tracking_number}</code>
                                                                                             {awb.original_awb && (
                                                                                                 <div className="text-[10px] text-zinc-400 mt-0.5 flex items-center gap-0.5">
                                                                                                     <RotateCcw className="w-2.5 h-2.5" />
@@ -1292,11 +1293,12 @@ export default function Orders() {
                                                                                 order.package_count = result.package_count ?? order.package_count
                                                                                 order.shipping_data_source = result.shipping_data_source
                                                                                 order.shipping_data_manual = true
+                                                                                toastSuccess('Date salvate')
                                                                                 setExpandedOrderUid(null)  // collapse + refresh
                                                                                 setTimeout(() => handleExpand(order.uid), 100)
                                                                             } catch (err) {
                                                                                 console.error('Failed to save shipping data:', err)
-                                                                                alert('Eroare la salvare: ' + (err.response?.data?.detail || err.message))
+                                                                                toastError(err)
                                                                             }
                                                                         }}
                                                                         className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
@@ -1336,7 +1338,7 @@ export default function Orders() {
                                                                                             </div>
                                                                                             <button
                                                                                                 onClick={(e) => { e.preventDefault(); printSingleAwb(batch.batch_id).catch(() => {}) }}
-                                                                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded font-medium transition-colors cursor-pointer border-none"
+                                                                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-500/20 rounded font-medium transition-colors cursor-pointer border-none"
                                                                                             >
                                                                                                 <Printer className="w-3 h-3" />
                                                                                                 Print
@@ -1364,7 +1366,7 @@ export default function Orders() {
                                                                                     setTimeout(() => handleExpand(order.uid), 150)
                                                                                 } catch (err) {
                                                                                     console.error('Print failed:', err)
-                                                                                    alert('Eroare la printare: ' + (err.response?.data?.detail || err.message))
+                                                                                    toastError(err)
                                                                                 } finally {
                                                                                     setPrintingOrder(null)
                                                                                 }
@@ -1478,7 +1480,7 @@ export default function Orders() {
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-zinc-200 dark:border-zinc-800">
                         <div className="flex justify-between items-center p-4 border-b border-zinc-100 dark:border-zinc-800">
                             <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
-                                <RefreshCw className="w-4 h-4 text-indigo-500" />
+                                <RefreshCw className="w-4 h-4 text-primary-500" />
                                 Regenerare AWB
                             </h3>
                             <button
@@ -1502,7 +1504,7 @@ export default function Orders() {
                                     max="20"
                                     value={regenerateModal.packageCount}
                                     onChange={(e) => setRegenerateModal(prev => ({ ...prev, packageCount: parseInt(e.target.value) || 1 }))}
-                                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 />
                             </div>
                         </div>
@@ -1527,12 +1529,12 @@ export default function Orders() {
                                         setAwbHistory(prev => ({ ...prev, [orderUid]: { loading: false, data } }))
                                     } catch (err) {
                                         console.error('Regenerate failed:', err)
-                                        alert('Eroare la regenerare: ' + (err.response?.data?.detail || err.message))
+                                        toastError(err)
                                     } finally {
                                         setPrintingOrder(null)
                                     }
                                 }}
-                                className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                                className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors flex items-center gap-2"
                             >
                                 <RefreshCw className="w-4 h-4" />
                                 Confirmă

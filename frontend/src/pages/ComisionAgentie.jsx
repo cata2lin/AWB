@@ -16,6 +16,7 @@ import {
     ArrowUpRight, ArrowDownRight
 } from 'lucide-react'
 import { comisionApi } from '../services/api'
+import { toastError, toastSuccess } from '../utils/toast'
 
 /** Format RON currency values. */
 const fmt = (n) => n == null ? '0.00' : Number(n).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -71,6 +72,7 @@ export default function ComisionAgentie() {
             setData(res)
         } catch (err) {
             console.error('Failed to load comision data:', err)
+            toastError(err)
         } finally {
             setLoading(false)
         }
@@ -90,9 +92,11 @@ export default function ComisionAgentie() {
             })
             setConfig(res.config)
             setSaved(true)
+            toastSuccess('Configurație comision salvată')
             setTimeout(() => setSaved(false), 2500)
         } catch (err) {
             console.error('Failed to save config:', err)
+            toastError(err)
         } finally {
             setSaving(false)
         }
@@ -139,7 +143,7 @@ export default function ComisionAgentie() {
     const stores = data?.stores || []
 
     return (
-        <div className="p-6 space-y-6 bg-zinc-50 dark:bg-zinc-950 min-h-screen animate-fade-in">
+        <div className="p-6 space-y-6 animate-fade-in">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
@@ -184,7 +188,7 @@ export default function ComisionAgentie() {
                     <button
                         onClick={handleExport}
                         disabled={!data || stores.length === 0}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/20"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-all "
                     >
                         <Download className="w-4 h-4" />
                         Export CSV
@@ -257,7 +261,8 @@ export default function ComisionAgentie() {
                                     >
                                         <button
                                             onClick={() => toggleStoreUid(store.uid)}
-                                            className="flex items-center gap-3 text-left flex-1 overflow-hidden"
+                                            disabled={saving}
+                                            className="flex items-center gap-3 text-left flex-1 overflow-hidden disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
                                             {enabled
                                                 ? <ToggleRight className="w-5 h-5 text-emerald-500 flex-shrink-0" />
@@ -318,12 +323,17 @@ export default function ComisionAgentie() {
                         </div>
 
                         {/* Total Incasari */}
-                        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-500/10 to-violet-500/5 dark:from-indigo-500/15 dark:to-violet-500/5 rounded-2xl p-5 border border-indigo-200/60 dark:border-indigo-700/30">
-                            <div className="absolute top-3 right-3 w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-                                <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        <div className="relative overflow-hidden bg-primary-50 dark:bg-primary-500/10 rounded-2xl p-5 border border-primary-200/60 dark:border-primary-700/30">
+                            <div className="absolute top-3 right-3 w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center">
+                                <TrendingUp className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                             </div>
-                            <p className="text-xs font-semibold text-indigo-600/70 dark:text-indigo-400/70 uppercase tracking-wider">Total Încasări</p>
-                            <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-300 mt-1 tracking-tight">{fmt(summary.total_incasari)} RON</p>
+                            <p className="text-xs font-semibold text-primary-600/70 dark:text-primary-400/70 uppercase tracking-wider">Total Încasări</p>
+                            <p className="text-2xl font-bold text-primary-700 dark:text-primary-300 mt-1 tracking-tight">{fmt(summary.total_incasari)} RON</p>
+                            {summary.total_incasari_livrate != null && (
+                                <p className="text-[10px] text-primary-500/70 dark:text-primary-400/60 mt-1">
+                                    Din care livrate: <span className="font-semibold">{fmt(summary.total_incasari_livrate)} RON</span>
+                                </p>
+                            )}
                         </div>
 
                         {/* Total Transport */}
@@ -340,16 +350,22 @@ export default function ComisionAgentie() {
                             <div className="absolute top-3 right-3 w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
                                 <Package className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                             </div>
-                            <p className="text-xs font-semibold text-violet-600/70 dark:text-violet-400/70 uppercase tracking-wider">Comenzi / Plecate</p>
+                            <p className="text-xs font-semibold text-violet-600/70 dark:text-violet-400/70 uppercase tracking-wider">Comenzi / Livrate</p>
                             <p className="text-2xl font-bold text-violet-700 dark:text-violet-300 mt-1 tracking-tight">
                                 {summary.total_comenzi?.toLocaleString('ro-RO') || 0}
-                                <span className="text-sm font-normal text-violet-500 ml-1">/ {summary.total_plecate?.toLocaleString('ro-RO') || 0}</span>
+                                <span className="text-sm font-normal text-violet-500 ml-1">/ {(summary.total_livrate ?? summary.total_plecate)?.toLocaleString('ro-RO') || 0}</span>
                             </p>
-                            {summary.total_refuzate > 0 && (
-                                <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> {summary.total_refuzate} refuzate
-                                </p>
-                            )}
+                            <p className="text-[10px] text-violet-500/70 dark:text-violet-400/60 mt-1">
+                                {summary.total_plecate?.toLocaleString('ro-RO') || 0} plecate
+                                {summary.total_refuzate > 0 && (
+                                    <>
+                                        <span className="mx-1">·</span>
+                                        <span className="text-red-500 dark:text-red-400 inline-flex items-center gap-0.5">
+                                            <AlertTriangle className="w-3 h-3" />{summary.total_refuzate} refuzate
+                                        </span>
+                                    </>
+                                )}
+                            </p>
                         </div>
                     </div>
 
@@ -380,6 +396,7 @@ export default function ComisionAgentie() {
                                             <th className="px-4 py-3 font-semibold text-right">COST</th>
                                             <th className="px-4 py-3 font-semibold text-right">COMENZI</th>
                                             <th className="px-4 py-3 font-semibold text-right">PLECATE</th>
+                                            <th className="px-4 py-3 font-semibold text-right">LIVRATE</th>
                                             <th className="px-4 py-3 font-semibold text-right">REFUZATE</th>
                                             <th className="px-4 py-3 font-semibold text-right">ÎNCASĂRI</th>
                                             <th className="px-4 py-3 font-semibold text-right">COMISION %</th>
@@ -388,19 +405,24 @@ export default function ComisionAgentie() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                                        {stores.map((row, i) => (
+                                        {stores.map((row) => (
                                             <tr key={row.store_uid} className="group hover:bg-zinc-50 dark:hover:bg-zinc-700/20 transition-colors">
                                                 <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300 whitespace-nowrap">{row.luna}</td>
                                                 <td className="px-4 py-3 font-medium text-zinc-800 dark:text-zinc-100 whitespace-nowrap">{row.brand}</td>
                                                 <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400 tabular-nums">{row.cost}</td>
                                                 <td className="px-4 py-3 text-right font-medium text-zinc-700 dark:text-zinc-200 tabular-nums">{row.comenzi.toLocaleString('ro-RO')}</td>
                                                 <td className="px-4 py-3 text-right text-zinc-700 dark:text-zinc-200 tabular-nums">{row.plecate.toLocaleString('ro-RO')}</td>
+                                                <td className="px-4 py-3 text-right text-emerald-700 dark:text-emerald-400 tabular-nums font-medium" title="Comenzi livrate (folosite anterior ca bază de comision)">
+                                                    {(row.livrate ?? 0).toLocaleString('ro-RO')}
+                                                </td>
                                                 <td className="px-4 py-3 text-right tabular-nums">
                                                     <span className={row.refuzate > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-zinc-400'}>
                                                         {row.refuzate.toLocaleString('ro-RO')}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-semibold text-zinc-800 dark:text-zinc-100 tabular-nums">{fmt(row.incasari)}</td>
+                                                <td className="px-4 py-3 text-right font-semibold text-zinc-800 dark:text-zinc-100 tabular-nums" title={row.incasari_livrate != null ? `Din care livrate: ${fmt(row.incasari_livrate)} RON` : ''}>
+                                                    {fmt(row.incasari)}
+                                                </td>
                                                 <td className="px-4 py-3 text-right tabular-nums">
                                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
                                                         {row.comision_pct}%
@@ -416,6 +438,7 @@ export default function ComisionAgentie() {
                                             <td className="px-4 py-3 text-zinc-900 dark:text-white" colSpan={3}>TOTAL</td>
                                             <td className="px-4 py-3 text-right text-zinc-900 dark:text-white tabular-nums">{summary.total_comenzi?.toLocaleString('ro-RO')}</td>
                                             <td className="px-4 py-3 text-right text-zinc-900 dark:text-white tabular-nums">{summary.total_plecate?.toLocaleString('ro-RO')}</td>
+                                            <td className="px-4 py-3 text-right text-emerald-700 dark:text-emerald-400 tabular-nums">{(summary.total_livrate ?? 0).toLocaleString('ro-RO')}</td>
                                             <td className="px-4 py-3 text-right text-red-600 dark:text-red-400 tabular-nums">{summary.total_refuzate?.toLocaleString('ro-RO')}</td>
                                             <td className="px-4 py-3 text-right text-zinc-900 dark:text-white tabular-nums">{fmt(summary.total_incasari)}</td>
                                             <td className="px-4 py-3 text-right text-zinc-400">—</td>

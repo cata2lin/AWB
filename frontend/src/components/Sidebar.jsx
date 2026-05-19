@@ -1,243 +1,229 @@
 import { Link, useLocation } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'  
 import {
-    LayoutDashboard, ListOrdered, Settings, History, Layers, Sun, Moon,
-    RefreshCw, BarChart3, Activity, LogOut, StopCircle, Copy, FileText,
-    Printer, ChevronDown, ChevronRight, Package, Percent, ShoppingCart
+    LayoutDashboard, ListOrdered, Settings, History, Layers,
+    BarChart3, Activity, Copy, FileText,
+    Printer, ChevronDown, ChevronRight, Package, Percent, ShoppingCart,
+    PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
+import Tooltip from './ui/Tooltip'
 
 /**
- * Sidebar navigation structure with grouped sections.
- * type: 'link' = single nav link
- * type: 'group' = collapsible section with children
- * type: 'divider' = visual separator
+ * Sidebar — navigation only. Sync controls + user/theme moved to the topbar
+ * (SyncMenu, UserMenu). Supports an expanded (224px) and collapsed (60px,
+ * icons only with hover tooltips) state, persisted via useAppStore.
  */
-const navStructure = [
+
+const NAV = [
     {
-        type: 'group',
-        icon: Printer,
-        label: 'Print',
-        defaultOpen: true,
+        type: 'group', key: 'print', icon: Printer, label: 'Print',
         children: [
             { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-            { path: '/rules', icon: Layers, label: 'Rules' },
-            { path: '/history', icon: History, label: 'History' },
+            { path: '/rules', icon: Layers, label: 'Reguli' },
+            { path: '/history', icon: History, label: 'Istoric' },
         ],
     },
-    { type: 'divider' },
     {
-        type: 'group',
-        icon: ShoppingCart,
-        label: 'Orders',
+        type: 'group', key: 'orders', icon: ShoppingCart, label: 'Comenzi',
         children: [
-            { path: '/orders', icon: ListOrdered, label: 'All Orders' },
-            { path: '/duplicates', icon: Copy, label: 'Duplicates' },
+            { path: '/orders', icon: ListOrdered, label: 'Toate comenzile' },
+            { path: '/duplicates', icon: Copy, label: 'Duplicate' },
         ],
     },
-    { type: 'link', path: '/analytics', icon: BarChart3, label: 'Reports' },
-    { type: 'link', path: '/purchase-orders', icon: FileText, label: 'Purchase Orders' },
     { type: 'divider' },
+    { type: 'link', path: '/analytics', icon: BarChart3, label: 'Rapoarte' },
+    { type: 'link', path: '/purchase-orders', icon: FileText, label: 'Purchase Orders' },
     { type: 'link', path: '/comision-agentie', icon: Percent, label: 'Comision Agenție' },
     { type: 'divider' },
-    { type: 'link', path: '/custom-products', icon: Package, label: 'Custom Products' },
-    { type: 'link', path: '/settings', icon: Settings, label: 'Settings' },
+    { type: 'link', path: '/custom-products', icon: Package, label: 'Produse Custom' },
+    { type: 'link', path: '/settings', icon: Settings, label: 'Setări' },
     { type: 'link', path: '/logs', icon: Activity, label: 'System Monitor' },
 ]
 
-/**
- * Collapsible navigation group with child links.
- * Auto-opens if any child route is currently active.
- */
-function NavGroup({ item, pathname }) {
-    const isChildActive = item.children.some(c => pathname === c.path)
-    const [isOpen, setIsOpen] = useState(item.defaultOpen || isChildActive)
+function NavLinkRow({ to, icon, label, active, collapsed }) {
+    const IconComp = icon
+    const base =
+        'group relative flex items-center gap-3 rounded-lg font-medium transition-colors'
+    const idle =
+        'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
+    const activeCls =
+        'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300'
+    const padding = collapsed ? 'justify-center p-2.5' : 'px-3 py-2 text-sm'
 
-    // Keep open if a child becomes active (e.g. via direct URL navigation)
-    useEffect(() => {
-        if (isChildActive && !isOpen) setIsOpen(true)
-    }, [isChildActive])
+    const link = (
+        <Link
+            to={to}
+            className={`${base} ${padding} ${active ? activeCls : idle}`}
+        >
+            {active && !collapsed && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-r bg-primary-600" aria-hidden />
+            )}
+            <IconComp className={`w-4 h-4 flex-shrink-0 ${active ? 'text-primary-600 dark:text-primary-300' : ''}`} />
+            {!collapsed && <span className="truncate">{label}</span>}
+        </Link>
+    )
+
+    return collapsed ? <Tooltip label={label} side="right">{link}</Tooltip> : link
+}
+
+function NavGroup({ item, pathname, collapsed }) {
+    const isChildActive = item.children.some((c) => pathname === c.path)
+    // Initial open if a child is currently active. We auto-open at render time
+    // (via lazy state) instead of an effect to avoid the setState-in-effect
+    // lint rule; user can collapse manually thereafter.
+    const [open, setOpen] = useState(isChildActive)
+    // Track which path opened us so we re-open if the user navigates to a child
+    // of this group from outside.
+    const [lastActivePath, setLastActivePath] = useState(isChildActive ? pathname : null)
+    if (isChildActive && lastActivePath !== pathname) {
+        setLastActivePath(pathname)
+        if (!open) setOpen(true)
+    }
+
+    // In collapsed mode, just render the children as flat icon rows (no group header).
+    if (collapsed) {
+        return (
+            <div className="space-y-0.5">
+                {item.children.map((child) => (
+                    <NavLinkRow
+                        key={child.path}
+                        to={child.path}
+                        icon={child.icon}
+                        label={child.label}
+                        active={pathname === child.path}
+                        collapsed
+                    />
+                ))}
+            </div>
+        )
+    }
 
     return (
         <div>
             <button
-                onClick={() => setIsOpen(o => !o)}
-                className={`w-full flex items-center gap-3 rounded-lg font-medium transition-all duration-150 px-3 py-2.5 text-sm ${
-                    isChildActive
-                        ? 'text-indigo-600 dark:text-indigo-400'
-                        : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
-                }`}
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className={`w-full flex items-center gap-3 rounded-lg font-medium transition-colors px-3 py-2 text-xs uppercase tracking-wider ${isChildActive
+                    ? 'text-primary-700 dark:text-primary-300'
+                    : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
             >
-                <item.icon className={`w-5 h-5 ${isChildActive ? 'text-indigo-500' : ''}`} />
+                <item.icon className="w-3.5 h-3.5" />
                 <span className="flex-1 text-left">{item.label}</span>
-                {isOpen
-                    ? <ChevronDown className="w-4 h-4 text-zinc-400" />
-                    : <ChevronRight className="w-4 h-4 text-zinc-400" />
-                }
+                {open
+                    ? <ChevronDown className="w-3 h-3" />
+                    : <ChevronRight className="w-3 h-3" />}
             </button>
-            {isOpen && (
-                <div className="ml-3 pl-3 border-l-2 border-zinc-200/60 dark:border-zinc-700/40 space-y-0.5 mt-0.5">
-                    {item.children.map(child => {
-                        const isActive = pathname === child.path
-                        return (
-                            <Link
-                                key={child.path}
-                                to={child.path}
-                                className={`flex items-center gap-2.5 rounded-lg font-medium transition-all duration-150 px-3 py-1.5 text-xs ${isActive
-                                    ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-                                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
-                                }`}
-                            >
-                                <child.icon className={`w-4 h-4 ${isActive ? 'text-indigo-500' : ''}`} />
-                                {child.label}
-                            </Link>
-                        )
-                    })}
+            {open && (
+                <div className="ml-1 space-y-0.5 mt-0.5">
+                    {item.children.map((child) => (
+                        <NavLinkRow
+                            key={child.path}
+                            to={child.path}
+                            icon={child.icon}
+                            label={child.label}
+                            active={pathname === child.path}
+                            collapsed={false}
+                        />
+                    ))}
                 </div>
             )}
         </div>
     )
 }
 
-export default function Sidebar({ user, onLogout }) {
+export default function Sidebar() {
     const location = useLocation()
-    const { darkMode, toggleDarkMode, isSyncing, syncOrders, fullSyncOrders, cancelSync, lastSyncAt } = useAppStore()
+    const collapsed = useAppStore((s) => s.sidebarCollapsed)
+    const toggle = useAppStore((s) => s.toggleSidebar)
 
-    // Poll sync status every 10s to detect auto-syncs from the scheduler
+    // Ctrl+B / Cmd+B shortcut
     useEffect(() => {
-        const API = import.meta.env.VITE_API_URL || ''
-        const token = localStorage.getItem('awb_token')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-
-        const poll = async () => {
-            try {
-                const res = await fetch(`${API}/api/sync/status`, { headers })
-                if (!res.ok) return
-                const data = await res.json()
-                const backendRunning = data.status === 'running'
-                const storeState = useAppStore.getState()
-                
-                if (backendRunning && !storeState.isSyncing) {
-                    // Auto-sync detected — show the stop button
-                    useAppStore.setState({ isSyncing: true })
-                } else if (!backendRunning && storeState.isSyncing) {
-                    // Sync just finished — only clear if we weren't the ones polling via manual sync
-                    // (manual syncs have their own polling loop that clears isSyncing)
-                    useAppStore.setState({ isSyncing: false, lastSyncAt: new Date().toISOString() })
-                }
-            } catch {
-                // ignore polling errors
+        const onKey = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+                e.preventDefault()
+                toggle()
             }
         }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+    }, [toggle])
 
-        const interval = setInterval(poll, 10000)
-        poll() // check immediately on mount
-        return () => clearInterval(interval)
-    }, [])
+    const widthClass = collapsed ? 'w-[60px]' : 'w-[224px]'
 
     return (
-        <aside className="w-64 h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
-            {/* Logo */}
-            <div className="h-16 flex items-center px-6 border-b border-zinc-200/80 dark:border-zinc-800/60">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-500/25">
-                    AW
+        <aside
+            className={`${widthClass} h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-[width] duration-200 ease-out`}
+        >
+            {/* Logo + collapse toggle */}
+            <div className={`h-14 flex items-center ${collapsed ? 'justify-center px-2' : 'px-4 justify-between'} border-b border-zinc-200 dark:border-zinc-800`}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                        AW
+                    </div>
+                    {!collapsed && (
+                        <span className="font-semibold text-zinc-900 dark:text-white tracking-tight text-sm">
+                            AWB Print
+                        </span>
+                    )}
                 </div>
-                <span className="ml-3 font-semibold text-zinc-900 dark:text-white tracking-tight">AWB Print</span>
+                {!collapsed && (
+                    <Tooltip label="Restrânge (Ctrl+B)" side="bottom">
+                        <button
+                            type="button"
+                            onClick={toggle}
+                            aria-label="Restrânge sidebar"
+                            className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                            <PanelLeftClose className="w-4 h-4" />
+                        </button>
+                    </Tooltip>
+                )}
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-                {navStructure.map((item, idx) => {
+            <nav className={`flex-1 ${collapsed ? 'px-1.5 py-2' : 'px-2 py-3'} space-y-0.5 overflow-y-auto`}>
+                {NAV.map((item, idx) => {
                     if (item.type === 'divider') {
-                        return <div key={`div-${idx}`} className="my-2 mx-2 border-t border-zinc-200/60 dark:border-zinc-800/40" />
+                        return <div key={`div-${idx}`} className="my-2 mx-2 border-t border-zinc-200 dark:border-zinc-800" />
                     }
-
                     if (item.type === 'group') {
                         return (
                             <NavGroup
-                                key={item.label}
+                                key={item.key}
                                 item={item}
                                 pathname={location.pathname}
+                                collapsed={collapsed}
                             />
                         )
                     }
-
-                    // Regular link
-                    const isActive = location.pathname === item.path
                     return (
-                        <Link
+                        <NavLinkRow
                             key={item.path}
                             to={item.path}
-                            className={`flex items-center gap-3 rounded-lg font-medium transition-all duration-150 px-3 py-2.5 text-sm ${isActive
-                                ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm dark:shadow-none border-l-[3px] border-indigo-500 pl-[9px]'
-                                : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
-                                }`}
-                        >
-                            <item.icon className={`w-5 h-5 ${isActive ? 'text-indigo-500' : ''}`} />
-                            {item.label}
-                        </Link>
+                            icon={item.icon}
+                            label={item.label}
+                            active={location.pathname.startsWith(item.path) && (item.path !== '/' || location.pathname === '/')}
+                            collapsed={collapsed}
+                        />
                     )
                 })}
             </nav>
 
-            {/* Sync & Theme */}
-            <div className="p-4 border-t border-zinc-200/80 dark:border-zinc-800/60 space-y-3">
-                <button
-                    onClick={syncOrders}
-                    disabled={isSyncing}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-indigo-500/20 glow-btn"
-                >
-                    <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                    {isSyncing ? 'Syncing...' : 'Sync Orders (45 zile)'}
-                </button>
-                <button
-                    onClick={fullSyncOrders}
-                    disabled={isSyncing}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-all shadow-lg shadow-amber-500/20"
-                >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                    {isSyncing ? 'Syncing...' : 'Full Re-Sync (toate)'}
-                </button>
-                {isSyncing && (
-                    <button
-                        onClick={cancelSync}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-lg text-xs font-medium transition-all shadow-lg shadow-red-500/20"
-                    >
-                        <StopCircle className="w-3.5 h-3.5" />
-                        Stop Sync
-                    </button>
-                )}
-                {lastSyncAt && (
-                    <p className="text-xs text-zinc-400 text-center">
-                        Last sync: {new Date(lastSyncAt).toLocaleTimeString()}
-                    </p>
-                )}
-                <button
-                    onClick={toggleDarkMode}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800/60 hover:bg-zinc-200 dark:hover:bg-zinc-700/60 text-zinc-600 dark:text-zinc-300 rounded-lg text-sm font-medium transition-all"
-                >
-                    {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                    {darkMode ? 'Light Mode' : 'Dark Mode'}
-                </button>
-            </div>
-
-            {/* User & Logout */}
-            {user && (
-                <div className="p-3 border-t border-zinc-200/80 dark:border-zinc-800/60 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold">
-                        {(user.display_name || user.username || '?')[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{user.display_name || user.username}</p>
-                        <p className="text-xs text-zinc-400 truncate">{user.role}</p>
-                    </div>
-                    <button
-                        onClick={onLogout}
-                        className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors"
-                        title="Logout"
-                    >
-                        <LogOut className="w-4 h-4" />
-                    </button>
+            {/* Footer: expand button when collapsed */}
+            {collapsed && (
+                <div className="border-t border-zinc-200 dark:border-zinc-800 p-1.5 flex justify-center">
+                    <Tooltip label="Extinde (Ctrl+B)" side="right">
+                        <button
+                            type="button"
+                            onClick={toggle}
+                            aria-label="Extinde sidebar"
+                            className="p-2 rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                            <PanelLeftOpen className="w-4 h-4" />
+                        </button>
+                    </Tooltip>
                 </div>
             )}
         </aside>

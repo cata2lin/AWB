@@ -27,7 +27,7 @@ function ConditionSection({ id, title, icon: Icon, children, expanded, onToggle,
                     {title}
                 </span>
                 {activeCount > 0 && (
-                    <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-xs font-medium rounded-full">
+                    <span className="px-2 py-0.5 bg-primary-100 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400 text-xs font-medium rounded-full">
                         {activeCount}
                     </span>
                 )}
@@ -53,7 +53,7 @@ function FormField({ label, hint, children }) {
     )
 }
 
-const inputClass = "w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-zinc-400 dark:placeholder-zinc-600"
+const inputClass = "w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-zinc-400 dark:placeholder-zinc-600"
 
 export default function AddRuleModal({ isOpen, onClose }) {
     const { data: stores = [] } = useStores()
@@ -305,7 +305,7 @@ export default function AddRuleModal({ isOpen, onClose }) {
                                                 key={store.uid} type="button"
                                                 onClick={() => toggleStore(store.uid)}
                                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${conditions.storeUids.includes(store.uid)
-                                                    ? 'bg-indigo-500 text-white'
+                                                    ? 'bg-primary-500 text-white'
                                                     : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600'
                                                     }`}
                                             >
@@ -393,7 +393,7 @@ export default function AddRuleModal({ isOpen, onClose }) {
                         <button
                             type="submit"
                             disabled={createRuleMutation.isPending}
-                            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                            className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
                         >
                             {createRuleMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                             Add Rule

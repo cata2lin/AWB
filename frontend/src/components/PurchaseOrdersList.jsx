@@ -14,7 +14,7 @@ import {
 const STATUS_CONFIG = {
   DRAFT: { label: 'Draft', icon: FileText, color: 'text-gray-700 dark:text-gray-300', bg: 'bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-600' },
   SENT: { label: 'Sent', icon: CheckCircle2, color: 'text-blue-700 dark:text-blue-300', bg: 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-600' },
-  ORDERED: { label: 'Ordered', icon: CircleDot, color: 'text-indigo-700 dark:text-indigo-300', bg: 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-600' },
+  ORDERED: { label: 'Ordered', icon: CircleDot, color: 'text-primary-700 dark:text-primary-300', bg: 'bg-primary-50 dark:bg-primary-500/10 border-primary-200 dark:border-primary-600' },
   APPROVED: { label: 'Approved', icon: CheckCircle2, color: 'text-blue-700 dark:text-blue-300', bg: 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-600' },
   PARTIALLY_RECEIVED: { label: 'Partial', icon: CircleDot, color: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-600' },
   COMPLETED: { label: 'Completed', icon: CheckCircle2, color: 'text-green-700 dark:text-green-300', bg: 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-600' },
@@ -23,7 +23,7 @@ const STATUS_CONFIG = {
 
 const TOM_STATUS_CLASSES = {
   NEW: 'bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-600',
-  SOURCING: 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-600',
+  SOURCING: 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border-primary-200 dark:border-primary-600',
   PRODUCTION: 'bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-600',
   SHIPPED: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-600',
   DELIVERED: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300 border-green-200 dark:border-green-600',
@@ -94,7 +94,7 @@ function CategoryEditor({ categories, onSave, onClose }) {
         <span className="text-sm font-semibold text-zinc-800 dark:text-white">Manage Categories</span>
         <div className="flex items-center gap-2">
           <button onClick={() => onSave(cats)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 dark:bg-indigo-600 hover:bg-gray-800 dark:hover:bg-indigo-700 text-white rounded-lg transition-colors">
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 dark:bg-primary-600 hover:bg-gray-800 dark:hover:bg-primary-700 text-white rounded-lg transition-colors">
             <Save className="w-3 h-3" /> Save
           </button>
           <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700">
@@ -106,7 +106,7 @@ function CategoryEditor({ categories, onSave, onClose }) {
         {cats.map((c, idx) => (
           <div key={c.key} className="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
             <input value={c.label} onChange={e => update(idx, 'label', e.target.value)}
-              className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+              className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
             <button onClick={() => update(idx, 'tom_enabled', !c.tom_enabled)}
               title={c.tom_enabled ? 'TOM sync ON' : 'TOM sync OFF'}
               className="p-1.5 rounded-lg transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700">
@@ -124,13 +124,13 @@ function CategoryEditor({ categories, onSave, onClose }) {
         <div className="flex items-center gap-3 px-4 py-2.5">
           <input value={newKey} onChange={e => setNewKey(e.target.value)}
             placeholder="key"
-            className="w-24 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            className="w-24 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white placeholder-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
             placeholder="Label (e.g. 🏷️ My Category)"
             onKeyDown={e => e.key === 'Enter' && add()}
-            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white placeholder-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           <button onClick={add} disabled={!newKey.trim() || !newLabel.trim()}
-            className="p-1.5 text-indigo-500 hover:text-indigo-700 disabled:opacity-30 rounded-lg transition-colors">
+            className="p-1.5 text-primary-500 hover:text-primary-700 disabled:opacity-30 rounded-lg transition-colors">
             <Plus className="w-5 h-5" />
           </button>
         </div>
@@ -218,7 +218,7 @@ export default function PurchaseOrdersList({ h }) {
   const scorecards = [
     { label: 'Open POs', value: stats.openCount, icon: FileText, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-500/10' },
     { label: 'Open Value', value: `${fmt(stats.totalValue)} RON`, subValue: `$${fmt(stats.totalValueUsd)} USD`, icon: DollarSign, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
-    { label: 'Units on Order', value: fmt(stats.totalUnits), icon: Package, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
+    { label: 'Units on Order', value: fmt(stats.totalUnits), icon: Package, color: 'text-primary-600 dark:text-primary-400', bg: 'bg-primary-50 dark:bg-primary-500/10' },
     { label: 'Units Pending', value: fmt(stats.unitsPending), icon: Clock, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10' },
     { label: 'Total POs', value: h.orders.length, icon: Layers, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-500/10' },
     { label: 'Overdue', value: 0, icon: AlertTriangle, color: 'text-gray-400 dark:text-gray-500', bg: 'bg-gray-50 dark:bg-gray-500/10' },
@@ -246,7 +246,7 @@ export default function PurchaseOrdersList({ h }) {
             Refresh
           </button>
           <button onClick={h.startCreate}
-            className="inline-flex items-center gap-2 rounded-lg bg-gray-900 dark:bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:hover:bg-indigo-700 transition-colors">
+            className="inline-flex items-center gap-2 rounded-lg bg-gray-900 dark:bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:hover:bg-primary-700 transition-colors">
             <Plus className="h-4 w-4" />
             New PO
           </button>
@@ -290,7 +290,7 @@ export default function PurchaseOrdersList({ h }) {
             onClick={() => h.setStatusFilter(tab.key)}
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               h.statusFilter === tab.key
-                ? 'bg-gray-900 dark:bg-indigo-600 text-white'
+                ? 'bg-gray-900 dark:bg-primary-600 text-white'
                 : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
@@ -313,7 +313,7 @@ export default function PurchaseOrdersList({ h }) {
           value={h.search}
           onChange={(e) => h.setSearch(e.target.value)}
           placeholder="Search by PO number, category, or supplier..."
-          className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-2.5 pl-11 pr-4 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-2.5 pl-11 pr-4 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
       </div>
 
@@ -324,7 +324,7 @@ export default function PurchaseOrdersList({ h }) {
           <button onClick={() => h.setCategoryFilter('')}
             className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
               !h.categoryFilter
-                ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 shadow-sm'
                 : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
             }`}>
             All
@@ -333,7 +333,7 @@ export default function PurchaseOrdersList({ h }) {
             <button key={c.key} onClick={() => h.setCategoryFilter(c.key)}
               className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
                 h.categoryFilter === c.key
-                  ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                  ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 shadow-sm'
                   : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
               }`}>
               {c.label}
@@ -393,7 +393,7 @@ export default function PurchaseOrdersList({ h }) {
                     className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer">
                     <td className="px-5 py-4">
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-semibold text-base text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">
+                        <span className="font-semibold text-base text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300">
                           {po.po_number}
                         </span>
                         {po.title && (

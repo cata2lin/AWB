@@ -1,18 +1,29 @@
 import { useEffect, useState } from 'react'
 import {
-    Truck, XCircle, RotateCcw, TrendingUp, Store, Settings2, ArrowUpDown,
+    Truck, XCircle, RotateCcw, TrendingUp, Store, ArrowUpDown, Download,
 } from 'lucide-react'
 import { authFetch, API_URL } from '../../utils/authFetch'
 import {
     getRateColor, getRateBgColor, formatNumber, getLastCompleteMonth,
 } from '../../utils/analyticsHelpers'
+import ColumnsMenu from '../../components/ui/ColumnsMenu'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { exportCsv } from '../../utils/csvExport'
 
-const COL_LABELS = {
-    total: 'Total', delivered: 'Livrate', cancelled: 'Anulate',
-    returned: 'Ret. / Ref.', in_transit: 'În Tranzit', shipped: 'Expediate',
-    delivery_rate: 'Rată Livrare', expedition_rate: 'Rată Expediție',
-    cancelled_rate: 'Rată Anulare', deliverability: 'Livrabilitate',
-}
+// Order also drives ColumnsMenu list order — store_name is always visible.
+const DELIVERABILITY_COLUMNS = [
+    { key: 'store_name',         header: 'Magazin', alwaysVisible: true, align: 'left' },
+    { key: 'total',              header: 'Total',         align: 'right' },
+    { key: 'delivered',          header: 'Livrate',       align: 'right' },
+    { key: 'cancelled',          header: 'Anulate',       align: 'right' },
+    { key: 'returned',           header: 'Ret. / Ref.',   align: 'right' },
+    { key: 'in_transit',         header: 'În Tranzit',    align: 'right' },
+    { key: 'shipped',            header: 'Expediate',     align: 'right' },
+    { key: 'delivery_rate',      header: 'Rată Livrare',  align: 'right' },
+    { key: 'expedition_rate',    header: 'Rată Expediție',align: 'right' },
+    { key: 'cancelled_rate',     header: 'Rată Anulare',  align: 'right' },
+    { key: 'deliverability_rate',header: 'Livrabilitate', align: 'right' },
+]
 
 const QUICK_PERIODS = [
     { key: '30d', label: '30 zile' },
@@ -67,13 +78,13 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
     const [dateTo, setDateTo] = useState('')
     const [loading, setLoading] = useState(false)
     const [sort, setSort] = useState({ col: 'total', dir: 'desc' })
-    const [showColMenu, setShowColMenu] = useState(false)
     const [showComparison, setShowComparison] = useState(false)
-    const [cols, setCols] = useState({
-        total: true, delivered: true, cancelled: true, returned: true,
-        in_transit: true, shipped: true, delivery_rate: true,
-        expedition_rate: true, cancelled_rate: true, deliverability: true,
-    })
+    const {
+        visibleKeys,
+        setVisibleKeys,
+        defaultVisibleKeys,
+    } = useColumnVisibility('livrabilitate', DELIVERABILITY_COLUMNS)
+    const colVisible = (key) => visibleKeys.includes(key) || DELIVERABILITY_COLUMNS.find(c => c.key === key)?.alwaysVisible
 
     const toggleSort = (col) => {
         setSort(prev => prev.col === col ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })
@@ -114,19 +125,9 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [period, dateFrom, dateTo, selectedStores, showComparison])
 
-    const columns = [
-        { field: 'store_name', label: 'Magazin', align: 'left', show: true },
-        { field: 'total', label: 'Total', show: cols.total },
-        { field: 'delivered', label: 'Livrate', show: cols.delivered },
-        { field: 'cancelled', label: 'Anulate', show: cols.cancelled },
-        { field: 'returned', label: 'Ret. / Ref.', show: cols.returned },
-        { field: 'in_transit', label: 'În Tranzit', show: cols.in_transit },
-        { field: 'shipped', label: 'Expediate', show: cols.shipped },
-        { field: 'delivery_rate', label: 'Rată Livrare', show: cols.delivery_rate },
-        { field: 'expedition_rate', label: 'Rată Expediție', show: cols.expedition_rate },
-        { field: 'cancelled_rate', label: 'Rată Anulare', show: cols.cancelled_rate },
-        { field: 'deliverability_rate', label: 'Livrabilitate', show: cols.deliverability },
-    ]
+    const columns = DELIVERABILITY_COLUMNS
+        .filter(c => colVisible(c.key))
+        .map(c => ({ field: c.key, label: c.header, align: c.align, show: true }))
 
     const sortedStores = (() => {
         const stores = [...(data?.stores || [])]
@@ -153,7 +154,7 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
                     <button key={p.key}
                         onClick={() => { setPeriod(p.key); setDateFrom(''); setDateTo('') }}
                         className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${period === p.key
-                            ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                            ? 'bg-primary-50 dark:bg-primary-500/20 border-primary-300 dark:border-primary-500 text-primary-700 dark:text-primary-300'
                             : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                             }`}
                     >{p.label}</button>
@@ -183,7 +184,7 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
                 <button
                     onClick={() => setPeriod('custom')}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${period === 'custom'
-                        ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                        ? 'bg-primary-50 dark:bg-primary-500/20 border-primary-300 dark:border-primary-500 text-primary-700 dark:text-primary-300'
                         : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                         }`}
                 >Perioadă custom</button>
@@ -201,11 +202,11 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
 
                 <label className="flex items-center gap-2 cursor-pointer ml-auto">
                     <input type="checkbox" checked={showComparison} onChange={(e) => setShowComparison(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
+                        className="w-3.5 h-3.5 rounded border-zinc-300 text-primary-600 focus:ring-primary-500" />
                     <span className="text-xs text-zinc-500 dark:text-zinc-400">Exclude ultimele 3 zile</span>
                 </label>
 
-                {loading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500" />}
+                {loading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-500" />}
             </div>
 
             {data && (
@@ -250,9 +251,9 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
                                 {formatNumber(data.totals?.shipped || 0)}
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-indigo-500">
+                        <div className="bg-white dark:bg-zinc-800/60 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/50 border-l-4 border-l-primary-500">
                             <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                                <TrendingUp className="w-4 h-4 text-indigo-500" /> Livrabilitate
+                                <TrendingUp className="w-4 h-4 text-primary-500" /> Livrabilitate
                             </div>
                             <div className={`text-2xl font-bold mt-1 tracking-tight ${getRateColor(data.totals?.deliverability_rate || 0)}`}>
                                 {data.totals?.deliverability_rate || 0}%
@@ -261,29 +262,36 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
                     </div>
 
                     {/* Per-Store Table */}
-                    <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-clip shadow-sm">
-                        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between">
+                    <div className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden shadow-sm">
+                        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2">
                             <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2 tracking-tight">
-                                <Store className="w-5 h-5 text-indigo-500" />
+                                <Store className="w-5 h-5 text-primary-500" />
                                 Livrabilitate per Magazin
                             </h3>
-                            <div className="relative">
-                                <button onClick={() => setShowColMenu(!showColMenu)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">
-                                    <Settings2 className="w-3.5 h-3.5" /> Coloane
+                            <div className="flex items-center gap-2">
+                                <ColumnsMenu
+                                    columns={DELIVERABILITY_COLUMNS}
+                                    visibleKeys={visibleKeys}
+                                    onChange={setVisibleKeys}
+                                    defaultVisibleKeys={defaultVisibleKeys}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const cols = DELIVERABILITY_COLUMNS.filter(c => colVisible(c.key)).map(c => ({
+                                            key: c.key, label: c.header,
+                                            accessor: (s) => {
+                                                if (c.key === 'returned') return (s.returned || 0) + (s.refused || 0)
+                                                if (c.key === 'in_transit') return (s.in_transit || 0) + (s.out_for_delivery || 0)
+                                                if (c.key.endsWith('_rate')) return `${s[c.key] || 0}%`
+                                                return s[c.key] ?? ''
+                                            },
+                                        }))
+                                        exportCsv({ filename: `livrabilitate_${period}`, columns: cols, rows: sortedStores })
+                                    }}
+                                    title="Export CSV"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                                    <Download className="w-4 h-4" /> CSV
                                 </button>
-                                {showColMenu && (
-                                    <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl z-50 p-2 space-y-0.5">
-                                        {Object.entries(COL_LABELS).map(([key, label]) => (
-                                            <label key={key} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/50 text-zinc-700 dark:text-zinc-300">
-                                                <input type="checkbox" checked={cols[key]}
-                                                    onChange={() => setCols(prev => ({ ...prev, [key]: !prev[key] }))}
-                                                    className="rounded border-zinc-300 dark:border-zinc-600 text-indigo-500 focus:ring-indigo-500" />
-                                                {label}
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         </div>
                         <div className="overflow-auto max-h-[75vh]">
@@ -292,13 +300,13 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
                                     <tr>
                                         {columns.filter(c => c.show).map(c => (
                                             <th key={c.field}
-                                                className={`${c.align === 'left' ? 'text-left px-4' : 'text-right px-3'} py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase cursor-pointer select-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
+                                                className={`${c.align === 'left' ? 'text-left px-4' : 'text-right px-3'} py-3 text-xs font-medium text-zinc-500 dark:text-white uppercase cursor-pointer select-none hover:text-primary-600 dark:hover:text-primary-400 transition-colors`}
                                                 onClick={() => toggleSort(c.field)}>
                                                 <span className="inline-flex items-center gap-1">
                                                     {c.label}
-                                                    <ArrowUpDown className={`w-3 h-3 ${sort.col === c.field ? 'text-indigo-500' : 'opacity-40'}`} />
+                                                    <ArrowUpDown className={`w-3 h-3 ${sort.col === c.field ? 'text-primary-500' : 'opacity-40'}`} />
                                                     {sort.col === c.field && (
-                                                        <span className="text-[9px] text-indigo-500">{sort.dir === 'asc' ? '↑' : '↓'}</span>
+                                                        <span className="text-[9px] text-primary-500">{sort.dir === 'asc' ? '↑' : '↓'}</span>
                                                     )}
                                                 </span>
                                             </th>
@@ -311,34 +319,34 @@ export default function DeliverabilityTab({ selectedStores = [] }) {
                                             <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-white">
                                                 {store.store_name}
                                             </td>
-                                            {cols.total && <td className="px-3 py-3 text-sm text-right text-zinc-600 dark:text-white">
+                                            {colVisible('total') && <td className="px-3 py-3 text-sm text-right text-zinc-700 dark:text-zinc-100">
                                                 {formatNumber(store.total)}
                                             </td>}
-                                            {cols.delivered && <td className="px-3 py-3 text-sm text-right text-green-600 dark:text-green-400 font-medium">
+                                            {colVisible('delivered') && <td className="px-3 py-3 text-sm text-right text-green-600 dark:text-green-400 font-medium">
                                                 {formatNumber(store.delivered)}
                                             </td>}
-                                            {cols.cancelled && <td className="px-3 py-3 text-sm text-right text-red-600 dark:text-red-400">
+                                            {colVisible('cancelled') && <td className="px-3 py-3 text-sm text-right text-red-600 dark:text-red-400">
                                                 {formatNumber(store.cancelled)}
                                             </td>}
-                                            {cols.returned && <td className="px-3 py-3 text-sm text-right text-orange-600 dark:text-orange-400">
+                                            {colVisible('returned') && <td className="px-3 py-3 text-sm text-right text-orange-600 dark:text-orange-400">
                                                 {formatNumber((store.returned || 0) + (store.refused || 0))}
                                             </td>}
-                                            {cols.in_transit && <td className="px-3 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
+                                            {colVisible('in_transit') && <td className="px-3 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
                                                 {formatNumber((store.in_transit || 0) + (store.out_for_delivery || 0))}
                                             </td>}
-                                            {cols.shipped && <td className="px-3 py-3 text-sm text-right text-indigo-600 dark:text-indigo-400 font-medium">
+                                            {colVisible('shipped') && <td className="px-3 py-3 text-sm text-right text-primary-600 dark:text-primary-400 font-medium">
                                                 {formatNumber(store.shipped || 0)}
                                             </td>}
-                                            {cols.delivery_rate && <td className="px-3 py-3 text-sm text-right">
+                                            {colVisible('delivery_rate') && <td className="px-3 py-3 text-sm text-right">
                                                 <span className={getRateColor(store.delivery_rate || 0)}>{store.delivery_rate || 0}%</span>
                                             </td>}
-                                            {cols.expedition_rate && <td className="px-3 py-3 text-sm text-right">
-                                                <span className="text-indigo-600 dark:text-indigo-400">{store.expedition_rate || 0}%</span>
+                                            {colVisible('expedition_rate') && <td className="px-3 py-3 text-sm text-right">
+                                                <span className="text-primary-600 dark:text-primary-400">{store.expedition_rate || 0}%</span>
                                             </td>}
-                                            {cols.cancelled_rate && <td className="px-3 py-3 text-sm text-right">
+                                            {colVisible('cancelled_rate') && <td className="px-3 py-3 text-sm text-right">
                                                 <span className="text-red-600 dark:text-red-400">{store.cancelled_rate || 0}%</span>
                                             </td>}
-                                            {cols.deliverability && <td className="px-3 py-3 text-sm text-right">
+                                            {colVisible('deliverability_rate') && <td className="px-3 py-3 text-sm text-right">
                                                 <div className="flex items-center justify-end gap-2">
                                                     <div className="w-16 h-2 bg-zinc-200 dark:bg-zinc-600 rounded-full overflow-hidden">
                                                         <div

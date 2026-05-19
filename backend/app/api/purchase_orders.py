@@ -12,6 +12,7 @@ Lead time rules:
 - Esteban / GT (georgetalent): 0 days (self-produced)
 - All others: 90 days (average supplier lead time)
 """
+
 import json
 import logging
 from collections import defaultdict
@@ -51,7 +52,7 @@ def _classify_urgency(days_of_stock, lead_time, velocity):
     """Classify SKU urgency based on days of stock vs lead time."""
     if velocity < 0.05:
         return "slow"
-    if days_of_stock is None or days_of_stock == float('inf'):
+    if days_of_stock is None or days_of_stock == float("inf"):
         return "overstock"
     if lead_time == 0:
         # Self-produced: only flag if stock is very low
@@ -115,45 +116,52 @@ def _build_product_groups(all_products):
     return groups
 
 
-def _merge_product_group(group, store_name_map, self_produced_uids, ro_store_uids=None, intl_store_uids=None):
+def _merge_product_group(
+    group, store_name_map, self_produced_uids, ro_store_uids=None, intl_store_uids=None
+):
     """
     Merge a list of product listings into a single product dict.
     Uses pick_best_primary for RO+image priority selection.
     Stock comes from the barcode-holding listing (not summed across duplicates).
     """
     group.sort(
-        key=lambda p: p.synced_at or p.frisbo_updated_at or p.frisbo_created_at or datetime.min,
+        key=lambda p: (
+            p.synced_at or p.frisbo_updated_at or p.frisbo_created_at or datetime.min
+        ),
         reverse=True,
     )
 
-    # Pick primary: user-set > RO+image > RO > any+image > fallback
+    # Pick primary for DISPLAY (image, title, store): user-set > RO+image > RO > any+image > fallback.
+    # The user-set `primary_listing_uid` only affects DISPLAY, never stock.
     if ro_store_uids is not None:
-        primary, has_explicit = pick_best_primary(group, ro_store_uids, intl_store_uids or set())
+        primary, _has_explicit = pick_best_primary(
+            group, ro_store_uids, intl_store_uids or set()
+        )
     else:
         primary = group[0]
-        has_explicit = False
         for p in group:
             if p.primary_listing_uid:
                 match = next((x for x in group if x.uid == p.primary_listing_uid), None)
                 if match:
                     primary = match
-                    has_explicit = True
                 break
 
     # ── Stock resolution ──
-    # Prefer the barcode-holding product for authoritative stock.
+    # Always prefer the barcode-holding product for authoritative stock.
+    # `stock_sync_service` updates stock_available by *barcode* every 15 min;
+    # a barcode-less primary (chosen for image / title reasons) may have a stale
+    # value from the original Frisbo sync.
     stock_product = primary
-    if not has_explicit:
-        for p in group:
-            if (p.barcode or "").strip():
-                stock_product = p
-                break
+    for p in group:
+        if (p.barcode or "").strip():
+            stock_product = p
+            break
 
     # Merge stores from all listings
     all_store_uids = []
     seen = set()
     for p in group:
-        for uid in (p.store_uids or []):
+        for uid in p.store_uids or []:
             if uid not in seen:
                 all_store_uids.append(uid)
                 seen.add(uid)
@@ -198,7 +206,9 @@ def _merge_product_group(group, store_name_map, self_produced_uids, ro_store_uid
 async def get_purchase_orders(
     days: int = Query(30, ge=7, le=365, description="Days for velocity calculation"),
     store_uids: Optional[str] = Query(None, description="Comma-separated store UIDs"),
-    category: Optional[str] = Query(None, description="Filter: urgent, warning, ok, overstock, slow"),
+    category: Optional[str] = Query(
+        None, description="Filter: urgent, warning, ok, overstock, slow"
+    ),
     search: Optional[str] = Query(None, description="Search by SKU or product name"),
     sort_by: str = Query("days_of_stock", description="Sort field"),
     sort_dir: str = Query("asc", description="Sort direction"),
@@ -259,14 +269,23 @@ async def get_purchase_orders(
     # FX rate preload for non-RON currencies
     from app.api.exchange_rates import preload_rates, get_rate_from_cache
     from app.core.timezone import to_bucharest_date, romania_today
-    non_ron_currencies = {(o.currency or 'RON').upper() for o in orders if (o.currency or 'RON').upper() != 'RON'}
+
+    non_ron_currencies = {
+        (o.currency or "RON").upper()
+        for o in orders
+        if (o.currency or "RON").upper() != "RON"
+    }
     rate_cache = {}
     if non_ron_currencies:
-        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in orders]
+        order_dates = [
+            to_bucharest_date(o.frisbo_created_at) or romania_today() for o in orders
+        ]
         if order_dates:
             min_date = min(order_dates)
             max_date = max(order_dates)
-            rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
+            rate_cache = await preload_rates(
+                non_ron_currencies, (min_date, max_date), db
+            )
 
     # Per-SKU sales aggregation
     sku_sales = defaultdict(lambda: {"units": 0, "revenue": 0.0, "orders": 0})
@@ -295,9 +314,13 @@ async def get_purchase_orders(
             qty = float(item.get("quantity", 1) or 1)
             price = float(item.get("price", 0) or 0)
             # Convert price to RON
-            order_currency = (order.currency or 'RON').upper()
-            if order_currency != 'RON':
-                fx = get_rate_from_cache(order_currency, to_bucharest_date(order.frisbo_created_at) or romania_today(), rate_cache)
+            order_currency = (order.currency or "RON").upper()
+            if order_currency != "RON":
+                fx = get_rate_from_cache(
+                    order_currency,
+                    to_bucharest_date(order.frisbo_created_at) or romania_today(),
+                    rate_cache,
+                )
                 if fx is not None:
                     price = price * fx
             sku_sales[sku]["units"] += qty
@@ -314,7 +337,9 @@ async def get_purchase_orders(
         .where(PurchaseOrder.status.in_(["APPROVED", "PARTIALLY_RECEIVED"]))
         .group_by(PurchaseOrderItem.sku)
     )
-    po_incoming_map = {row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()}
+    po_incoming_map = {
+        row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()
+    }
 
     period_days = max((dt_to - dt_from).days, 1)
 
@@ -322,7 +347,9 @@ async def get_purchase_orders(
     products_out = []
 
     for group in groups:
-        merged = _merge_product_group(group, store_name_map, self_produced_uids, ro_store_uids, intl_store_uids)
+        merged = _merge_product_group(
+            group, store_name_map, self_produced_uids, ro_store_uids, intl_store_uids
+        )
 
         if merged["exclude_from_stock"]:
             continue
@@ -345,7 +372,9 @@ async def get_purchase_orders(
             days_of_stock = 9999 if effective_stock > 0 else 0
 
         reorder_point = round(velocity * lead_time, 0)
-        suggested_qty = max(0, round(velocity * (lead_time + BUFFER_DAYS) - effective_stock, 0))
+        suggested_qty = max(
+            0, round(velocity * (lead_time + BUFFER_DAYS) - effective_stock, 0)
+        )
 
         urgency = _classify_urgency(days_of_stock, lead_time, velocity)
 
@@ -387,7 +416,8 @@ async def get_purchase_orders(
     if search:
         search_lower = search.lower()
         products_out = [
-            p for p in products_out
+            p
+            for p in products_out
             if search_lower in (p["sku"] or "").lower()
             or search_lower in (p["product_name"] or "").lower()
             or search_lower in (p["barcode"] or "").lower()
@@ -397,7 +427,7 @@ async def get_purchase_orders(
     def sort_key(row):
         val = row.get(sort_by, 0)
         if val is None:
-            return float('inf') if sort_dir == "asc" else float('-inf')
+            return float("inf") if sort_dir == "asc" else float("-inf")
         if isinstance(val, str):
             return val.lower()
         return val

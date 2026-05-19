@@ -4,10 +4,12 @@ import {
     BarChart3, Store, ArrowRight, ArrowUpRight, ArrowDownRight, DollarSign,
     Tag, Plus, Trash2, Search, AlertTriangle, Bookmark, Download, X,
 } from 'lucide-react'
-import { analyticsApi, purchaseOrdersMgmtApi } from '../../services/api'
+import { analyticsApi, purchaseOrdersMgmtApi, settingsApi } from '../../services/api'
 import VelocityRow from '../../components/VelocityRow'
 import MultiSelectFilter from '../../components/MultiSelectFilter'
 import SkuPickerModal from '../../components/SkuPickerModal'
+import { toastError, toastSuccess } from '../../utils/toast'
+import { toast } from 'sonner'
 
 // Country emoji flags for display (copied from Analytics — used by VelocityRow)
 const COUNTRY_FLAGS = {
@@ -43,6 +45,8 @@ export default function SalesVelocityTab({ stores = [] }) {
     // Draft POs state
     const [draftPOs, setDraftPOs] = useState([])
     const [selectedDraftPo, setSelectedDraftPo] = useState('')
+    const [poCategories, setPoCategories] = useState([])
+    const [generatingPO, setGeneratingPO] = useState(false)
 
     // Advanced velocity filters
     const [velocityMaxUnits, setVelocityMaxUnits] = useState('')
@@ -95,12 +99,27 @@ export default function SalesVelocityTab({ stores = [] }) {
         setVelocityExpanded(prev => prev === rowKey ? null : rowKey)
     }, [])
 
-    // Fetch draft POs on mount (tab won't render unless active)
+    // Fetch draft POs + PO categories on mount (tab won't render unless active)
     useEffect(() => {
         purchaseOrdersMgmtApi.list({ status: 'DRAFT' })
             .then(res => setDraftPOs(res.orders || []))
             .catch(err => console.error('Failed to fetch draft POs', err))
+        settingsApi.getPoCategories()
+            .then(r => setPoCategories(r.categories || []))
+            .catch(() => {})
     }, [])
+
+    /** Reload the draft PO list — called after create/append so the dropdown stays current. */
+    const refreshDraftPOs = useCallback(async () => {
+        try {
+            const res = await purchaseOrdersMgmtApi.list({ status: 'DRAFT' })
+            setDraftPOs(res.orders || [])
+            return res.orders || []
+        } catch (err) {
+            console.error('Failed to refresh draft POs', err)
+            return draftPOs
+        }
+    }, [draftPOs])
 
     // Auto-load velocity data on mount (with default 1-day / today period)
     useEffect(() => {
@@ -368,12 +387,12 @@ export default function SalesVelocityTab({ stores = [] }) {
                         <div>
                             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">De la</label>
                             <input type="date" value={velocityDateFrom} onChange={e => setVelocityDateFrom(e.target.value)}
-                                className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
+                                className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white dark:[color-scheme:dark] ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Până la</label>
                             <input type="date" value={velocityDateTo} onChange={e => setVelocityDateTo(e.target.value)}
-                                className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
+                                className={`px-2 py-1.5 text-sm rounded-lg border bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white dark:[color-scheme:dark] ${isCustomDate ? 'border-emerald-500' : 'border-zinc-200 dark:border-zinc-600'}`} />
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Magazine</label>
@@ -567,7 +586,7 @@ export default function SalesVelocityTab({ stores = [] }) {
                                 { label: 'Net Unități', value: velocityData.kpis.total_units.toLocaleString(), icon: <Package className="w-5 h-5" />, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
                                 { label: 'Brut Revenue', value: `${(velocityData.kpis.total_gross_revenue || 0).toLocaleString()} RON`, icon: <DollarSign className="w-5 h-5" />, color: 'text-zinc-600 dark:text-zinc-300', bg: 'bg-zinc-50 dark:bg-zinc-800/60' },
                                 { label: 'Net Revenue', value: `${velocityData.kpis.total_revenue.toLocaleString()} RON`, icon: <DollarSign className="w-5 h-5" />, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
-                                { label: 'SKU-uri Active', value: velocityData.kpis.unique_skus, icon: <Tag className="w-5 h-5" />, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
+                                { label: 'SKU-uri Active', value: velocityData.kpis.unique_skus, icon: <Tag className="w-5 h-5" />, color: 'text-primary-600 dark:text-primary-400', bg: 'bg-primary-50 dark:bg-primary-900/20' },
                                 { label: 'Net U/Zi', value: velocityData.kpis.avg_units_per_day, icon: <TrendingUp className="w-5 h-5" />, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
                                 { label: 'Avg Order Value', value: `${velocityData.kpis.avg_order_value} RON`, icon: <BarChart3 className="w-5 h-5" />, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/20' },
                                 { label: 'Comenzi Livrate', value: velocityData.kpis.delivered_orders?.toLocaleString(), icon: <Truck className="w-5 h-5" />, color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/20' },
@@ -734,9 +753,10 @@ export default function SalesVelocityTab({ stores = [] }) {
                                                     await purchaseOrdersMgmtApi.delete(selectedDraftPo);
                                                     setDraftPOs(prev => prev.filter(p => p.id !== parseInt(selectedDraftPo)));
                                                     setSelectedDraftPo('');
+                                                    toastSuccess('PO șters')
                                                 } catch (e) {
                                                     console.error("Failed to delete PO", e);
-                                                    alert("Eroare la ștergerea PO-ului: " + (e.response?.data?.detail || e.message));
+                                                    toastError(e)
                                                 }
                                             }}
                                             title="Șterge PO Selectat"
@@ -746,79 +766,115 @@ export default function SalesVelocityTab({ stores = [] }) {
                                         </button>
                                     )}
                                 </div>
-                                <button onClick={async () => {
-                                    const items = sortedProducts
-                                        .filter(p => velocitySelectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
-                                        .map(p => {
-                                            const efectiveStock = p.effective_stock || ((p.stock_available || 0) + (p.po_incoming || 0))
-                                            const necesarRecomandat = Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - efectiveStock))
-                                            return {
-                                                sku: p.sku,
-                                                product_name: p.product_name || p.sku,
-                                                unit_cost: p.unit_cost || 0,
-                                                quantity: necesarRecomandat > 0 ? necesarRecomandat : Math.max(1, Math.ceil((p.velocity || 0) * velocityTargetCoverage)),
-                                                velocity: p.velocity,
-                                                stock: p.stock_available,
-                                                days_left: p.days_left_of_stock,
-                                            }
-                                        })
-
-                                    if (selectedDraftPo) {
-                                        try {
-                                            const targetPo = draftPOs.find(p => p.id === parseInt(selectedDraftPo))
-                                            if (!targetPo) return
-
-                                            const poDetails = await purchaseOrdersMgmtApi.get(targetPo.id)
-                                            const existingItems = poDetails.items || []
-
-                                            const mergedMap = new Map()
-                                            existingItems.forEach(i => mergedMap.set(i.sku, {
-                                                sku: i.sku,
-                                                product_name: i.product_name || '',
-                                                unit_cost: i.unit_cost || 0,
-                                                quantity: i.quantity || 0,
-                                                received_qty: i.received_qty || 0,
-                                                barcode: i.barcode || '',
-                                                product_uid: i.product_uid || '',
-                                                variant_title: i.variant_title || '',
-                                                product_image: i.product_image || '',
-                                            }))
-
-                                            items.forEach(newItem => {
-                                                if (mergedMap.has(newItem.sku)) {
-                                                    const existing = mergedMap.get(newItem.sku)
-                                                    existing.quantity += newItem.quantity
-                                                    mergedMap.set(newItem.sku, existing)
-                                                } else {
-                                                    mergedMap.set(newItem.sku, {
-                                                        sku: newItem.sku,
-                                                        product_name: newItem.product_name,
-                                                        unit_cost: newItem.unit_cost,
-                                                        quantity: newItem.quantity,
-                                                        received_qty: 0,
-                                                    })
+                                <button
+                                    disabled={generatingPO}
+                                    onClick={async () => {
+                                        setGeneratingPO(true)
+                                        const items = sortedProducts
+                                            .filter(p => velocitySelectedSkus.has(`${p.sku}::${p.store_uid || ''}`))
+                                            .map(p => {
+                                                const efectiveStock = p.effective_stock || ((p.stock_available || 0) + (p.po_incoming || 0))
+                                                const necesarRecomandat = Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - efectiveStock))
+                                                return {
+                                                    sku: p.sku,
+                                                    product_name: p.product_name || p.sku,
+                                                    product_image: p.image_url || '',
+                                                    unit_cost: p.unit_cost || 0,
+                                                    quantity: necesarRecomandat > 0 ? necesarRecomandat : Math.max(1, Math.ceil((p.velocity || 0) * velocityTargetCoverage)),
                                                 }
                                             })
 
-                                            const mergedItemsList = Array.from(mergedMap.values())
-                                            await purchaseOrdersMgmtApi.updateItems(targetPo.id, mergedItemsList)
-                                            alert(`✅ ${items.length} produs(e) adăugate la ${targetPo.po_number}`)
-                                            setVelocitySelectedSkus(new Set())
-                                            // Refresh draft POs list
-                                            purchaseOrdersMgmtApi.list({ status: 'DRAFT' })
-                                                .then(res => setDraftPOs(res.orders || []))
-                                                .catch(() => {})
+                                        try {
+                                            if (selectedDraftPo) {
+                                                // ── Append-to-existing branch ──
+                                                const targetPo = draftPOs.find(p => p.id === parseInt(selectedDraftPo))
+                                                if (!targetPo) { setGeneratingPO(false); return }
+
+                                                const poDetails = await purchaseOrdersMgmtApi.get(targetPo.id)
+                                                const existingItems = poDetails.items || []
+
+                                                const mergedMap = new Map()
+                                                existingItems.forEach(i => mergedMap.set(i.sku, {
+                                                    sku: i.sku,
+                                                    product_name: i.product_name || '',
+                                                    unit_cost: i.unit_cost || 0,
+                                                    quantity: i.quantity || 0,
+                                                    received_qty: i.received_qty || 0,
+                                                    barcode: i.barcode || '',
+                                                    product_uid: i.product_uid || '',
+                                                    variant_title: i.variant_title || '',
+                                                    product_image: i.product_image || '',
+                                                }))
+
+                                                items.forEach(newItem => {
+                                                    if (mergedMap.has(newItem.sku)) {
+                                                        const existing = mergedMap.get(newItem.sku)
+                                                        existing.quantity += newItem.quantity
+                                                        if (!existing.product_image && newItem.product_image) {
+                                                            existing.product_image = newItem.product_image
+                                                        }
+                                                        mergedMap.set(newItem.sku, existing)
+                                                    } else {
+                                                        mergedMap.set(newItem.sku, {
+                                                            sku: newItem.sku,
+                                                            product_name: newItem.product_name,
+                                                            product_image: newItem.product_image,
+                                                            unit_cost: newItem.unit_cost,
+                                                            quantity: newItem.quantity,
+                                                            received_qty: 0,
+                                                        })
+                                                    }
+                                                })
+
+                                                const mergedItemsList = Array.from(mergedMap.values())
+                                                await purchaseOrdersMgmtApi.updateItems(targetPo.id, mergedItemsList)
+                                                toast.success(`${items.length} produs(e) adăugate la ${targetPo.po_number}`, {
+                                                    action: { label: 'Vezi PO', onClick: () => window.open(`/purchase-orders/${targetPo.id}`, '_blank') },
+                                                })
+                                                setVelocitySelectedSkus(new Set())
+                                                await refreshDraftPOs()
+                                            } else {
+                                                // ── Create-new branch: inline API call, no navigation ──
+                                                const defaultCategory = poCategories[0]?.key || 'packaging'
+                                                const periodLabel = velocityData?.meta?.date_from
+                                                    ? `${velocityData.meta.date_from.slice(0, 10)} → ${velocityData.meta.date_to?.slice(0, 10) || 'today'}`
+                                                    : `${velocityDays}z`
+                                                const result = await purchaseOrdersMgmtApi.create({
+                                                    title: `Restock din Viteză Vânzări (${periodLabel})`,
+                                                    po_category: defaultCategory,
+                                                    po_type: 'RESTOCK',
+                                                    items,
+                                                })
+                                                const newPoId = result?.id
+                                                const newPoNumber = result?.po_number || ''
+                                                // Refresh draft list and auto-select the new one so the next
+                                                // batch of products goes into the same PO instead of creating
+                                                // another draft.
+                                                const updatedDrafts = await refreshDraftPOs()
+                                                if (newPoId && updatedDrafts.find(p => p.id === newPoId)) {
+                                                    setSelectedDraftPo(String(newPoId))
+                                                }
+                                                setVelocitySelectedSkus(new Set())
+                                                toast.success(`PO ${newPoNumber} creat cu ${items.length} produs(e). Continuă să adaugi în acest PO.`, {
+                                                    duration: 6000,
+                                                    action: newPoId ? {
+                                                        label: 'Vezi PO',
+                                                        onClick: () => window.open(`/purchase-orders/${newPoId}`, '_blank'),
+                                                    } : undefined,
+                                                })
+                                            }
                                         } catch (e) {
-                                            console.error("Failed to append to existing PO", e)
-                                            alert("Eroare la adăugarea în PO: " + (e.response?.data?.detail || e.message))
+                                            console.error('PO operation failed', e)
+                                            toastError(e)
+                                        } finally {
+                                            setGeneratingPO(false)
                                         }
-                                    } else {
-                                        sessionStorage.setItem('po_prefill', JSON.stringify(items))
-                                        window.location.href = '/purchase-orders/new'
-                                    }
-                                }}
-                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5 ml-2">
-                                    <Plus className="w-4 h-4" /> {selectedDraftPo ? 'Adaugă la PO' : 'Generează PO'}
+                                    }}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5 ml-2 disabled:opacity-60 disabled:cursor-wait">
+                                    {generatingPO
+                                        ? <RefreshCw className="w-4 h-4 animate-spin" />
+                                        : <Plus className="w-4 h-4" />}
+                                    {selectedDraftPo ? 'Adaugă la PO' : 'Generează PO'}
                                 </button>
                                 <button onClick={() => setVelocitySelectedSkus(new Set())}
                                     className="text-zinc-400 hover:text-white transition-colors">
@@ -978,9 +1034,9 @@ export default function SalesVelocityTab({ stores = [] }) {
                                                                     <div className="text-zinc-500 dark:text-zinc-400">Viteză</div>
                                                                     <div className="text-lg font-bold text-amber-600">{sc.velocity} u/zi</div>
                                                                 </div>
-                                                                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-2">
+                                                                <div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg p-2">
                                                                     <div className="text-zinc-500 dark:text-zinc-400">Comenzi</div>
-                                                                    <div className="text-lg font-bold text-indigo-600">{sc.orders.toLocaleString()}</div>
+                                                                    <div className="text-lg font-bold text-primary-600">{sc.orders.toLocaleString()}</div>
                                                                 </div>
                                                             </div>
                                                         </div>

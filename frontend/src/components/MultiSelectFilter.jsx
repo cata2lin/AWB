@@ -79,7 +79,7 @@ export default function MultiSelectFilter({
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-colors min-w-[140px] ${selected.length > 0
-                        ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                        ? 'bg-primary-50 dark:bg-primary-500/10 border-primary-300 dark:border-primary-500 text-primary-700 dark:text-primary-300'
                         : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
                     }`}
             >
@@ -96,7 +96,7 @@ export default function MultiSelectFilter({
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={selectAll}
-                                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                                className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                             >
                                 {selected.length === options.length ? 'Deselect all' : 'Select all'}
                             </button>
@@ -121,7 +121,7 @@ export default function MultiSelectFilter({
                                     placeholder="Search..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                     onClick={(e) => e.stopPropagation()}
                                 />
                             </div>
@@ -141,11 +141,11 @@ export default function MultiSelectFilter({
                                     <button
                                         key={option.value}
                                         onClick={() => toggleOption(option.value)}
-                                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors ${isSelected ? 'bg-indigo-50 dark:bg-indigo-500/10' : ''
+                                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors ${isSelected ? 'bg-primary-50 dark:bg-primary-500/10' : ''
                                             }`}
                                     >
                                         <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isSelected
-                                                ? 'bg-indigo-600 border-indigo-600'
+                                                ? 'bg-primary-600 border-primary-600'
                                                 : 'border-zinc-300 dark:border-zinc-600'
                                             }`}>
                                             {isSelected && <Check className="w-3 h-3 text-white" />}
@@ -156,7 +156,7 @@ export default function MultiSelectFilter({
                                                 style={{ backgroundColor: option.color }}
                                             />
                                         )}
-                                        <span className={`truncate ${isSelected ? 'text-indigo-700 dark:text-indigo-300 font-medium' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                                        <span className={`truncate ${isSelected ? 'text-primary-700 dark:text-primary-300 font-medium' : 'text-zinc-700 dark:text-zinc-300'}`}>
                                             {option.label}
                                         </span>
                                         {option.count !== undefined && (
@@ -179,12 +179,12 @@ export default function MultiSelectFilter({
                                     return (
                                         <span
                                             key={val}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded text-xs"
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 rounded text-xs"
                                         >
                                             {opt?.label?.slice(0, 15) || val}
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); toggleOption(val) }}
-                                                className="hover:text-indigo-900"
+                                                className="hover:text-primary-900"
                                             >
                                                 <X className="w-3 h-3" />
                                             </button>

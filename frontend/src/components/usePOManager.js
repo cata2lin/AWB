@@ -7,9 +7,10 @@
  * Product catalogue is cached at module scope so subsequent searches
  * (and remounts) do not make additional network requests.
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { purchaseOrdersMgmtApi } from '../services/api/analytics'
 import { settingsApi } from '../services/api/analytics'
+import { toastError, toastSuccess, toastInfo } from '../utils/toast'
 
 // Module-level cache so the full product catalogue is only fetched once per session
 // (shared across all usePOManager instances even if the component remounts)
@@ -43,16 +44,14 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
   // ── Operations ──
   const [saving, setSaving] = useState(false)
   const [tomBusy, setTomBusy] = useState(null) // 'send'|'refresh'|'amend'|'cancel'
-  const [toast, setToast] = useState(null)
-  const toastTimer = useRef(null)
 
   // ── Categories ──
   const [poCategories, setPoCategories] = useState([])
 
   const showToast = (msg, type = 'info') => {
-    if (toastTimer.current) clearTimeout(toastTimer.current)
-    setToast({ msg, type })
-    toastTimer.current = setTimeout(() => setToast(null), 5000)
+    if (type === 'error') toastError(msg)
+    else if (type === 'success') toastSuccess(msg)
+    else toastInfo(msg)
   }
 
   // ── Load categories on mount ──
@@ -134,15 +133,14 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
   }
 
   const deletePO = async (id) => {
-    if (!confirm('Delete this draft PO?')) return
     try {
       await purchaseOrdersMgmtApi.delete(id)
       setSelectedId(null)
       setSelectedPO(null)
       setMode('list')
       fetchOrders()
-      showToast('PO deleted', 'success')
-    } catch (e) { showToast(e?.response?.data?.detail || 'Cannot delete', 'error') }
+      showToast('Comandă ștearsă', 'success')
+    } catch (e) { showToast(e?.response?.data?.detail || 'Ștergere eșuată', 'error') }
   }
 
   const receivePO = async (id) => {
@@ -343,7 +341,7 @@ export default function usePOManager({ analyticsProducts, onRefresh }) {
     // Picker
     pickerSearch, setPickerSearch, pickerResults, pickerLoading,
     // Operations
-    saving, tomBusy, toast, setToast,
+    saving, tomBusy,
     // Categories
     poCategories, getCatConfig,
     // Actions

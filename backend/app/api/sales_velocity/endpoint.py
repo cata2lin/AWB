@@ -4,6 +4,7 @@ Sales Velocity & Product Analytics — FastAPI endpoint.
 Computes per-SKU sales velocity, trends, store comparisons, and auto-generated alerts
 from order + line_items data.
 """
+
 import json
 import logging
 from collections import defaultdict
@@ -18,7 +19,13 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.timezone import to_bucharest_iso, to_bucharest_date, to_bucharest, date_str_to_utc_start, date_str_to_utc_end
+from app.core.timezone import (
+    to_bucharest_iso,
+    to_bucharest_date,
+    to_bucharest,
+    date_str_to_utc_start,
+    date_str_to_utc_end,
+)
 from app.models import Order, Store, SkuCost
 from app.models.product import Product
 from app.models.purchase_order import PurchaseOrder
@@ -100,7 +107,9 @@ async def get_sales_velocity(
         # Use Bucharest midnight boundaries so date range matches Shopify/RO
         now_buc = datetime.now(ZoneInfo("Europe/Bucharest"))
         end_of_today_buc = now_buc.replace(hour=23, minute=59, second=59, microsecond=0)
-        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         dt_from = start_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
         dt_to = end_of_today_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
@@ -155,21 +164,33 @@ async def get_sales_velocity(
 
     # ── FX rate preload for non-RON currencies ───────────────────────────
     from app.core.timezone import romania_today
-    non_ron_currencies = {(o.currency or 'RON').upper() for o in all_orders if (o.currency or 'RON').upper() != 'RON'}
+
+    non_ron_currencies = {
+        (o.currency or "RON").upper()
+        for o in all_orders
+        if (o.currency or "RON").upper() != "RON"
+    }
     rate_cache = {}
     if non_ron_currencies:
-        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in all_orders]
+        order_dates = [
+            to_bucharest_date(o.frisbo_created_at) or romania_today()
+            for o in all_orders
+        ]
         if order_dates:
             min_date = min(order_dates)
             max_date = max(order_dates)
-            rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
+            rate_cache = await preload_rates(
+                non_ron_currencies, (min_date, max_date), db
+            )
 
     # ── 3. Load stores + SKU costs + stock ──────────────────────────────────
     stores_result = await db.execute(select(Store))
     stores_map: Dict[str, str] = {s.uid: s.name for s in stores_result.scalars().all()}
 
     sku_costs_result = await db.execute(select(SkuCost))
-    sku_cost_map: Dict[str, float] = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
+    sku_cost_map: Dict[str, float] = {
+        sc.sku: sc.cost for sc in sku_costs_result.scalars().all()
+    }
 
     # Classify stores for primary selection (RO vs international)
     ro_store_uids, intl_store_uids = classify_stores(stores_map.items())
@@ -178,26 +199,32 @@ async def get_sales_velocity(
     # ── Build SKU-level groups (merge across stores, except nubra) ──────
     # Group key = just SKU for most stores, "sku::nubra" for nubra
     stock_query = await db.execute(
-        select(Product)
-        .where(
-            Product.sku.isnot(None), Product.sku != '',
-            Product.state == 'active',
+        select(Product).where(
+            Product.sku.isnot(None),
+            Product.sku != "",
+            Product.state == "active",
         )
     )
     all_products = stock_query.scalars().all()
-    
+
     # Sort products by synced_at DESC so the most recently synced product comes first
     # This aligns with the 'Produse' tab logic and ignores stale stock values
     all_products.sort(
-        key=lambda p: p.synced_at or p.frisbo_updated_at or p.frisbo_created_at or p.synced_at or datetime.min,
-        reverse=True
+        key=lambda p: (
+            p.synced_at
+            or p.frisbo_updated_at
+            or p.frisbo_created_at
+            or p.synced_at
+            or datetime.min
+        ),
+        reverse=True,
     )
 
     # Maps
-    sku_stock_map: Dict[str, int] = {}          # group_key → total stock
-    sku_group_stores: Dict[str, set] = {}       # group_key → set of store_uids
-    sku_product_name: Dict[str, str] = {}       # group_key → best product name
-    
+    sku_stock_map: Dict[str, int] = {}  # group_key → total stock
+    sku_group_stores: Dict[str, set] = {}  # group_key → set of store_uids
+    sku_product_name: Dict[str, str] = {}  # group_key → best product name
+
     # We need a quick lookup to resolve primary_listing_uid
     uid_to_product = {p.uid: p for p in all_products}
 
@@ -235,21 +262,55 @@ async def get_sales_velocity(
     group_display_sku = {}
 
     # Initialize Maps
-    sku_stock_map: Dict[str, int] = {}          # group_key → total stock
-    sku_group_stores: Dict[str, set] = {}       # group_key → set of store_uids
-    sku_product_name: Dict[str, str] = {}       # group_key → best product name
-    sku_image_map: Dict[str, str] = {}          # group_key → image URL
+    sku_stock_map: Dict[str, int] = {}  # group_key → total stock
+    sku_group_stores: Dict[str, set] = {}  # group_key → set of store_uids
+    sku_product_name: Dict[str, str] = {}  # group_key → best product name
+    sku_image_map: Dict[str, str] = {}  # group_key → image URL
+
+    # ── Global SKU → image fallback ───────────────────────────────────────
+    # Nubra is intentionally isolated by `_group_key_for`, so a nubra-only
+    # row with no image of its own never sees the esteban/GT sibling's image
+    # through normal group resolution. Build a cross-store SKU→image map up
+    # front and consult it as a last resort when the chosen primary has none.
+    def _extract_image_src(product) -> str:
+        imgs = product.images
+        if not imgs:
+            return ""
+        if isinstance(imgs, str):
+            try:
+                imgs = json.loads(imgs)
+            except (json.JSONDecodeError, TypeError):
+                return ""
+        if isinstance(imgs, list) and len(imgs) > 0:
+            first = imgs[0]
+            if isinstance(first, dict):
+                return (first.get("src") or "").strip()
+            return str(first).strip() if first else ""
+        return ""
+
+    sku_image_fallback: Dict[str, str] = {}
+    for p in all_products:
+        sku = (p.sku or "").strip()
+        if not sku or sku in sku_image_fallback:
+            continue
+        img = _extract_image_src(p)
+        if img:
+            sku_image_fallback[sku] = img
 
     def process_product_group(group, fallback_key):
-        if not group: return
+        if not group:
+            return
 
-        # Pick primary: user-set > RO+image > RO > any+image > fallback
-        best_product, has_explicit = pick_best_primary(
+        # Pick primary for DISPLAY (image, title, store): user-set > RO+image > RO > any+image > fallback.
+        # NOTE: this primary is NOT used for stock authority — see the
+        # `stock_product` resolution below.
+        best_product, _has_explicit = pick_best_primary(
             group, ro_store_uids, intl_store_uids, uid_to_product
         )
 
         group_key = fallback_key.strip()
-        if not group_key: return
+        if not group_key:
+            return
 
         group_display_sku[group_key] = (best_product.sku or fallback_key).strip()
 
@@ -261,6 +322,7 @@ async def get_sales_velocity(
                 if isinstance(s_uids, str):
                     try:
                         import json
+
                         s_uids = json.loads(s_uids)
                     except:
                         s_uids = []
@@ -268,39 +330,52 @@ async def get_sales_velocity(
                     store_sku_map[(uid, p.sku.strip())] = group_key
 
         # ── Stock resolution ──────────────────────────────────────────────
-        # Prefer the barcode-holding product for authoritative stock.
+        # InventorySync's `stock_sync_service` updates `stock_available` by
+        # *barcode* every 15 min. A barcode-less product (even if the user
+        # explicitly set it as `primary_listing_uid` for display purposes)
+        # only gets stock updates via the SKU fallback path, which is much
+        # narrower. Always pull authoritative stock from the barcode-holding
+        # product when one exists in the group — `primary_listing_uid` is
+        # a DISPLAY choice (image / title), not a stock-authority choice.
         stock_product = best_product
-        if not has_explicit:
-            for p in group:
-                if (p.barcode or "").strip():
-                    stock_product = p
-                    break
+        for p in group:
+            if (p.barcode or "").strip():
+                stock_product = p
+                break
         group_stock = stock_product.stock_available or 0
         sku_stock_map[group_key] = group_stock
         if best_product.title_1:
             sku_product_name[group_key] = best_product.title_1
 
-        # Extract image URL from best product's images JSON
+        # Extract image URL — prefer the best-primary, then any group member,
+        # then a global SKU sibling (catches nubra-isolated products).
         if group_key not in sku_image_map:
-            imgs = best_product.images
-            if imgs and isinstance(imgs, list) and len(imgs) > 0:
-                sku_image_map[group_key] = imgs[0].get('src', '') if isinstance(imgs[0], dict) else str(imgs[0])
-            elif imgs and isinstance(imgs, str):
-                try:
-                    parsed = json.loads(imgs)
-                    if parsed and isinstance(parsed, list) and len(parsed) > 0:
-                        sku_image_map[group_key] = parsed[0].get('src', '') if isinstance(parsed[0], dict) else str(parsed[0])
-                except Exception:
-                    pass
-            
+            img_src = _extract_image_src(best_product)
+            if not img_src:
+                for q in group:
+                    img_src = _extract_image_src(q)
+                    if img_src:
+                        break
+            if not img_src:
+                # Last-resort global lookup: any product anywhere with this SKU
+                # that has an image. Built once before this loop.
+                for q in group:
+                    sku = (q.sku or "").strip()
+                    if sku and sku in sku_image_fallback:
+                        img_src = sku_image_fallback[sku]
+                        break
+            if img_src:
+                sku_image_map[group_key] = img_src
+
         if group_key not in sku_group_stores:
             sku_group_stores[group_key] = set()
-            
+
         for p in group:
             s_uids = p.store_uids or []
             if isinstance(s_uids, str):
                 try:
                     import json
+
                     s_uids = json.loads(s_uids)
                 except Exception:
                     s_uids = []
@@ -327,29 +402,54 @@ async def get_sales_velocity(
 
     # ── 4. Process orders into current vs previous period ─────────────────
     # Per-SKU-group aggregation
-    sku_current: Dict[str, dict] = defaultdict(lambda: {
-        "sku": "", "group_key": "", "product_name": "",
-        "store_uids_in_group": set(),
-        "units_sold": 0, "revenue": 0.0, "orders": 0,
-        "delivered_units": 0, "total_units": 0, "gross_revenue": 0.0,
-        "last_sale_date": None, "daily_units": defaultdict(float),
-        "by_country": defaultdict(lambda: {"units": 0, "revenue": 0.0}),
-        "by_store": defaultdict(lambda: {
-            "store_name": "", "store_uid": "",
-            "gross_units": 0, "units_sold": 0, "gross_revenue": 0.0, "revenue": 0.0,
-            "orders": 0, "daily_units": defaultdict(float),
-        }),
-    })
-    sku_previous: Dict[str, dict] = defaultdict(lambda: {"units_sold": 0, "revenue": 0.0, "orders": 0})
+    sku_current: Dict[str, dict] = defaultdict(
+        lambda: {
+            "sku": "",
+            "group_key": "",
+            "product_name": "",
+            "store_uids_in_group": set(),
+            "units_sold": 0,
+            "revenue": 0.0,
+            "orders": 0,
+            "delivered_units": 0,
+            "total_units": 0,
+            "gross_revenue": 0.0,
+            "last_sale_date": None,
+            "daily_units": defaultdict(float),
+            "by_country": defaultdict(lambda: {"units": 0, "revenue": 0.0}),
+            "by_store": defaultdict(
+                lambda: {
+                    "store_name": "",
+                    "store_uid": "",
+                    "gross_units": 0,
+                    "units_sold": 0,
+                    "gross_revenue": 0.0,
+                    "revenue": 0.0,
+                    "orders": 0,
+                    "daily_units": defaultdict(float),
+                }
+            ),
+        }
+    )
+    sku_previous: Dict[str, dict] = defaultdict(
+        lambda: {"units_sold": 0, "revenue": 0.0, "orders": 0}
+    )
 
     # Daily totals for trend chart
-    daily_totals: Dict[str, dict] = defaultdict(lambda: {"units": 0, "revenue": 0.0, "orders": 0})
+    daily_totals: Dict[str, dict] = defaultdict(
+        lambda: {"units": 0, "revenue": 0.0, "orders": 0}
+    )
 
     # Store-level aggregation
-    store_agg: Dict[str, dict] = defaultdict(lambda: {
-        "store_name": "", "units": 0, "revenue": 0.0, "orders": 0,
-        "active_skus": set(),
-    })
+    store_agg: Dict[str, dict] = defaultdict(
+        lambda: {
+            "store_name": "",
+            "units": 0,
+            "revenue": 0.0,
+            "orders": 0,
+            "active_skus": set(),
+        }
+    )
 
     total_orders_current = 0
     total_orders_all = len(all_orders)
@@ -387,7 +487,11 @@ async def get_sales_velocity(
         store_name_for_tz = stores_map.get(order.store_uid, "")
         s_start, s_end = _get_store_bounds(store_name_for_tz)
         is_current = order_date and order_date >= s_start and order_date <= s_end
-        is_prev = order_date and order_date < s_start and order_date >= (s_start - timedelta(days=period_days))
+        is_prev = (
+            order_date
+            and order_date < s_start
+            and order_date >= (s_start - timedelta(days=period_days))
+        )
 
         # Parse items
         for item in items_raw:
@@ -399,9 +503,13 @@ async def get_sales_velocity(
             qty = float(item.get("quantity", 1) or 1)
             price = float(item.get("price", 0) or 0)
             # Convert price to RON using per-order date BNR rate
-            order_currency = (order.currency or 'RON').upper()
-            if order_currency != 'RON':
-                fx = get_rate_from_cache(order_currency, to_bucharest_date(order.frisbo_created_at) or romania_today(), rate_cache)
+            order_currency = (order.currency or "RON").upper()
+            if order_currency != "RON":
+                fx = get_rate_from_cache(
+                    order_currency,
+                    to_bucharest_date(order.frisbo_created_at) or romania_today(),
+                    rate_cache,
+                )
                 if fx is not None:
                     price = price * fx
             line_rev = price * qty
@@ -417,7 +525,9 @@ async def get_sales_velocity(
                 agg["group_key"] = composite_key
                 agg["store_uids_in_group"].add(order.store_uid or "")
                 if not agg["product_name"]:
-                    agg["product_name"] = sku_product_name.get(composite_key, "") or product_name
+                    agg["product_name"] = (
+                        sku_product_name.get(composite_key, "") or product_name
+                    )
 
                 # Cancelled orders are excluded from gross counts to align
                 # with Shopify's "Net items sold" (which never includes
@@ -432,50 +542,71 @@ async def get_sales_velocity(
                     # We want to show the exact variant SKU and store name in the expanded view
                     variant_key = f"{sku}::{order.store_uid or ''}"
                     if "by_variant" not in agg:
-                        agg["by_variant"] = defaultdict(lambda: {
-                            "sku": "", "store_uid": "", "store_name": "", "product_name": "",
-                            "gross_units": 0, "units_sold": 0, "gross_revenue": 0.0, "revenue": 0.0,
-                            "orders": 0, "velocity": 0.0, "daily_series": [], "daily_units": defaultdict(int),
-                            "orders_list": []
-                        })
-                    
+                        agg["by_variant"] = defaultdict(
+                            lambda: {
+                                "sku": "",
+                                "store_uid": "",
+                                "store_name": "",
+                                "product_name": "",
+                                "gross_units": 0,
+                                "units_sold": 0,
+                                "gross_revenue": 0.0,
+                                "revenue": 0.0,
+                                "orders": 0,
+                                "velocity": 0.0,
+                                "daily_series": [],
+                                "daily_units": defaultdict(int),
+                                "orders_list": [],
+                            }
+                        )
+
                     st = agg["by_variant"][variant_key]
                     st["sku"] = sku
                     st["store_uid"] = order.store_uid or ""
-                    st["store_name"] = stores_map.get(order.store_uid, order.store_uid or "")
+                    st["store_name"] = stores_map.get(
+                        order.store_uid, order.store_uid or ""
+                    )
                     st["product_name"] = product_name
                     st["gross_units"] += qty
                     st["gross_revenue"] += line_rev
                     st["orders"] += 1
-                    
+
                     # Store order details for the popup
-                    st["orders_list"].append({
-                        "order_number": order.order_number,
-                        "date": to_bucharest_iso(order.frisbo_created_at),
-                        "store_name": st["store_name"],
-                        "status": order.aggregated_status or order.fulfillment_status,
-                        "item_name": product_name,
-                        "qty": int(qty),
-                        "price": round(price, 2)
-                    })
+                    st["orders_list"].append(
+                        {
+                            "order_number": order.order_number,
+                            "date": to_bucharest_iso(order.frisbo_created_at),
+                            "store_name": st["store_name"],
+                            "status": order.aggregated_status
+                            or order.fulfillment_status,
+                            "item_name": product_name,
+                            "qty": int(qty),
+                            "price": round(price, 2),
+                        }
+                    )
 
                 if is_delivered:
                     agg["units_sold"] += qty
                     agg["revenue"] += line_rev
                     agg["delivered_units"] += qty
-                    
+
                     if is_current:
                         st["units_sold"] += qty
                         st["revenue"] += line_rev
 
                     # Track last sale date
-                    if order_date and (agg["last_sale_date"] is None or order_date > agg["last_sale_date"]):
+                    if order_date and (
+                        agg["last_sale_date"] is None
+                        or order_date > agg["last_sale_date"]
+                    ):
                         agg["last_sale_date"] = order_date
 
                     # Daily series (global for this SKU group)
-                    day_key = str(to_bucharest_date(order_date)) if order_date else "unknown"
+                    day_key = (
+                        str(to_bucharest_date(order_date)) if order_date else "unknown"
+                    )
                     agg["daily_units"][day_key] += qty
-                    
+
                     if is_current:
                         # Daily series per variant
                         st["daily_units"][day_key] += qty
@@ -497,7 +628,9 @@ async def get_sales_velocity(
                     sa["active_skus"].add(sku)
 
                 if is_delivered:
-                    daily_totals[str(to_bucharest_date(order_date)) if order_date else "unknown"]["orders"] += 0
+                    daily_totals[
+                        str(to_bucharest_date(order_date)) if order_date else "unknown"
+                    ]["orders"] += 0
 
             elif is_prev and is_delivered:
                 prev_key = _group_key_for(sku, order.store_uid or "")
@@ -510,7 +643,9 @@ async def get_sales_velocity(
         if is_current:
             total_orders_current += 1
             if is_delivered:
-                day_key = str(to_bucharest_date(order_date)) if order_date else "unknown"
+                day_key = (
+                    str(to_bucharest_date(order_date)) if order_date else "unknown"
+                )
                 daily_totals[day_key]["orders"] = daily_totals[day_key].get("orders", 0)
                 # orders counted at order level, not line-item; handle dedup below
 
@@ -522,7 +657,9 @@ async def get_sales_velocity(
             s_s, s_e = _get_store_bounds(s_name)
             if order.frisbo_created_at >= s_s and order.frisbo_created_at <= s_e:
                 final_outcome = compute_final_outcome(
-                    order.aggregated_status, order.shipment_status, order.fulfillment_status,
+                    order.aggregated_status,
+                    order.shipment_status,
+                    order.fulfillment_status,
                 )
                 if final_outcome in DELIVERED_OUTCOMES:
                     dk = str(to_bucharest_date(order.frisbo_created_at))
@@ -539,7 +676,9 @@ async def get_sales_velocity(
             s_s, s_e = _get_store_bounds(s_name)
             if order.frisbo_created_at >= s_s and order.frisbo_created_at <= s_e:
                 final_outcome = compute_final_outcome(
-                    order.aggregated_status, order.shipment_status, order.fulfillment_status,
+                    order.aggregated_status,
+                    order.shipment_status,
+                    order.fulfillment_status,
                 )
                 if final_outcome in DELIVERED_OUTCOMES:
                     addr = order.shipping_address or {}
@@ -558,7 +697,9 @@ async def get_sales_velocity(
         .where(PurchaseOrder.status.in_(["APPROVED", "PARTIALLY_RECEIVED"]))
         .group_by(PurchaseOrderItem.sku)
     )
-    po_incoming_raw = {row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()}
+    po_incoming_raw = {
+        row[0]: max(0, int(row[1] or 0)) for row in po_incoming_result.all()
+    }
 
     # Map PO incoming SKUs to their master group keys
     po_incoming_map: Dict[str, int] = {}
@@ -578,9 +719,9 @@ async def get_sales_velocity(
         sku = group_display_sku.get(comp_key, agg["sku"])
         store_uids_in_group = agg.get("store_uids_in_group", set())
         # Build store display name from all stores in this group
-        store_names = " + ".join(sorted(
-            stores_map.get(u, u) for u in store_uids_in_group if u
-        ))
+        store_names = " + ".join(
+            sorted(stores_map.get(u, u) for u in store_uids_in_group if u)
+        )
         units = agg["units_sold"]
         gross_units = agg["total_units"]
         gross_rev = agg["gross_revenue"]
@@ -595,7 +736,11 @@ async def get_sales_velocity(
         prev = sku_previous.get(comp_key, {"units_sold": 0})
         prev_units = prev["units_sold"]
         prev_velocity = _safe_div(prev_units, period_days)
-        velocity_change = _safe_div(velocity - prev_velocity, prev_velocity) * 100 if prev_velocity > 0 else (100.0 if velocity > 0 else 0.0)
+        velocity_change = (
+            _safe_div(velocity - prev_velocity, prev_velocity) * 100
+            if prev_velocity > 0
+            else (100.0 if velocity > 0 else 0.0)
+        )
         if velocity > prev_velocity:
             velocity_trend = "up"
         elif velocity < prev_velocity:
@@ -619,7 +764,11 @@ async def get_sales_velocity(
 
         # By country
         by_country = [
-            {"country": cc, "units": int(cd["units"]), "revenue": round(cd["revenue"], 2)}
+            {
+                "country": cc,
+                "units": int(cd["units"]),
+                "revenue": round(cd["revenue"], 2),
+            }
             for cc, cd in agg["by_country"].items()
         ]
         by_country.sort(key=lambda x: x["units"], reverse=True)
@@ -628,14 +777,25 @@ async def get_sales_velocity(
         po_incoming = po_incoming_map.get(comp_key, 0)
         effective_stock = stock + po_incoming
         inv_value = round(unit_cost * stock, 2)
-        image_url = sku_image_map.get(comp_key, '')
+        # Image lookup: nubra orders use `f"{sku}::nubra"` as comp_key (set by
+        # `_group_key_for`), which is a different keyspace from product groups
+        # (those are barcode-keyed or sku-keyed). So `sku_image_map[comp_key]`
+        # misses for nubra rows even when nubra OR a non-nubra sibling has an
+        # image. Final fallback is the global `sku_image_fallback` map built
+        # before the product-grouping loop — covers cross-store images and the
+        # ::nubra-suffix mismatch in one shot.
+        image_url = sku_image_map.get(comp_key, "") or sku_image_fallback.get(sku, "")
 
         gross_velocity = _safe_div(gross_units, period_days)
         # Use gross velocity (all orders placed) for stock coverage estimate;
         # net velocity may be 0 for short windows where deliveries haven't happened yet
         effective_velocity = gross_velocity if gross_velocity > 0 else velocity
         # Days of stock uses effective_stock (current + PO incoming)
-        days_left_of_stock = round(effective_stock / effective_velocity, 1) if effective_velocity > 0 else 9999.0
+        days_left_of_stock = (
+            round(effective_stock / effective_velocity, 1)
+            if effective_velocity > 0
+            else 9999.0
+        )
         if min_days_left is not None and days_left_of_stock < min_days_left:
             continue
         if max_days_left is not None and days_left_of_stock > max_days_left:
@@ -648,55 +808,61 @@ async def get_sales_velocity(
             var_daily = []
             for i in range(period_days):
                 d = str(to_bucharest(dt_from + timedelta(days=i)).date())
-                var_daily.append({"date": d, "units": var_data["daily_units"].get(d, 0)})
-            by_variant_list.append({
-                "variant_key": var_key,
-                "sku": var_data["sku"],
-                "store_uid": var_data["store_uid"],
-                "store_name": var_data["store_name"],
-                "product_name": var_data["product_name"],
-                "gross_units": int(var_data["gross_units"]),
-                "units_sold": int(var_data["units_sold"]),
-                "gross_revenue": round(var_data["gross_revenue"], 2),
-                "revenue": round(var_data["revenue"], 2),
-                "orders": var_data["orders"],
-                "velocity": round(var_velocity, 2),
-                "daily_series": var_daily,
-                "orders_list": var_data.get("orders_list", []),
-            })
+                var_daily.append(
+                    {"date": d, "units": var_data["daily_units"].get(d, 0)}
+                )
+            by_variant_list.append(
+                {
+                    "variant_key": var_key,
+                    "sku": var_data["sku"],
+                    "store_uid": var_data["store_uid"],
+                    "store_name": var_data["store_name"],
+                    "product_name": var_data["product_name"],
+                    "gross_units": int(var_data["gross_units"]),
+                    "units_sold": int(var_data["units_sold"]),
+                    "gross_revenue": round(var_data["gross_revenue"], 2),
+                    "revenue": round(var_data["revenue"], 2),
+                    "orders": var_data["orders"],
+                    "velocity": round(var_velocity, 2),
+                    "daily_series": var_daily,
+                    "orders_list": var_data.get("orders_list", []),
+                }
+            )
         by_variant_list.sort(key=lambda x: x["units_sold"], reverse=True)
 
-        products.append({
-            "sku": sku,
-            "store_uid": "|".join(sorted(store_uids_in_group)),
-            "store_name": store_names,
-            "product_name": agg["product_name"],
-            "stores_count": len(store_uids_in_group),
-            "gross_units": int(gross_units),
-            "gross_revenue": round(gross_rev, 2),
-            "gross_velocity": round(gross_velocity, 2),
-            "units_sold": int(units),
-            "revenue": round(revenue, 2),
-            "orders": agg["orders"],
-            "avg_qty_per_order": round(_safe_div(units, agg["orders"]), 2),
-            "velocity": round(velocity, 2),
-            "prev_velocity": round(prev_velocity, 2),
-            "velocity_change_pct": round(velocity_change, 1),
-            "velocity_trend": velocity_trend,
-            "days_since_last_sale": days_since_last,
-            "delivery_rate": round(delivery_rate, 1),
-            "revenue_share": round(revenue_share, 2),
-            "daily_series": daily_series,
-            "by_country": by_country[:10],
-            "by_variant": by_variant_list,
-            "stock_available": stock,
-            "po_incoming": po_incoming,
-            "effective_stock": effective_stock,
-            "days_left_of_stock": days_left_of_stock,
-            "unit_cost": round(unit_cost, 2),
-            "inventory_value": inv_value,
-            "image_url": image_url,
-        })
+        products.append(
+            {
+                "sku": sku,
+                "store_uid": "|".join(sorted(store_uids_in_group)),
+                "store_name": store_names,
+                "product_name": agg["product_name"],
+                "stores_count": len(store_uids_in_group),
+                "gross_units": int(gross_units),
+                "gross_revenue": round(gross_rev, 2),
+                "gross_velocity": round(gross_velocity, 2),
+                "units_sold": int(units),
+                "revenue": round(revenue, 2),
+                "orders": agg["orders"],
+                "avg_qty_per_order": round(_safe_div(units, agg["orders"]), 2),
+                "velocity": round(velocity, 2),
+                "prev_velocity": round(prev_velocity, 2),
+                "velocity_change_pct": round(velocity_change, 1),
+                "velocity_trend": velocity_trend,
+                "days_since_last_sale": days_since_last,
+                "delivery_rate": round(delivery_rate, 1),
+                "revenue_share": round(revenue_share, 2),
+                "daily_series": daily_series,
+                "by_country": by_country[:10],
+                "by_variant": by_variant_list,
+                "stock_available": stock,
+                "po_incoming": po_incoming,
+                "effective_stock": effective_stock,
+                "days_left_of_stock": days_left_of_stock,
+                "unit_cost": round(unit_cost, 2),
+                "inventory_value": inv_value,
+                "image_url": image_url,
+            }
+        )
 
     products.sort(key=lambda p: p["velocity"], reverse=True)
 
@@ -712,7 +878,9 @@ async def get_sales_velocity(
         "total_revenue": round(total_revenue, 2),
         "unique_skus": unique_skus,
         "avg_units_per_day": round(_safe_div(total_units, period_days), 1),
-        "avg_order_value": round(_safe_div(total_revenue, delivered_orders), 2) if delivered_orders else 0,
+        "avg_order_value": round(_safe_div(total_revenue, delivered_orders), 2)
+        if delivered_orders
+        else 0,
         "top_sku": top_sku,
         "delivered_orders": delivered_orders,
     }
@@ -722,31 +890,40 @@ async def get_sales_velocity(
     for i in range(period_days):
         d = str(to_bucharest(dt_from + timedelta(days=i)).date())
         dt = daily_totals.get(d, {"units": 0, "revenue": 0.0, "orders": 0})
-        trends_list.append({
-            "date": d,
-            "units": int(dt["units"]),
-            "revenue": round(dt["revenue"], 2),
-            "orders": dt.get("orders", 0),
-        })
+        trends_list.append(
+            {
+                "date": d,
+                "units": int(dt["units"]),
+                "revenue": round(dt["revenue"], 2),
+                "orders": dt.get("orders", 0),
+            }
+        )
 
     # ── 8. Store comparison ───────────────────────────────────────────────
     store_comparison = []
     for store_uid, sa in store_agg.items():
         # Products now have store_uid as pipe-separated UIDs (e.g. "uid1|uid2")
-        store_skus = [p for p in products if store_uid in (p.get("store_uid") or "").split("|")]
+        store_skus = [
+            p for p in products if store_uid in (p.get("store_uid") or "").split("|")
+        ]
         store_skus.sort(key=lambda x: x["velocity"], reverse=True)
-        top5 = [{"sku": s["sku"], "velocity": s["velocity"], "units_sold": s["units_sold"]} for s in store_skus[:5]]
+        top5 = [
+            {"sku": s["sku"], "velocity": s["velocity"], "units_sold": s["units_sold"]}
+            for s in store_skus[:5]
+        ]
 
-        store_comparison.append({
-            "store_uid": store_uid,
-            "store_name": sa["store_name"],
-            "units": int(sa["units"]),
-            "revenue": round(sa["revenue"], 2),
-            "orders": sa["orders"],
-            "velocity": round(_safe_div(sa["units"], period_days), 2),
-            "active_skus": len(sa["active_skus"]),
-            "top5": top5,
-        })
+        store_comparison.append(
+            {
+                "store_uid": store_uid,
+                "store_name": sa["store_name"],
+                "units": int(sa["units"]),
+                "revenue": round(sa["revenue"], 2),
+                "orders": sa["orders"],
+                "velocity": round(_safe_div(sa["units"], period_days), 2),
+                "active_skus": len(sa["active_skus"]),
+                "top5": top5,
+            }
+        )
     store_comparison.sort(key=lambda x: x["velocity"], reverse=True)
 
     # ── 9. Alerts & insights ──────────────────────────────────────────────
@@ -754,55 +931,73 @@ async def get_sales_velocity(
 
     for p in products:
         # 🔥 Hot Products: velocity up >50%
-        if p["velocity_change_pct"] > 50 and p["prev_velocity"] > 0 and p["units_sold"] >= 10:
-            alerts.append({
-                "type": "hot",
-                "sku": p["sku"],
-                "product_name": p["product_name"],
-                "message": f"Viteză crescută +{p['velocity_change_pct']:.0f}% ({p['prev_velocity']} → {p['velocity']} u/zi)",
-                "metric": p["velocity_change_pct"],
-            })
+        if (
+            p["velocity_change_pct"] > 50
+            and p["prev_velocity"] > 0
+            and p["units_sold"] >= 10
+        ):
+            alerts.append(
+                {
+                    "type": "hot",
+                    "sku": p["sku"],
+                    "product_name": p["product_name"],
+                    "message": f"Viteză crescută +{p['velocity_change_pct']:.0f}% ({p['prev_velocity']} → {p['velocity']} u/zi)",
+                    "metric": p["velocity_change_pct"],
+                }
+            )
 
         # ⚠️ Declining Fast: velocity down >40%
         if p["velocity_change_pct"] < -40 and p["prev_velocity"] > 0.5:
-            alerts.append({
-                "type": "declining",
-                "sku": p["sku"],
-                "product_name": p["product_name"],
-                "message": f"Viteză scăzută {p['velocity_change_pct']:.0f}% ({p['prev_velocity']} → {p['velocity']} u/zi)",
-                "metric": p["velocity_change_pct"],
-            })
+            alerts.append(
+                {
+                    "type": "declining",
+                    "sku": p["sku"],
+                    "product_name": p["product_name"],
+                    "message": f"Viteză scăzută {p['velocity_change_pct']:.0f}% ({p['prev_velocity']} → {p['velocity']} u/zi)",
+                    "metric": p["velocity_change_pct"],
+                }
+            )
 
         # ❄️ Cold Products: no sales in last 14 days but had sales before
-        if p["days_since_last_sale"] is not None and p["days_since_last_sale"] >= 14 and p["units_sold"] >= 5:
-            alerts.append({
-                "type": "cold",
-                "sku": p["sku"],
-                "product_name": p["product_name"],
-                "message": f"Fără vânzări de {p['days_since_last_sale']} zile (avea {p['units_sold']} unități în perioadă)",
-                "metric": p["days_since_last_sale"],
-            })
+        if (
+            p["days_since_last_sale"] is not None
+            and p["days_since_last_sale"] >= 14
+            and p["units_sold"] >= 5
+        ):
+            alerts.append(
+                {
+                    "type": "cold",
+                    "sku": p["sku"],
+                    "product_name": p["product_name"],
+                    "message": f"Fără vânzări de {p['days_since_last_sale']} zile (avea {p['units_sold']} unități în perioadă)",
+                    "metric": p["days_since_last_sale"],
+                }
+            )
 
         # 🌟 New Stars: appear only in current period with good volume
         if p["prev_velocity"] == 0 and p["velocity"] > 0 and p["units_sold"] >= 20:
-            alerts.append({
-                "type": "new_star",
-                "sku": p["sku"],
-                "product_name": p["product_name"],
-                "message": f"Produs nou cu {p['units_sold']} unități vândute ({p['velocity']} u/zi)",
-                "metric": p["units_sold"],
-            })
+            alerts.append(
+                {
+                    "type": "new_star",
+                    "sku": p["sku"],
+                    "product_name": p["product_name"],
+                    "message": f"Produs nou cu {p['units_sold']} unități vândute ({p['velocity']} u/zi)",
+                    "metric": p["units_sold"],
+                }
+            )
 
     # 💀 Dead Stock: COGS > 0 but zero sales
     for sku, cost in sku_cost_map.items():
         if cost > 0 and sku not in sku_current:
-            alerts.append({
-                "type": "dead_stock",
-                "sku": sku,
-                "product_name": "",
-                "message": f"Cost produs {cost:.2f} RON dar 0 vânzări în perioadă",
-                "metric": cost,
-            })
+            alerts.append(
+                {
+                    "type": "dead_stock",
+                    "sku": sku,
+                    "product_name": "",
+                    "message": f"Cost produs {cost:.2f} RON dar 0 vânzări în perioadă",
+                    "metric": cost,
+                }
+            )
 
     # Sort: hot first, declining, cold, dead, new_star
     alert_order = {"hot": 0, "declining": 1, "cold": 2, "dead_stock": 3, "new_star": 4}

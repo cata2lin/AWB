@@ -11,13 +11,26 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import {
-    Search, Calendar, Filter, ChevronDown, ChevronUp, Download,
-    RefreshCw, Printer, Package, RotateCcw, FileText, Clock,
+    Search, Calendar, ChevronDown, ChevronUp, Download,
+    RefreshCw, Printer, Package, RotateCcw, FileText,
     ArrowUpDown, ChevronLeft, ChevronRight, Eye, X
 } from 'lucide-react'
 import { printApi } from '../services/api/print'
 import { analyticsApi } from '../services/api'
 import { printBatchPdf, printSingleAwb } from '../utils/printUtils'
+import ColumnsMenu from './ui/ColumnsMenu'
+import { useColumnVisibility } from '../hooks/useColumnVisibility'
+import { exportCsv } from '../utils/csvExport'
+
+const PRINT_HISTORY_COLUMNS = [
+    { key: 'batch_number', header: 'Batch #',  alwaysVisible: true },
+    { key: 'created_at',   header: 'Data' },
+    { key: 'order_count',  header: 'Comenzi' },
+    { key: 'group_count',  header: 'Grupuri' },
+    { key: 'file_size',    header: 'Dimensiune' },
+    { key: 'status',       header: 'Status' },
+    { key: 'actions',      header: 'Acțiuni',  alwaysVisible: true },
+]
 
 const formatNumber = (n) => n == null ? '0' : Number(n).toLocaleString('ro-RO')
 const formatBytes = (bytes) => {
@@ -69,6 +82,25 @@ export default function PrintHistoryTab() {
     const [expandedId, setExpandedId] = useState(null)
     const [expandedData, setExpandedData] = useState(null)
     const [expandLoading, setExpandLoading] = useState(false)
+
+    const {
+        visibleKeys,
+        setVisibleKeys,
+        defaultVisibleKeys,
+    } = useColumnVisibility('print-history', PRINT_HISTORY_COLUMNS)
+    const colVisible = (key) => visibleKeys.includes(key) || PRINT_HISTORY_COLUMNS.find(c => c.key === key)?.alwaysVisible
+
+    const handleExportCsv = () => {
+        const cols = PRINT_HISTORY_COLUMNS.filter(c => colVisible(c.key) && c.key !== 'actions').map(c => ({
+            key: c.key, label: c.header,
+            accessor: (r) => {
+                if (c.key === 'created_at') return r.created_at ? new Date(r.created_at).toISOString() : ''
+                if (c.key === 'file_size')  return r.file_size ?? 0
+                return r[c.key] ?? ''
+            },
+        }))
+        exportCsv({ filename: 'print_history', columns: cols, rows: batches })
+    }
 
     // Debounce search
     useEffect(() => {
@@ -151,7 +183,7 @@ export default function PrintHistoryTab() {
     const totalPages = Math.ceil(total / pageSize)
 
     const SortIcon = ({ col }) => (
-        <ArrowUpDown className={`w-3 h-3 inline ml-1 ${sortBy === col ? 'text-indigo-400' : 'text-zinc-500'}`} />
+        <ArrowUpDown className={`w-3 h-3 inline ml-1 ${sortBy === col ? 'text-primary-400' : 'text-zinc-500'}`} />
     )
 
     return (
@@ -160,7 +192,7 @@ export default function PrintHistoryTab() {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {[
                     { label: 'Total Printed', value: kpis?.total_printed, color: 'text-zinc-900 dark:text-white' },
-                    { label: 'Total Batches', value: kpis?.total_batches, color: 'text-indigo-600 dark:text-indigo-400' },
+                    { label: 'Total Batches', value: kpis?.total_batches, color: 'text-primary-600 dark:text-primary-400' },
                     { label: 'Avg/Day', value: kpis?.avg_per_day, color: 'text-green-600 dark:text-green-400' },
                     { label: 'Batches Today', value: kpis?.batches_today, color: 'text-purple-600 dark:text-purple-400' },
                     { label: 'Peak Hour', value: kpis?.peak_hour || '—', color: 'text-amber-600 dark:text-amber-400', raw: true },
@@ -185,7 +217,7 @@ export default function PrintHistoryTab() {
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Search batch # or order #..."
-                            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-700/50 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-700/50 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                         />
                         {search && (
                             <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -210,15 +242,26 @@ export default function PrintHistoryTab() {
                     <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-zinc-400" />
                         <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                            className="px-2 py-1.5 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-700/50 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-600" />
+                            className="px-2 py-1.5 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-700/50 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-600 dark:[color-scheme:dark]" />
                         <span className="text-zinc-400">→</span>
                         <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                            className="px-2 py-1.5 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-700/50 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-600" />
+                            className="px-2 py-1.5 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-700/50 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-600 dark:[color-scheme:dark]" />
                     </div>
 
                     {/* Refresh */}
                     <button onClick={fetchHistory} className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors" title="Refresh">
                         <RefreshCw className={`w-4 h-4 text-zinc-500 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
+
+                    <ColumnsMenu
+                        columns={PRINT_HISTORY_COLUMNS}
+                        visibleKeys={visibleKeys}
+                        onChange={setVisibleKeys}
+                        defaultVisibleKeys={defaultVisibleKeys}
+                    />
+                    <button onClick={handleExportCsv} title="Export CSV"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                        <Download className="w-4 h-4" /> CSV
                     </button>
                 </div>
 
@@ -230,36 +273,46 @@ export default function PrintHistoryTab() {
             </div>
 
             {/* Batch History Table */}
-            <div className="bg-white dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
                     <table className="w-full text-sm">
-                        <thead>
-                            <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80">
+                        <thead className="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-900">
+                            <tr className="text-left text-xs text-zinc-600 dark:text-zinc-200 border-b border-zinc-200 dark:border-zinc-700">
                                 <th className="px-4 py-3 w-8"></th>
-                                <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => toggleSort('batch_number')}>
-                                    Batch # <SortIcon col="batch_number" />
-                                </th>
-                                <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200" onClick={() => toggleSort('created_at')}>
-                                    Date <SortIcon col="created_at" />
-                                </th>
-                                <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200 text-right" onClick={() => toggleSort('order_count')}>
-                                    Orders <SortIcon col="order_count" />
-                                </th>
-                                <th className="px-4 py-3 font-medium text-right">Groups</th>
-                                <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-700 dark:hover:text-zinc-200 text-right" onClick={() => toggleSort('file_size')}>
-                                    Size <SortIcon col="file_size" />
-                                </th>
-                                <th className="px-4 py-3 font-medium">Status</th>
-                                <th className="px-4 py-3 font-medium text-right">Actions</th>
+                                {colVisible('batch_number') && (
+                                    <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-900 dark:hover:text-white" onClick={() => toggleSort('batch_number')}>
+                                        Batch # <SortIcon col="batch_number" />
+                                    </th>
+                                )}
+                                {colVisible('created_at') && (
+                                    <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-900 dark:hover:text-white" onClick={() => toggleSort('created_at')}>
+                                        Data <SortIcon col="created_at" />
+                                    </th>
+                                )}
+                                {colVisible('order_count') && (
+                                    <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-900 dark:hover:text-white text-right" onClick={() => toggleSort('order_count')}>
+                                        Comenzi <SortIcon col="order_count" />
+                                    </th>
+                                )}
+                                {colVisible('group_count') && (
+                                    <th className="px-4 py-3 font-medium text-right">Grupuri</th>
+                                )}
+                                {colVisible('file_size') && (
+                                    <th className="px-4 py-3 font-medium cursor-pointer select-none hover:text-zinc-900 dark:hover:text-white text-right" onClick={() => toggleSort('file_size')}>
+                                        Dimensiune <SortIcon col="file_size" />
+                                    </th>
+                                )}
+                                {colVisible('status') && <th className="px-4 py-3 font-medium">Status</th>}
+                                {colVisible('actions') && <th className="px-4 py-3 font-medium text-right">Acțiuni</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
                             {loading && batches.length === 0 ? (
-                                <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-400">
+                                <tr><td colSpan={1 + PRINT_HISTORY_COLUMNS.filter(c => colVisible(c.key)).length} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">
                                     <RefreshCw className="w-5 h-5 animate-spin inline mr-2" />Loading...
                                 </td></tr>
                             ) : batches.length === 0 ? (
-                                <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-400">
+                                <tr><td colSpan={1 + PRINT_HISTORY_COLUMNS.filter(c => colVisible(c.key)).length} className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400">
                                     <Package className="w-6 h-6 inline mr-2 opacity-50" />No batches found
                                 </td></tr>
                             ) : batches.map(batch => {
@@ -272,46 +325,59 @@ export default function PrintHistoryTab() {
                                     <> 
                                         <tr
                                             key={batch.id}
-                                            className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/20 cursor-pointer transition-colors ${isExpanded ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : ''}`}
+                                            className={`hover:bg-zinc-50 dark:hover:bg-zinc-700/20 cursor-pointer transition-colors ${isExpanded ? 'bg-primary-50/50 dark:bg-primary-500/5' : ''}`}
                                             onClick={() => toggleExpand(batch.id)}
                                         >
                                             <td className="px-4 py-3">
                                                 {isExpanded
-                                                    ? <ChevronUp className="w-4 h-4 text-indigo-500" />
+                                                    ? <ChevronUp className="w-4 h-4 text-primary-500" />
                                                     : <ChevronDown className="w-4 h-4 text-zinc-400" />
                                                 }
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    {isSingle ? (
-                                                        <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                                                    ) : isRegen ? (
-                                                        <RotateCcw className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                                                    ) : (
-                                                        <Printer className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                                                    )}
-                                                    <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">
-                                                        {batch.batch_number}
+                                            {colVisible('batch_number') && (
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        {isSingle ? (
+                                                            <FileText className="w-4 h-4 text-blue-500 dark:text-blue-400 flex-shrink-0" />
+                                                        ) : isRegen ? (
+                                                            <RotateCcw className="w-4 h-4 text-amber-500 dark:text-amber-400 flex-shrink-0" />
+                                                        ) : (
+                                                            <Printer className="w-4 h-4 text-primary-500 dark:text-primary-400 flex-shrink-0" />
+                                                        )}
+                                                        <span className="font-mono text-xs text-zinc-800 dark:text-zinc-100 truncate max-w-[200px]">
+                                                            {batch.batch_number}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                            )}
+                                            {colVisible('created_at') && (
+                                                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 whitespace-nowrap">
+                                                    {formatDate(batch.created_at)}
+                                                </td>
+                                            )}
+                                            {colVisible('order_count') && (
+                                                <td className="px-4 py-3 text-right font-semibold text-zinc-900 dark:text-white">
+                                                    {batch.order_count}
+                                                </td>
+                                            )}
+                                            {colVisible('group_count') && (
+                                                <td className="px-4 py-3 text-right text-zinc-600 dark:text-zinc-300">
+                                                    {batch.group_count}
+                                                </td>
+                                            )}
+                                            {colVisible('file_size') && (
+                                                <td className="px-4 py-3 text-right text-zinc-600 dark:text-zinc-300">
+                                                    {formatBytes(batch.file_size)}
+                                                </td>
+                                            )}
+                                            {colVisible('status') && (
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>
+                                                        {badge.label}
                                                     </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
-                                                {formatDate(batch.created_at)}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-semibold text-zinc-900 dark:text-white">
-                                                {batch.order_count}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
-                                                {batch.group_count}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
-                                                {formatBytes(batch.file_size)}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>
-                                                    {badge.label}
-                                                </span>
-                                            </td>
+                                                </td>
+                                            )}
+                                            {colVisible('actions') && (
                                             <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                                                 <div className="flex items-center justify-end gap-1">
                                                     <button
@@ -319,7 +385,7 @@ export default function PrintHistoryTab() {
                                                         className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-600 transition-colors cursor-pointer border-none bg-transparent"
                                                         title="Print Batch"
                                                     >
-                                                        <Printer className="w-4 h-4 text-indigo-500" />
+                                                        <Printer className="w-4 h-4 text-primary-500" />
                                                     </button>
                                                     <button
                                                         onClick={() => toggleExpand(batch.id)}
@@ -330,12 +396,13 @@ export default function PrintHistoryTab() {
                                                     </button>
                                                 </div>
                                             </td>
+                                            )}
                                         </tr>
 
                                         {/* Expanded detail row */}
                                         {isExpanded && (
                                             <tr key={`${batch.id}-detail`}>
-                                                <td colSpan={8} className="px-0 py-0">
+                                                <td colSpan={1 + PRINT_HISTORY_COLUMNS.filter(c => colVisible(c.key)).length} className="px-0 py-0">
                                                     <div className="bg-zinc-50 dark:bg-zinc-800/80 border-t border-zinc-200 dark:border-zinc-700 px-6 py-4">
                                                         {expandLoading ? (
                                                             <div className="flex items-center gap-2 text-zinc-400 py-4">
@@ -364,7 +431,7 @@ export default function PrintHistoryTab() {
                                                                                 <tr key={item.order_uid} className="hover:bg-white dark:hover:bg-zinc-700/30">
                                                                                     <td className="py-2 pr-4 text-zinc-400">{idx + 1}</td>
                                                                                     <td className="py-2 pr-4">
-                                                                                        <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium">
+                                                                                        <span className="px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 text-[10px] font-medium">
                                                                                             {item.group_name}
                                                                                         </span>
                                                                                     </td>
@@ -383,7 +450,7 @@ export default function PrintHistoryTab() {
                                                                                     <td className="py-2 text-right">
                                                                                         <button
                                                                                             onClick={(e) => { e.stopPropagation(); printSingleAwb(item.batch_id || batch.id).catch(() => {}) }}
-                                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors cursor-pointer border-none"
+                                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-500/20 transition-colors cursor-pointer border-none"
                                                                                             title={`Print AWB for ${item.order_number}`}
                                                                                         >
                                                                                             <Printer className="w-3 h-3" />
@@ -432,7 +499,7 @@ export default function PrintHistoryTab() {
                                         key={p}
                                         onClick={() => setPage(p)}
                                         className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${p === page
-                                            ? 'bg-indigo-500 text-white'
+                                            ? 'bg-primary-500 text-white'
                                             : 'hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
                                             }`}
                                     >
@@ -462,7 +529,7 @@ export default function PrintHistoryTab() {
                             return (
                                 <div
                                     key={day.date}
-                                    className="flex-1 bg-indigo-500 dark:bg-indigo-600 rounded-t hover:bg-indigo-600 dark:hover:bg-indigo-500 transition-colors cursor-pointer group relative"
+                                    className="flex-1 bg-primary-500 dark:bg-primary-600 rounded-t hover:bg-primary-600 dark:hover:bg-primary-500 transition-colors cursor-pointer group relative"
                                     style={{ height: `${Math.max(4, (day.printed / maxVal) * 100)}%` }}
                                     title={`${day.dateLabel}: ${day.printed} orders`}
                                 >
@@ -488,7 +555,7 @@ export default function PrintHistoryTab() {
                                 <div key={store.name} className="flex items-center gap-3">
                                     <span className="text-sm text-zinc-600 dark:text-zinc-300 w-32 truncate">{store.name}</span>
                                     <div className="flex-1 h-2 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                        <div className="h-full bg-indigo-500" style={{ width: `${pct}%` }} />
+                                        <div className="h-full bg-primary-500" style={{ width: `${pct}%` }} />
                                     </div>
                                     <span className="text-sm font-medium text-zinc-900 dark:text-white w-16 text-right">
                                         {formatNumber(store.count)}

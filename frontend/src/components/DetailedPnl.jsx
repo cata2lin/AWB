@@ -4,7 +4,8 @@
  * line items, marketing channels, fixed costs, status breakdown, and margins.
  */
 import React, { useState, useCallback, useMemo } from 'react'
-import { BarChart3, RefreshCw, Calendar, Search, X, ChevronDown, ChevronRight, Info, TrendingUp, TrendingDown } from 'lucide-react'
+import { BarChart3, RefreshCw, Search, X, ChevronDown, ChevronRight, Info, Download } from 'lucide-react'
+import { exportCsv } from '../utils/csvExport'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 const fmt = (v) => {
@@ -53,7 +54,7 @@ const SectionHeader = ({ label, icon }) => (
 const Spacer = () => <tr className="h-2"><td colSpan={4}></td></tr>
 
 // ─── Store Card ──────────────────────────────────────────────────────────────
-const StoreCard = ({ store, config }) => {
+const StoreCard = ({ store }) => {
     const [expanded, setExpanded] = useState(true)
     const inc = store.income || {}
     const cogs = store.cogs || {}
@@ -68,8 +69,6 @@ const StoreCard = ({ store, config }) => {
     const delivered = inc.delivered_count || 0
     const totalOrders = store.total_orders || 0
     const returnedCount = (sb.returned?.count || 0)
-    const cancelledCount = (sb.cancelled?.count || 0)
-    const inTransitCount = (sb.in_transit?.count || 0)
     const returnRate = totalOrders > 0 ? (returnedCount / totalOrders * 100) : 0
     const deliveryRate = totalOrders > 0 ? (delivered / totalOrders * 100) : 0
     const avgOrderValue = delivered > 0 ? ((inc.sales_delivered?.cu_tva || 0) / delivered) : 0
@@ -284,10 +283,10 @@ export default function DetailedPnl({ authFetch }) {
                     <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-700 mx-1" />
 
                     <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPeriod('custom') }}
-                        className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300" />
+                        className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 dark:[color-scheme:dark]" />
                     <span className="text-zinc-400">→</span>
                     <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPeriod('custom') }}
-                        className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300" />
+                        className="px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 dark:[color-scheme:dark]" />
 
                     <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-700 mx-1" />
 
@@ -328,7 +327,7 @@ export default function DetailedPnl({ authFetch }) {
             {data && !loading && (
                 <>
                     {/* Search + count */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <div className="relative flex-1 max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                             <input type="text" placeholder="Caută magazin..."
@@ -340,10 +339,43 @@ export default function DetailedPnl({ authFetch }) {
                                 </button>
                             )}
                         </div>
-                        <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400">
                             {storeSearch ? `${stores.length} / ${totalStores} magazine` : `${totalStores} magazine`}
                         </span>
-                        <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded ml-auto">
+                        <button
+                            onClick={() => {
+                                const rows = stores.flatMap((s) => {
+                                    const inc = s.income || {}, cogs = s.cogs || {}, op = s.operational || {}, mkt = s.marketing || {}, gp = s.gross_profit || {}, opp = s.operating_profit || {}, net = s.net_profit || {}
+                                    const m = (label, cu, fara) => ({ store: s.store_name, metric: label, cu_tva: cu, fara_tva: fara })
+                                    return [
+                                        m('Vânzări Brute',         inc.gross_sales?.cu_tva,        inc.gross_sales?.fara_tva),
+                                        m('Returnate / Anulate',   -(inc.returns_cancelled?.cu_tva || 0), -(inc.returns_cancelled?.fara_tva || 0)),
+                                        m('Revenue Livrat',        inc.sales_delivered?.cu_tva,    inc.sales_delivered?.fara_tva),
+                                        m('Cost Produse (COGS)',   -(cogs.total_cogs?.cu_tva || 0), -(cogs.total_cogs?.fara_tva || 0)),
+                                        m('Gross Profit',          gp.cu_tva,                       gp.fara_tva),
+                                        m('Transport',             -(op.shipping?.cu_tva || 0),    -(op.shipping?.fara_tva || 0)),
+                                        m('Procesare Plăți',       -(op.payment_fee?.cu_tva || 0), -(op.payment_fee?.fara_tva || 0)),
+                                        m('Operating Profit',      opp.cu_tva,                      opp.fara_tva),
+                                        m('Total Marketing',       -(mkt.total?.cu_tva || 0),       -(mkt.total?.fara_tva || 0)),
+                                        m('Profit Net',            net.cu_tva,                      net.fara_tva),
+                                    ]
+                                })
+                                exportCsv({
+                                    filename: 'pnl_detaliat',
+                                    columns: [
+                                        { key: 'store',    label: 'Magazin' },
+                                        { key: 'metric',   label: 'Indicator' },
+                                        { key: 'cu_tva',   label: 'Cu TVA (RON)',   format: (v) => v == null ? '' : Math.round(v) },
+                                        { key: 'fara_tva', label: 'Fără TVA (RON)', format: (v) => v == null ? '' : Math.round(v) },
+                                    ],
+                                    rows,
+                                })
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                            title="Descarcă CSV cu P&L pentru toate magazinele">
+                            <Download className="w-4 h-4" /> CSV
+                        </button>
+                        <div className="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded ml-auto">
                             <Info size={10} /> Valori în RON • Cu TVA + Fără TVA
                         </div>
                     </div>
@@ -351,7 +383,7 @@ export default function DetailedPnl({ authFetch }) {
                     {/* Store Cards */}
                     <div className="space-y-4">
                         {stores.map(store => (
-                            <StoreCard key={store.store_uid} store={store} config={data.config || {}} />
+                            <StoreCard key={store.store_uid} store={store} />
                         ))}
                     </div>
 

@@ -1,9 +1,26 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
-    TrendingUp, RefreshCw, Search, ChevronDown, Plus, Trash2, AlertTriangle,
+    TrendingUp, RefreshCw, Search, ChevronDown, Plus, Trash2, AlertTriangle, Download,
 } from 'lucide-react'
 import { formatNumber, marginColor, marginBg } from '../../utils/analyticsHelpers'
 import { analyticsApi, skuMarketingCostsApi } from '../../services/api'
+import ColumnsMenu from '../../components/ui/ColumnsMenu'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { exportCsv } from '../../utils/csvExport'
+
+const SKU_PROFIT_COLUMNS = [
+    { key: 'sku',          header: 'SKU',         alwaysVisible: true },
+    { key: 'name',         header: 'Nume' },
+    { key: 'units_sold',   header: 'Unități' },
+    { key: 'revenue',      header: 'Venituri' },
+    { key: 'cogs',         header: 'COGS' },
+    { key: 'transport',    header: 'Transport' },
+    { key: 'fees',         header: 'Taxe' },
+    { key: 'marketing',    header: 'Marketing' },
+    { key: 'contribution', header: 'Contribuție' },
+    { key: 'margin_pct',   header: 'Marjă %' },
+    { key: 'return_rate',  header: 'Retur %' },
+]
 
 export default function SkuProfitabilityTab({ stores = [] }) {
     const [skuProfitData, setSkuProfitData] = useState(null)
@@ -17,6 +34,16 @@ export default function SkuProfitabilityTab({ stores = [] }) {
     const [skuProfitExpanded, setSkuProfitExpanded] = useState(null)
     const [newMktCost, setNewMktCost] = useState({ sku: '', label: '', amount: '', month: '' })
     const [addingMktFor, setAddingMktFor] = useState(null)
+
+    const {
+        visibleKeys,
+        setVisibleKeys,
+        defaultVisibleKeys,
+    } = useColumnVisibility('profitabilitate-sku', SKU_PROFIT_COLUMNS)
+    const colVisible = useMemo(
+        () => (key) => visibleKeys.includes(key) || SKU_PROFIT_COLUMNS.find((c) => c.key === key)?.alwaysVisible,
+        [visibleKeys],
+    )
 
     const fetchData = async () => {
         setSkuProfitLoading(true)
@@ -163,12 +190,12 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                     <div>
                         <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">De la</label>
                         <input type="date" value={skuProfitDateFrom} onChange={e => setSkuProfitDateFrom(e.target.value)}
-                            className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" />
+                            className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 dark:[color-scheme:dark]" />
                     </div>
                     <div>
                         <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1 block">Până la</label>
                         <input type="date" value={skuProfitDateTo} onChange={e => setSkuProfitDateTo(e.target.value)}
-                            className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" />
+                            className="px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 dark:[color-scheme:dark]" />
                     </div>
                     {/* Store filter */}
                     <div>
@@ -230,8 +257,8 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                         </div>
                     </div>
 
-                    {/* Search */}
-                    <div className="flex items-center gap-3">
+                    {/* Search + actions */}
+                    <div className="flex items-center gap-3 flex-wrap">
                         <div className="relative flex-1 max-w-md">
                             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                             <input
@@ -245,6 +272,33 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                         <div className="text-sm text-zinc-500 dark:text-zinc-400">
                             {sorted.length} produse afișate
                         </div>
+                        <div className="ml-auto flex items-center gap-2">
+                            <ColumnsMenu
+                                columns={SKU_PROFIT_COLUMNS}
+                                visibleKeys={visibleKeys}
+                                onChange={setVisibleKeys}
+                                defaultVisibleKeys={defaultVisibleKeys}
+                            />
+                            <button
+                                onClick={() => {
+                                    const cols = SKU_PROFIT_COLUMNS.filter((c) => colVisible(c.key)).map((c) => ({
+                                        key: c.key,
+                                        label: c.header,
+                                        accessor: (row) => {
+                                            if (['revenue', 'cogs', 'transport', 'fees', 'marketing', 'contribution'].includes(c.key)) {
+                                                return Math.round(row[c.key] || 0)
+                                            }
+                                            if (c.key === 'margin_pct' || c.key === 'return_rate') return `${row[c.key] ?? 0}%`
+                                            return row[c.key] ?? ''
+                                        },
+                                    }))
+                                    exportCsv({ filename: 'profitabilitate_sku', columns: cols, rows: sorted })
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                                title="Descarcă CSV cu coloanele vizibile">
+                                <Download className="w-4 h-4" /> CSV
+                            </button>
+                        </div>
                     </div>
 
                     {/* Main Product Table */}
@@ -253,40 +307,62 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                             <table className="w-full text-sm">
                                 <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                     <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs w-8"></th>
-                                        <th onClick={() => toggleSort('sku')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            SKU {sortIcon('sku')}
-                                        </th>
-                                        <th onClick={() => toggleSort('name')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Nume {sortIcon('name')}
-                                        </th>
-                                        <th onClick={() => toggleSort('units_sold')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Unități {sortIcon('units_sold')}
-                                        </th>
-                                        <th onClick={() => toggleSort('revenue')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Venituri {sortIcon('revenue')}
-                                        </th>
-                                        <th onClick={() => toggleSort('cogs')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            COGS {sortIcon('cogs')}
-                                        </th>
-                                        <th onClick={() => toggleSort('transport')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Transport {sortIcon('transport')}
-                                        </th>
-                                        <th onClick={() => toggleSort('fees')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Taxe {sortIcon('fees')}
-                                        </th>
-                                        <th onClick={() => toggleSort('marketing')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Marketing {sortIcon('marketing')}
-                                        </th>
-                                        <th onClick={() => toggleSort('contribution')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Contribuție {sortIcon('contribution')}
-                                        </th>
-                                        <th onClick={() => toggleSort('margin_pct')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Marjă % {sortIcon('margin_pct')}
-                                        </th>
-                                        <th onClick={() => toggleSort('return_rate')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-300 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
-                                            Retur % {sortIcon('return_rate')}
-                                        </th>
+                                        <th className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs w-8"></th>
+                                        {colVisible('sku') && (
+                                            <th onClick={() => toggleSort('sku')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                SKU {sortIcon('sku')}
+                                            </th>
+                                        )}
+                                        {colVisible('name') && (
+                                            <th onClick={() => toggleSort('name')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Nume {sortIcon('name')}
+                                            </th>
+                                        )}
+                                        {colVisible('units_sold') && (
+                                            <th onClick={() => toggleSort('units_sold')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Unități {sortIcon('units_sold')}
+                                            </th>
+                                        )}
+                                        {colVisible('revenue') && (
+                                            <th onClick={() => toggleSort('revenue')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Venituri {sortIcon('revenue')}
+                                            </th>
+                                        )}
+                                        {colVisible('cogs') && (
+                                            <th onClick={() => toggleSort('cogs')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                COGS {sortIcon('cogs')}
+                                            </th>
+                                        )}
+                                        {colVisible('transport') && (
+                                            <th onClick={() => toggleSort('transport')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Transport {sortIcon('transport')}
+                                            </th>
+                                        )}
+                                        {colVisible('fees') && (
+                                            <th onClick={() => toggleSort('fees')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Taxe {sortIcon('fees')}
+                                            </th>
+                                        )}
+                                        {colVisible('marketing') && (
+                                            <th onClick={() => toggleSort('marketing')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Marketing {sortIcon('marketing')}
+                                            </th>
+                                        )}
+                                        {colVisible('contribution') && (
+                                            <th onClick={() => toggleSort('contribution')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Contribuție {sortIcon('contribution')}
+                                            </th>
+                                        )}
+                                        {colVisible('margin_pct') && (
+                                            <th onClick={() => toggleSort('margin_pct')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Marjă % {sortIcon('margin_pct')}
+                                            </th>
+                                        )}
+                                        {colVisible('return_rate') && (
+                                            <th onClick={() => toggleSort('return_rate')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Retur % {sortIcon('return_rate')}
+                                            </th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -297,32 +373,38 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                                 <td className="px-3 py-2">
                                                     <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${skuProfitExpanded === p.sku ? 'rotate-180' : ''}`} />
                                                 </td>
-                                                <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300 font-medium">{p.sku}</td>
-                                                <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300 text-xs max-w-[200px] truncate">{p.name || '—'}</td>
-                                                <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">{formatNumber(p.units_sold)}</td>
-                                                <td className="px-3 py-2 text-right font-medium text-zinc-800 dark:text-zinc-200">{formatNumber(Math.round(p.revenue))}</td>
-                                                <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(p.cogs))}</td>
-                                                <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">{formatNumber(Math.round(p.transport))}</td>
-                                                <td className="px-3 py-2 text-right text-purple-600 dark:text-purple-400">{formatNumber(Math.round(p.fees))}</td>
-                                                <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">{formatNumber(Math.round(p.marketing))}</td>
-                                                <td className={`px-3 py-2 text-right font-semibold ${p.contribution >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                                                    {formatNumber(Math.round(p.contribution))}
-                                                </td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${marginBg(p.margin_pct)} ${marginColor(p.margin_pct)}`}>
-                                                        {p.margin_pct}%
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <span className={`text-xs ${p.return_rate > 20 ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-zinc-500 dark:text-zinc-400'}`}>
-                                                        {p.return_rate}%
-                                                    </span>
-                                                </td>
+                                                {colVisible('sku') && <td className="px-3 py-2 font-mono text-xs text-zinc-800 dark:text-zinc-100 font-medium">{p.sku}</td>}
+                                                {colVisible('name') && <td className="px-3 py-2 text-zinc-700 dark:text-zinc-200 text-xs max-w-[200px] truncate">{p.name || '—'}</td>}
+                                                {colVisible('units_sold') && <td className="px-3 py-2 text-right text-zinc-800 dark:text-zinc-100">{formatNumber(p.units_sold)}</td>}
+                                                {colVisible('revenue') && <td className="px-3 py-2 text-right font-medium text-zinc-900 dark:text-white">{formatNumber(Math.round(p.revenue))}</td>}
+                                                {colVisible('cogs') && <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(p.cogs))}</td>}
+                                                {colVisible('transport') && <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">{formatNumber(Math.round(p.transport))}</td>}
+                                                {colVisible('fees') && <td className="px-3 py-2 text-right text-purple-600 dark:text-purple-400">{formatNumber(Math.round(p.fees))}</td>}
+                                                {colVisible('marketing') && <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">{formatNumber(Math.round(p.marketing))}</td>}
+                                                {colVisible('contribution') && (
+                                                    <td className={`px-3 py-2 text-right font-semibold ${p.contribution >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                        {formatNumber(Math.round(p.contribution))}
+                                                    </td>
+                                                )}
+                                                {colVisible('margin_pct') && (
+                                                    <td className="px-3 py-2 text-right">
+                                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${marginBg(p.margin_pct)} ${marginColor(p.margin_pct)}`}>
+                                                            {p.margin_pct}%
+                                                        </span>
+                                                    </td>
+                                                )}
+                                                {colVisible('return_rate') && (
+                                                    <td className="px-3 py-2 text-right">
+                                                        <span className={`text-xs ${p.return_rate > 20 ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-zinc-600 dark:text-zinc-300'}`}>
+                                                            {p.return_rate}%
+                                                        </span>
+                                                    </td>
+                                                )}
                                             </tr>
                                             {/* Expanded Row */}
                                             {skuProfitExpanded === p.sku && (
                                                 <tr>
-                                                    <td colSpan={12} className="bg-zinc-50 dark:bg-zinc-900/40 px-6 py-4">
+                                                    <td colSpan={1 + SKU_PROFIT_COLUMNS.filter(c => colVisible(c.key)).length} className="bg-zinc-50 dark:bg-zinc-900/40 px-6 py-4">
                                                         <div className="space-y-4">
                                                             {/* Detail cards */}
                                                             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -447,7 +529,7 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                                                             <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-1">Lună</label>
                                                                             <input type="month" value={newMktCost.month || new Date().toISOString().slice(0, 7)}
                                                                                 onChange={e => setNewMktCost(prev => ({ ...prev, month: e.target.value }))}
-                                                                                className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white" />
+                                                                                className="w-full px-2 py-1.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white dark:[color-scheme:dark]" />
                                                                         </div>
                                                                         <button onClick={() => handleAddMktCost(p.sku)}
                                                                             className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors font-medium">
@@ -464,7 +546,7 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                     ))}
                                     {sorted.length === 0 && (
                                         <tr>
-                                            <td colSpan={12} className="text-center py-12 text-zinc-400 dark:text-zinc-500">
+                                            <td colSpan={1 + SKU_PROFIT_COLUMNS.filter(c => colVisible(c.key)).length} className="text-center py-12 text-zinc-500 dark:text-zinc-400">
                                                 Niciun produs găsit
                                             </td>
                                         </tr>

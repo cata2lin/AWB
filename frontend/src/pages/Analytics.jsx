@@ -80,12 +80,12 @@ export default function Analytics() {
     }, [])
 
     return (
-        <div className="p-6 space-y-6 bg-zinc-50 dark:bg-zinc-950 min-h-screen animate-fade-in">
+        <div className="p-6 space-y-6 animate-fade-in">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-zinc-900 dark:text-white flex items-center gap-3 tracking-tight">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center ">
                             <BarChart3 className="w-5 h-5 text-white" />
                         </div>
                         Analiză și Livrabilitate
@@ -102,7 +102,7 @@ export default function Analytics() {
                     href="/analytics"
                     onClick={(e) => { e.preventDefault(); setActiveTab('deliverability') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'deliverability'
-                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        ? 'bg-white dark:bg-zinc-700 text-primary-600 dark:text-primary-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
                         }`}
                 >
@@ -147,7 +147,7 @@ export default function Analytics() {
                     href="/analytics?tab=print"
                     onClick={(e) => { e.preventDefault(); setActiveTab('print') }}
                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'print'
-                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        ? 'bg-white dark:bg-zinc-700 text-primary-600 dark:text-primary-400 shadow-sm'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
                         }`}
                 >
