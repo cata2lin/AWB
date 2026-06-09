@@ -16,32 +16,46 @@ const authFetch = (url, opts = {}) => {
         },
     })
 }
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
     TrendingUp, Package, BarChart3, Printer, PieChart,
-    DollarSign, Tag, AlertTriangle, TrendingDown
+    DollarSign, Tag, AlertTriangle, TrendingDown, Headset, Loader2, Store,
+    CalendarDays, Scale, Bookmark, ShoppingBag, Wallet
 } from 'lucide-react'
 import { storesApi } from '../services/api'
-import ProductsTab from '../components/ProductsTab'
-import PrintHistoryTab from '../components/PrintHistoryTab'
+import MultiSelectFilter from '../components/MultiSelectFilter'
 
-import DetailedPnl from '../components/DetailedPnl'
-import ProductDeliverabilityTab from '../components/ProductDeliverabilityTab'
-import SkuCostsTab from './analytics/SkuCostsTab'
-import DeliverabilityTab from './analytics/DeliverabilityTab'
-import SkuRiskTab from './analytics/SkuRiskTab'
-import ProfitabilityTab from './analytics/ProfitabilityTab'
-import SkuProfitabilityTab from './analytics/SkuProfitabilityTab'
-import SalesVelocityTab from './analytics/SalesVelocityTab'
+// Each tab is code-split: only the active tab's module (and its heavy charts/
+// tables) downloads. SalesVelocityTab alone is ~94 KB. Big first-load win.
+const ProductsTab = lazy(() => import('../components/ProductsTab'))
+const PrintHistoryTab = lazy(() => import('../components/PrintHistoryTab'))
+const DetailedPnl = lazy(() => import('../components/DetailedPnl'))
+const ProductDeliverabilityTab = lazy(() => import('../components/ProductDeliverabilityTab'))
+const SkuCostsTab = lazy(() => import('./analytics/SkuCostsTab'))
+const DeliverabilityTab = lazy(() => import('./analytics/DeliverabilityTab'))
+const SkuRiskTab = lazy(() => import('./analytics/SkuRiskTab'))
+const ProfitabilityTab = lazy(() => import('./analytics/ProfitabilityTab'))
+const SkuProfitabilityTab = lazy(() => import('./analytics/SkuProfitabilityTab'))
+const SalesVelocityTab = lazy(() => import('./analytics/SalesVelocityTab'))
+const CsReportTab = lazy(() => import('./analytics/CsReportTab'))
+const DailyPerformanceTab = lazy(() => import('./analytics/DailyPerformanceTab'))
+const CourierAuditTab = lazy(() => import('./analytics/CourierAuditTab'))
+const WatchlistsTab = lazy(() => import('./analytics/WatchlistsTab'))
+const EmagReportTab = lazy(() => import('./analytics/EmagReportTab'))
+const TrendyolProfitabilityTab = lazy(() => import('./analytics/TrendyolProfitabilityTab'))
 
 export default function Analytics() {
     // Stores list shared with every tab
     const [stores, setStores] = useState([])
 
-    // Filters: read-only at the parent level (tabs that need to mutate them own
-    // their own state). Kept here purely to pass stable defaults down.
-    const [selectedStores] = useState([])
+    // Shared store filter, URL-persisted (?stores=uid1,uid2), threaded to every
+    // tab that supports per-store filtering. Previously a frozen [] — the page-level
+    // store filter was dead. Initialised from the URL so it survives reloads/shares.
+    const [selectedStores, setSelectedStores] = useState(() => {
+        const s = new URLSearchParams(window.location.search).get('stores')
+        return s ? s.split(',').filter(Boolean) : []
+    })
     const [days] = useState(30)
 
     // Active tab synced to ?tab= query param
@@ -53,6 +67,17 @@ export default function Analytics() {
             const next = new URLSearchParams(prev)
             if (tab === 'deliverability') next.delete('tab')
             else next.set('tab', tab)
+            return next
+        }, { replace: true })
+    }, [setSearchParams])
+
+    // Update the store filter + mirror it to the URL for shareable/reloadable links.
+    const updateStores = useCallback((uids) => {
+        setSelectedStores(uids)
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev)
+            if (uids.length) next.set('stores', uids.join(','))
+            else next.delete('stores')
             return next
         }, { replace: true })
     }, [setSearchParams])
@@ -93,6 +118,18 @@ export default function Analytics() {
                     <p className="text-zinc-500 dark:text-zinc-400 mt-1">
                         Statistici tipărire, distribuție geografică și performanță livrare
                     </p>
+                </div>
+                {/* Shared store filter — URL-persisted, threaded to every tab */}
+                <div className="flex items-center gap-2">
+                    <MultiSelectFilter
+                        label="Magazine"
+                        options={stores.map(s => ({ value: s.uid, label: s.name }))}
+                        selected={selectedStores}
+                        onChange={updateStores}
+                        icon={Store}
+                        searchable={stores.length > 5}
+                        allLabel="Toate"
+                    />
                 </div>
             </div>
 
@@ -210,9 +247,77 @@ export default function Analytics() {
                     <TrendingDown className="w-4 h-4 inline mr-2" />
                     Livrabilitate Produse
                 </a>
+                <a
+                    href="/analytics?tab=csReport"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('csReport') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'csReport'
+                        ? 'bg-white dark:bg-zinc-700 text-violet-600 dark:text-violet-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <Headset className="w-4 h-4 inline mr-2" />
+                    Agenți CS
+                </a>
+                <a
+                    href="/analytics?tab=dailyPerf"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('dailyPerf') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'dailyPerf'
+                        ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <CalendarDays className="w-4 h-4 inline mr-2" />
+                    Performanță Zilnică
+                </a>
+                <a
+                    href="/analytics?tab=courierAudit"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('courierAudit') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'courierAudit'
+                        ? 'bg-white dark:bg-zinc-700 text-orange-600 dark:text-orange-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <Scale className="w-4 h-4 inline mr-2" />
+                    Audit DPD
+                </a>
+                <a
+                    href="/analytics?tab=watchlists"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('watchlists') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'watchlists'
+                        ? 'bg-white dark:bg-zinc-700 text-sky-600 dark:text-sky-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <Bookmark className="w-4 h-4 inline mr-2" />
+                    Watchlists
+                </a>
+                <a
+                    href="/analytics?tab=emagReport"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('emagReport') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'emagReport'
+                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <ShoppingBag className="w-4 h-4 inline mr-2" />
+                    Raport eMAG
+                </a>
+                <a
+                    href="/analytics?tab=trendyolProfit"
+                    onClick={(e) => { e.preventDefault(); setActiveTab('trendyolProfit') }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'trendyolProfit'
+                        ? 'bg-white dark:bg-zinc-700 text-orange-600 dark:text-orange-400 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-zinc-700/30'
+                        }`}
+                >
+                    <Wallet className="w-4 h-4 inline mr-2" />
+                    Profit Trendyol
+                </a>
             </div>
 
-            {/* Tab Router — each tab is self-contained and manages its own loading state */}
+            {/* Tab Router — each tab is self-contained and manages its own loading state.
+                Suspense covers the lazy tab chunk download. */}
+            <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="w-6 h-6 text-primary-500 animate-spin" /></div>}>
             {activeTab === 'print' && <PrintHistoryTab />}
             {activeTab === 'deliverability' && <DeliverabilityTab selectedStores={selectedStores} />}
             {activeTab === 'profitability' && <ProfitabilityTab stores={stores} selectedStores={selectedStores} days={days} />}
@@ -220,6 +325,12 @@ export default function Analytics() {
             {activeTab === 'skuCosts' && <SkuCostsTab />}
             {activeTab === 'skuRisk' && <SkuRiskTab stores={stores} />}
             {activeTab === 'salesVelocity' && <SalesVelocityTab stores={stores} />}
+            {activeTab === 'csReport' && <CsReportTab selectedStores={selectedStores} />}
+            {activeTab === 'dailyPerf' && <DailyPerformanceTab stores={stores} />}
+            {activeTab === 'courierAudit' && <CourierAuditTab selectedStores={selectedStores} />}
+            {activeTab === 'watchlists' && <WatchlistsTab />}
+            {activeTab === 'emagReport' && <EmagReportTab />}
+            {activeTab === 'trendyolProfit' && <TrendyolProfitabilityTab />}
             {activeTab === 'skuProfit' && <SkuProfitabilityTab stores={stores} />}
             {activeTab === 'products' && <ProductsTab stores={stores} />}
             {activeTab === 'productDeliverability' && (
@@ -236,6 +347,7 @@ export default function Analytics() {
                     <ProductDeliverabilityTab selectedStores={selectedStores} />
                 </div>
             )}
+            </Suspense>
         </div>
     )
 }

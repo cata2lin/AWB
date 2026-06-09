@@ -4,7 +4,7 @@ SKU Risk & Shipping Anomalies — the main FastAPI endpoint.
 Uses computations from computations.py for outcome mapping
 and risk score normalization.
 """
-import json
+
 import logging
 import math
 from collections import defaultdict
@@ -16,14 +16,25 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.timezone import to_bucharest_iso, to_bucharest_date, date_str_to_utc_start, date_str_to_utc_end
+from app.core.analytics_cache import cached_analytics
+from app.core.timezone import (
+    to_bucharest_iso,
+    to_bucharest_date,
+    date_str_to_utc_start,
+    date_str_to_utc_end,
+)
 from app.models import Order, Store, SkuCost
 from app.api.exchange_rates import preload_rates, get_rate_from_cache
 from app.api.sku_risk.computations import (
-    compute_final_outcome, safe_div, normalize_min_max,
-    PROBLEM_OUTCOMES, DEFAULT_SHIPPING_COST_PCT_THRESHOLD,
-    DEFAULT_Z_SCORE_THRESHOLD, RISK_WEIGHT_PROBLEM_RATE,
-    RISK_WEIGHT_CONTAMINATION, RISK_WEIGHT_SHIPPING_ANOMALY,
+    compute_final_outcome,
+    safe_div,
+    normalize_min_max,
+    PROBLEM_OUTCOMES,
+    DEFAULT_SHIPPING_COST_PCT_THRESHOLD,
+    DEFAULT_Z_SCORE_THRESHOLD,
+    RISK_WEIGHT_PROBLEM_RATE,
+    RISK_WEIGHT_CONTAMINATION,
+    RISK_WEIGHT_SHIPPING_ANOMALY,
     RISK_WEIGHT_DELIVERY_PROBLEM,
 )
 
@@ -33,6 +44,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("/sku-risk")
+@cached_analytics("sku-risk")
 async def get_sku_risk(
     days: int = Query(30, ge=1, le=365),
     date_from: Optional[str] = Query(None),
@@ -63,21 +75,53 @@ async def get_sku_risk(
             dt_to = date_str_to_utc_end(date_to)
         except ValueError:
             from app.core.timezone import romania_now, UTC_TZ
+
             now_buc = romania_now()
-            start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             dt_from = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
             dt_to = datetime.utcnow()
     else:
         from app.core.timezone import romania_now, UTC_TZ
+
         now_buc = romania_now()
-        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_buc = (now_buc - timedelta(days=max(0, days - 1))).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         dt_from = start_buc.astimezone(UTC_TZ).replace(tzinfo=None)
         dt_to = datetime.utcnow()
 
     # ── 2. Query orders ───────────────────────────────────────────────────
-    query = select(Order).where(
+    from app.core.order_filters import build_tag_exclusion_condition
+
+    _excl = await build_tag_exclusion_condition(db)
+    from app.core.line_items_projection import PROJECTED_LINE_ITEMS_NAMED
+
+    # Slim column-select + projected (named) line_items instead of full ORM rows —
+    # see app/core/line_items_projection. Items arrive as {sku,q,p,name}.
+    query = select(
+        Order.currency,
+        Order.frisbo_created_at,
+        Order.aggregated_status,
+        Order.shipment_status,
+        Order.fulfillment_status,
+        Order.store_uid,
+        Order.courier_name,
+        Order.shipping_address,
+        Order.order_number,
+        Order.item_count,
+        Order.package_weight,
+        Order.payment_gateway,
+        Order.subtotal_price,
+        Order.total_price,
+        Order.transport_cost,
+        Order.uid,
+        PROJECTED_LINE_ITEMS_NAMED,
+    ).where(
         Order.frisbo_created_at >= dt_from,
         Order.frisbo_created_at <= dt_to,
+        _excl,  # drop excluded-tag orders (built-in test/sample + configured rules)
     )
 
     if store_uids:
@@ -88,25 +132,37 @@ async def get_sku_risk(
         query = query.where(Order.courier_name == courier_name)
 
     result = await db.execute(query)
-    all_orders = result.scalars().all()
+    all_orders = result.all()
 
     # ── 3. Load stores + SKU costs ────────────────────────────────────────
     stores_result = await db.execute(select(Store))
     stores_map: Dict[str, str] = {s.uid: s.name for s in stores_result.scalars().all()}
 
     sku_costs_result = await db.execute(select(SkuCost))
-    sku_cost_map: Dict[str, float] = {sc.sku: sc.cost for sc in sku_costs_result.scalars().all()}
+    sku_cost_map: Dict[str, float] = {
+        sc.sku: sc.cost for sc in sku_costs_result.scalars().all()
+    }
 
     # ── FX rate preload for non-RON currencies ───────────────────────────
     from app.core.timezone import romania_today
-    non_ron_currencies = {(o.currency or 'RON').upper() for o in all_orders if (o.currency or 'RON').upper() != 'RON'}
+
+    non_ron_currencies = {
+        (o.currency or "RON").upper()
+        for o in all_orders
+        if (o.currency or "RON").upper() != "RON"
+    }
     rate_cache = {}
     if non_ron_currencies:
-        order_dates = [to_bucharest_date(o.frisbo_created_at) or romania_today() for o in all_orders]
+        order_dates = [
+            to_bucharest_date(o.frisbo_created_at) or romania_today()
+            for o in all_orders
+        ]
         if order_dates:
             min_date = min(order_dates)
             max_date = max(order_dates)
-            rate_cache = await preload_rates(non_ron_currencies, (min_date, max_date), db)
+            rate_cache = await preload_rates(
+                non_ron_currencies, (min_date, max_date), db
+            )
 
     # ── 4. Process orders ─────────────────────────────────────────────────
     order_data_list = []
@@ -126,31 +182,29 @@ async def get_sku_risk(
             order.fulfillment_status,
         )
 
-        # Parse line items
-        items_raw = order.line_items or []
-        if isinstance(items_raw, str):
-            try:
-                items_raw = json.loads(items_raw)
-            except (json.JSONDecodeError, TypeError):
-                items_raw = []
+        # Parse line items (projected {sku,q,p,name} items)
+        items_raw = order.li or []
 
         # Deduplicate and aggregate line items by SKU within order
         # FX rate for this order (all items share the same currency)
-        order_currency = (order.currency or 'RON').upper()
+        order_currency = (order.currency or "RON").upper()
         fx_rate = 1.0
-        if order_currency != 'RON':
-            fx = get_rate_from_cache(order_currency, to_bucharest_date(order.frisbo_created_at) or romania_today(), rate_cache)
+        if order_currency != "RON":
+            fx = get_rate_from_cache(
+                order_currency,
+                to_bucharest_date(order.frisbo_created_at) or romania_today(),
+                rate_cache,
+            )
             if fx is not None:
                 fx_rate = fx
 
         sku_lines: Dict[str, dict] = {}
         for item in items_raw:
-            inv = item.get("inventory_item", {}) or {}
-            sku = inv.get("sku", "") or ""
+            sku = item.get("sku", "") or ""
             if not sku:
                 continue
-            qty = float(item.get("quantity", 1) or 1)
-            price = float(item.get("price", 0) or 0) * fx_rate
+            qty = float(item.get("q", 1) or 1)
+            price = float(item.get("p", 0) or 0) * fx_rate
             line_rev = price * qty
 
             if sku in sku_lines:
@@ -161,7 +215,7 @@ async def get_sku_risk(
                     "sku": sku,
                     "quantity": qty,
                     "line_revenue": line_rev,
-                    "product_name": inv.get("title_1", ""),
+                    "product_name": item.get("name", ""),
                 }
 
         if not sku_lines:
@@ -189,25 +243,29 @@ async def get_sku_risk(
         if has_shipping:
             orders_with_shipping += 1
 
-        order_data_list.append({
-            "uid": order.uid,
-            "order_number": order.order_number,
-            "store_uid": order.store_uid,
-            "store_name": stores_map.get(order.store_uid, order.store_uid),
-            "date": to_bucharest_iso(order.frisbo_created_at),
-            "final_outcome": final_outcome,
-            "order_total": (order.total_price or 0) * fx_rate,
-            "shipping_charged": round(shipping_charged * fx_rate, 2) if shipping_charged is not None else None,
-            "real_shipping_cost": real_shipping,
-            "courier_name": order.courier_name or "",
-            "country_code": order_country,
-            "city": addr.get("city", ""),
-            "payment_gateway": order.payment_gateway or "",
-            "package_weight": order.package_weight,
-            "item_count": order.item_count or 1,
-            "sku_lines": sku_lines,
-            "total_line_revenue": total_line_revenue,
-        })
+        order_data_list.append(
+            {
+                "uid": order.uid,
+                "order_number": order.order_number,
+                "store_uid": order.store_uid,
+                "store_name": stores_map.get(order.store_uid, order.store_uid),
+                "date": to_bucharest_iso(order.frisbo_created_at),
+                "final_outcome": final_outcome,
+                "order_total": (order.total_price or 0) * fx_rate,
+                "shipping_charged": round(shipping_charged * fx_rate, 2)
+                if shipping_charged is not None
+                else None,
+                "real_shipping_cost": real_shipping,
+                "courier_name": order.courier_name or "",
+                "country_code": order_country,
+                "city": addr.get("city", ""),
+                "payment_gateway": order.payment_gateway or "",
+                "package_weight": order.package_weight,
+                "item_count": order.item_count or 1,
+                "sku_lines": sku_lines,
+                "total_line_revenue": total_line_revenue,
+            }
+        )
 
     filtered_total = len(order_data_list)
 
@@ -274,7 +332,9 @@ async def get_sku_risk(
                 reasons.append(f"Z-score={z:.1f} (>{z_score_threshold})")
 
         if od["order_total"] and cost_pct > shipping_cost_pct_threshold:
-            reasons.append(f"Cost {cost_pct:.0%} din total (>{shipping_cost_pct_threshold:.0%})")
+            reasons.append(
+                f"Cost {cost_pct:.0%} din total (>{shipping_cost_pct_threshold:.0%})"
+            )
 
         is_anomaly = len(reasons) > 0
         od["shipping_anomaly"] = is_anomaly
@@ -284,23 +344,25 @@ async def get_sku_risk(
 
         if is_anomaly:
             skus_in_order = list(od["sku_lines"].keys())
-            anomaly_orders.append({
-                "uid": od["uid"],
-                "order_number": od["order_number"],
-                "store_name": od["store_name"],
-                "date": od["date"],
-                "courier_name": od["courier_name"],
-                "country_code": od["country_code"],
-                "order_total": od["order_total"],
-                "shipping_charged": od["shipping_charged"],
-                "real_shipping_cost": real_cost,
-                "shipping_margin": margin,
-                "shipping_cost_pct": round(cost_pct * 100, 1),
-                "item_count": od["item_count"],
-                "final_outcome": od["final_outcome"],
-                "anomaly_reasons": reasons,
-                "skus": skus_in_order,
-            })
+            anomaly_orders.append(
+                {
+                    "uid": od["uid"],
+                    "order_number": od["order_number"],
+                    "store_name": od["store_name"],
+                    "date": od["date"],
+                    "courier_name": od["courier_name"],
+                    "country_code": od["country_code"],
+                    "order_total": od["order_total"],
+                    "shipping_charged": od["shipping_charged"],
+                    "real_shipping_cost": real_cost,
+                    "shipping_margin": margin,
+                    "shipping_cost_pct": round(cost_pct * 100, 1),
+                    "item_count": od["item_count"],
+                    "final_outcome": od["final_outcome"],
+                    "anomaly_reasons": reasons,
+                    "skus": skus_in_order,
+                }
+            )
 
     anomaly_orders.sort(key=lambda x: x["shipping_margin"])
     anomaly_orders = anomaly_orders[:200]
@@ -310,34 +372,38 @@ async def get_sku_risk(
     if include_delivery_problems:
         problem_outcomes.add("DELIVERY_PROBLEM")
 
-    sku_agg: Dict[str, dict] = defaultdict(lambda: {
-        "sku": "",
-        "product_name": "",
-        "stores": set(),
-        "units_sold_total": 0,
-        "orders_with_sku": 0,
-        "revenue_total": 0.0,
-        "units_back_to_sender": 0,
-        "units_cancelled": 0,
-        "units_refused": 0,
-        "problem_units_total": 0,
-        "problem_orders_with_sku": 0,
-        "delivery_problem_orders": 0,
-        "not_shipped_orders": 0,
-        "allocated_shipping_cost_total": 0.0,
-        "allocated_shipping_margin_total": 0.0,
-        "shipping_anomaly_orders": 0,
-        "orders_with_shipping_data": 0,
-        "cogs_total": 0.0,
-        "by_store": defaultdict(lambda: {
-            "store_name": "",
-            "units_sold": 0,
-            "orders_count": 0,
-            "problem_units": 0,
-            "problem_orders": 0,
-            "revenue": 0.0,
-        }),
-    })
+    sku_agg: Dict[str, dict] = defaultdict(
+        lambda: {
+            "sku": "",
+            "product_name": "",
+            "stores": set(),
+            "units_sold_total": 0,
+            "orders_with_sku": 0,
+            "revenue_total": 0.0,
+            "units_back_to_sender": 0,
+            "units_cancelled": 0,
+            "units_refused": 0,
+            "problem_units_total": 0,
+            "problem_orders_with_sku": 0,
+            "delivery_problem_orders": 0,
+            "not_shipped_orders": 0,
+            "allocated_shipping_cost_total": 0.0,
+            "allocated_shipping_margin_total": 0.0,
+            "shipping_anomaly_orders": 0,
+            "orders_with_shipping_data": 0,
+            "cogs_total": 0.0,
+            "by_store": defaultdict(
+                lambda: {
+                    "store_name": "",
+                    "units_sold": 0,
+                    "orders_count": 0,
+                    "problem_units": 0,
+                    "problem_orders": 0,
+                    "revenue": 0.0,
+                }
+            ),
+        }
+    )
 
     for od in order_data_list:
         final = od["final_outcome"]
@@ -387,7 +453,9 @@ async def get_sku_risk(
                 agg["allocated_shipping_cost_total"] += allocated_cost
 
                 if od["shipping_charged"] is not None:
-                    allocated_margin = (od["shipping_charged"] - od["real_shipping_cost"]) * alloc
+                    allocated_margin = (
+                        od["shipping_charged"] - od["real_shipping_cost"]
+                    ) * alloc
                     agg["allocated_shipping_margin_total"] += allocated_margin
 
             if od.get("shipping_anomaly"):
@@ -414,52 +482,60 @@ async def get_sku_risk(
         delivery_problem_rate = safe_div(agg["delivery_problem_orders"], orders)
 
         avg_ship_cost_per_unit = safe_div(agg["allocated_shipping_cost_total"], units)
-        avg_ship_margin_per_unit = safe_div(agg["allocated_shipping_margin_total"], units)
+        avg_ship_margin_per_unit = safe_div(
+            agg["allocated_shipping_margin_total"], units
+        )
 
         passes_volume = units >= min_units_sold and orders >= min_orders_with_sku
 
         by_store_list = []
         for store_uid, sb in agg["by_store"].items():
-            by_store_list.append({
-                "store_uid": store_uid,
-                "store_name": sb["store_name"],
-                "units_sold": sb["units_sold"],
-                "orders_count": sb["orders_count"],
-                "problem_units": sb["problem_units"],
-                "problem_orders": sb["problem_orders"],
-                "problem_rate": round(safe_div(sb["problem_units"], sb["units_sold"]) * 100, 1),
-                "revenue": round(sb["revenue"], 2),
-            })
+            by_store_list.append(
+                {
+                    "store_uid": store_uid,
+                    "store_name": sb["store_name"],
+                    "units_sold": sb["units_sold"],
+                    "orders_count": sb["orders_count"],
+                    "problem_units": sb["problem_units"],
+                    "problem_orders": sb["problem_orders"],
+                    "problem_rate": round(
+                        safe_div(sb["problem_units"], sb["units_sold"]) * 100, 1
+                    ),
+                    "revenue": round(sb["revenue"], 2),
+                }
+            )
 
-        sku_results.append({
-            "sku": sku,
-            "product_name": agg["product_name"],
-            "stores_count": len(agg["stores"]),
-            "units_sold": int(units),
-            "orders_with_sku": orders,
-            "revenue_total": round(agg["revenue_total"], 2),
-            "units_back_to_sender": int(agg["units_back_to_sender"]),
-            "units_cancelled": int(agg["units_cancelled"]),
-            "units_refused": int(agg["units_refused"]),
-            "problem_units": int(agg["problem_units_total"]),
-            "problem_rate": round(problem_rate * 100, 1),
-            "problem_orders": agg["problem_orders_with_sku"],
-            "contamination_rate": round(contamination_rate * 100, 1),
-            "delivery_problem_orders": agg["delivery_problem_orders"],
-            "delivery_problem_rate": round(delivery_problem_rate * 100, 1),
-            "not_shipped_orders": agg["not_shipped_orders"],
-            "avg_ship_cost_per_unit": round(avg_ship_cost_per_unit, 2),
-            "avg_ship_margin_per_unit": round(avg_ship_margin_per_unit, 2),
-            "shipping_anomaly_orders": agg["shipping_anomaly_orders"],
-            "shipping_anomaly_rate": round(shipping_anomaly_rate * 100, 1),
-            "cogs_total": round(agg["cogs_total"], 2),
-            "passes_volume": passes_volume,
-            "_pr": problem_rate,
-            "_cr": contamination_rate,
-            "_sar": shipping_anomaly_rate,
-            "_dpr": delivery_problem_rate,
-            "by_store": by_store_list,
-        })
+        sku_results.append(
+            {
+                "sku": sku,
+                "product_name": agg["product_name"],
+                "stores_count": len(agg["stores"]),
+                "units_sold": int(units),
+                "orders_with_sku": orders,
+                "revenue_total": round(agg["revenue_total"], 2),
+                "units_back_to_sender": int(agg["units_back_to_sender"]),
+                "units_cancelled": int(agg["units_cancelled"]),
+                "units_refused": int(agg["units_refused"]),
+                "problem_units": int(agg["problem_units_total"]),
+                "problem_rate": round(problem_rate * 100, 1),
+                "problem_orders": agg["problem_orders_with_sku"],
+                "contamination_rate": round(contamination_rate * 100, 1),
+                "delivery_problem_orders": agg["delivery_problem_orders"],
+                "delivery_problem_rate": round(delivery_problem_rate * 100, 1),
+                "not_shipped_orders": agg["not_shipped_orders"],
+                "avg_ship_cost_per_unit": round(avg_ship_cost_per_unit, 2),
+                "avg_ship_margin_per_unit": round(avg_ship_margin_per_unit, 2),
+                "shipping_anomaly_orders": agg["shipping_anomaly_orders"],
+                "shipping_anomaly_rate": round(shipping_anomaly_rate * 100, 1),
+                "cogs_total": round(agg["cogs_total"], 2),
+                "passes_volume": passes_volume,
+                "_pr": problem_rate,
+                "_cr": contamination_rate,
+                "_sar": shipping_anomaly_rate,
+                "_dpr": delivery_problem_rate,
+                "by_store": by_store_list,
+            }
+        )
 
     # Normalize and compute risk scores
     scorable = [s for s in sku_results if s["passes_volume"]]
@@ -471,10 +547,10 @@ async def get_sku_risk(
 
         for i, s in enumerate(scorable):
             score = 100 * (
-                RISK_WEIGHT_PROBLEM_RATE * pr_norm[i] +
-                RISK_WEIGHT_CONTAMINATION * cr_norm[i] +
-                RISK_WEIGHT_SHIPPING_ANOMALY * sar_norm[i] +
-                RISK_WEIGHT_DELIVERY_PROBLEM * dpr_norm[i]
+                RISK_WEIGHT_PROBLEM_RATE * pr_norm[i]
+                + RISK_WEIGHT_CONTAMINATION * cr_norm[i]
+                + RISK_WEIGHT_SHIPPING_ANOMALY * sar_norm[i]
+                + RISK_WEIGHT_DELIVERY_PROBLEM * dpr_norm[i]
             )
             s["risk_score"] = round(score, 1)
 
@@ -486,18 +562,23 @@ async def get_sku_risk(
         for k in ("_pr", "_cr", "_sar", "_dpr"):
             s.pop(k, None)
 
-    sku_results.sort(key=lambda s: s["risk_score"] if s["risk_score"] is not None else -1, reverse=True)
+    sku_results.sort(
+        key=lambda s: s["risk_score"] if s["risk_score"] is not None else -1,
+        reverse=True,
+    )
 
     # ── 9. Store summary ──────────────────────────────────────────────────
-    store_agg: Dict[str, dict] = defaultdict(lambda: {
-        "store_name": "",
-        "total_orders": 0,
-        "delivered_orders": 0,
-        "problem_orders": 0,
-        "shipping_cost_sum": 0.0,
-        "shipping_cost_count": 0,
-        "anomaly_orders": 0,
-    })
+    store_agg: Dict[str, dict] = defaultdict(
+        lambda: {
+            "store_name": "",
+            "total_orders": 0,
+            "delivered_orders": 0,
+            "problem_orders": 0,
+            "shipping_cost_sum": 0.0,
+            "shipping_cost_count": 0,
+            "anomaly_orders": 0,
+        }
+    )
 
     for od in order_data_list:
         sa = store_agg[od["store_uid"]]
@@ -516,26 +597,41 @@ async def get_sku_risk(
     store_summary = []
     for store_uid, sa in store_agg.items():
         store_skus = [
-            s for s in sku_results
+            s
+            for s in sku_results
             if s["risk_score"] is not None
             and any(bs["store_uid"] == store_uid for bs in s["by_store"])
         ]
         store_skus.sort(key=lambda x: x["risk_score"] or 0, reverse=True)
-        top5 = [{"sku": s["sku"], "risk_score": s["risk_score"], "problem_rate": s["problem_rate"]}
-                for s in store_skus[:5]]
+        top5 = [
+            {
+                "sku": s["sku"],
+                "risk_score": s["risk_score"],
+                "problem_rate": s["problem_rate"],
+            }
+            for s in store_skus[:5]
+        ]
 
-        store_summary.append({
-            "store_uid": store_uid,
-            "store_name": sa["store_name"],
-            "total_orders": sa["total_orders"],
-            "delivered_pct": round(safe_div(sa["delivered_orders"], sa["total_orders"]) * 100, 1),
-            "problem_pct": round(safe_div(sa["problem_orders"], sa["total_orders"]) * 100, 1),
-            "avg_shipping_cost": round(
-                safe_div(sa["shipping_cost_sum"], sa["shipping_cost_count"]), 2
-            ),
-            "anomaly_pct": round(safe_div(sa["anomaly_orders"], sa["total_orders"]) * 100, 1),
-            "top5_worst_skus": top5,
-        })
+        store_summary.append(
+            {
+                "store_uid": store_uid,
+                "store_name": sa["store_name"],
+                "total_orders": sa["total_orders"],
+                "delivered_pct": round(
+                    safe_div(sa["delivered_orders"], sa["total_orders"]) * 100, 1
+                ),
+                "problem_pct": round(
+                    safe_div(sa["problem_orders"], sa["total_orders"]) * 100, 1
+                ),
+                "avg_shipping_cost": round(
+                    safe_div(sa["shipping_cost_sum"], sa["shipping_cost_count"]), 2
+                ),
+                "anomaly_pct": round(
+                    safe_div(sa["anomaly_orders"], sa["total_orders"]) * 100, 1
+                ),
+                "top5_worst_skus": top5,
+            }
+        )
 
     store_summary.sort(key=lambda x: x["problem_pct"], reverse=True)
 
@@ -548,7 +644,9 @@ async def get_sku_risk(
             "total_orders_in_range": total_orders,
             "filtered_orders": filtered_total,
             "orders_with_shipping": orders_with_shipping,
-            "shipping_coverage_pct": round(safe_div(orders_with_shipping, filtered_total) * 100, 1),
+            "shipping_coverage_pct": round(
+                safe_div(orders_with_shipping, filtered_total) * 100, 1
+            ),
             "unique_skus": len(sku_results),
             "skus_passing_volume": len(scorable),
             "date_from": to_bucharest_iso(dt_from),

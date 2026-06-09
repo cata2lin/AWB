@@ -220,6 +220,7 @@ Use the `/learn` slash command (in `.claude/commands/learn.md`) to add an entry 
 - **2026-05-18** — When extracting a tab from a mega-component, the `selectedVariantOrders` modal can be triggered from the tab but rendered as a sibling outside it. Move the modal into the tab during extraction, not after, or state gets stranded. (Discovered during SalesVelocity extraction.)
 - **2026-05-18** — `Base.metadata.create_all()` does NOT add columns to existing tables. Adding `has_tva`, `pnl_section`, `display_order` to `business_costs` required an explicit migration. Always write a migration script for column additions.
 - **2026-05-18** — The git repo is rooted at `awb-print-manager/`, not the parent `AWB Print` working directory. Environment may report "not a git repo" misleadingly — `cd awb-print-manager` first.
+- **2026-06-04** — When importing COGS from Scripturi (`scripturi-vps/.../data/{product_analytics,profitability}.db`), the `currency` column on a cost row is the Shopify store's *display* currency (EUR/CZK/PLN for foreign stores), **NOT** the unit of the cost amount. The amount is always the merchant's RON procurement cost. Verified: every foreign-currency row's raw amount equals AWB's existing RON `sku_costs.cost` exactly, and none match amount×rate. **Never FX-convert these** — doing so 5×-inflates COGS (e.g. `roz-XS` 35.62 EUR-label → a wrong 177 RON) and silently wrecks the P&L. Import script: `backend/scratch/import_scripturi_cogs.py`.
 
 ---
 

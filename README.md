@@ -942,6 +942,208 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-06-09 — `AWB_NO_SCHEDULER` flag for read-only/local instances
+
+**Files changed:** `backend/app/main.py`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **Read-only run mode** | A local/test instance pointed at the shared prod DB would, on startup, cancel the live deployment's in-flight syncs and start a second scheduler (double-sync). | Gated the stale-sync cleanup + `scheduler.start()` + the startup sync + shutdown behind `AWB_NO_SCHEDULER` (default unset = unchanged behavior). Set `AWB_NO_SCHEDULER=1` to serve the API without touching sync state. Used for local UI testing. |
+
+### 2026-06-09 — COGS & marketing source audit + per-SKU COGS override
+
+**Files changed:** prod `sku_costs` data (8 SKUs), `backend/scratch/{import_scripturi_cogs,verify_cogs_vs_scripturi,override_cogs_dominant,compare_cogs_per_order_may}.py`, `docs/REPORTS_AUDIT/10_COGS_MARKETING_SOURCE_AUDIT_2026-06-09.md`
+
+| Item | Description | Details |
+| --- | --- | --- |
+| **COGS per-SKU override** | Verified AWB `sku_costs` vs the fresh Scripturi cost source; overrode the differences. | Per-SKU costs already matched 99.7%. Corrected **14 SKUs** — the real bug: the cache import's "highest-on-tie" rule picked an outlier Scripturi rarely applies (**`fata-masa-rotunda` 33.00→11.58**, applied in 434 vs 2 orders). Fixed via dominant-cost analysis of Scripturi's single-SKU-order COGS distribution, with a cache guard that correctly excluded pack-only grandia `GD-*` SKUs (AWB's unit costs there are correct). Backed up to `sku_costs_backup_20260609_144448`. |
+| **COGS verification** | Per-order COGS comparison, May. | After override: AWB 1,492,050 vs Scripturi 1,495,518 = **−0.23%**; **93.7% of orders identical**. Residual is structural (grandia Frisbo-vs-Shopify line-items −4%, Frisbo-stale order universe), not cost values. |
+| **Marketing source check** | Is AWB pulling marketing correctly per month? | **Yes** — `marketing_daily_costs` is full every store×day for all 2026 months except **nubra Mar 10–23** (a source-sheet gap: nubra launched Mar 10, sheet logs it from Mar 24 — not an AWB bug). AWB is more complete than Scripturi (captures Grandia + full Google). |
+
+### 2026-06-09 — Scripturi re-pull + parity re-check; Frisbo-stale list; fast parallel sync
+
+**Files changed:** `docs/REPORTS_AUDIT/08_SCRIPTURI_RECHECK_2026-06-09.md`, `backend/scratch/compare_awb_vs_scripturi_2026.py`, `backend/scratch/list_frisbo_stale.py`, `backend/scratch/parallel_full_sync.py` (all scratch/docs — no runtime code changed)
+
+| Item | Description | Details |
+| --- | --- | --- |
+| **Scripturi re-pull + change analysis** | Colleague updated the Scripturi profitability area; re-pulled all code and diffed vs baseline. | Only **2** numeric edits, both in `api/profitability.py`: RO VAT `0.19→0.21` (**no-op** — `profit_settings.vat_rates` already stored 0.21), and **transport always VAT-removed** (real, ~576K RON/2026, moves Scripturi **onto AWB's existing basis**). Rest = perf/secrets/refactor. **AWB needs no change.** Verified by a 4-agent adversarial workflow. |
+| **Numeric parity confirmed** | AWB vs Scripturi delivered counts, 2026 Jan–May. | **217,530 vs 217,118 = +0.2%**; Apr −0.3%, May −0.0%. Residuals explained: BELA −215 = Frisbo-stale; COV +586 = Scripturi missing March covoria (AWB more complete). CSV `frisbo_vs_scripturi_2026.csv`. |
+| **Frisbo-stale order list** | Authoritative list of orders Frisbo reports non-terminal but the courier already settled. | **717 orders** (544 delivered / 137 cancelled / 36 returned, ~201K RON) → `frisbo_stale_orders.csv` via `scratch/list_frisbo_stale.py`. Proves the staleness is upstream Frisbo, not our sync. |
+| **Fast parallel sync tool** | Aggressive all-store parallel re-sync with change-detection (writes only deltas, deadlock-resilient). | `scratch/parallel_full_sync.py`. Frisbo ignores `created_at_start`/`updated_at_start` filters on the wire (verified) → every scheduled tier is a full sweep; this tool fetches all orgs in parallel instead. |
+
+### 2026-06-05 — Senior correctness pass: data integrity + cross-program parity
+
+A 5-front audit (`docs/REPORTS_AUDIT/06_CORRECTNESS_AUDIT.md`) + the applied fixes (`07_CORRECTNESS_FIXES.md`). After these, for a **closed month** AWB and Scripturi agree on every report except the orders Frisbo has frozen upstream (which AWB can't resolve without a courier/Shopify source) + small by-design divergences.
+
+**Files:** `analytics/profitability.py`, `services/google_sheets.py`, `services/sync_service.py`, `services/scheduler.py`, `api/sync.py`, `tests/test_smoke.py`, `ProfitabilityTab.jsx`, `DailyPerformanceTab.jsx`, scratch backfills.
+
+| Fix | Impact (verified) |
+| --- | ------- |
+| **P&L variable-shadowing** (`excluded_skus` clobbered by `exclude_from_stock` → whole-order skip dropped every gift/bundle-SKU order) | **April delivered 43,785 → 45,481 (= deliverability to the cent); revenue +219K RON.** + regression test. |
+| **Marketing backfill** 2026-03..06 (sheet sync never covered the month tails) | **March 8 → 31 days** (376K → 1.42M RON); May/June filled. All months full. |
+| **Bonhaus-RO marketing orphan** (`bonhausro.ro` had no store; BON orders live under `casaofertelor.ro`) → remap + migrate 378 rows | **−1.23M RON phantom marketing; 0 orphans; sum(per-store)==total.** |
+| **`line_items` overwrite** (`is not None` never fired; partial payload wiped to `[]`) → `if parsed.get("line_items"):` | Future COGS-zeroing prevented. |
+| **Stale-order detection** `GET /api/sync/stale-orders` | Surfaces **1,701 stuck orders / ~431K RON** (upstream Frisbo freeze) instead of hiding them. |
+| **Non-destructive marketing sync** + scheduled **BNR/marketing self-heal** + **stuck-sync watchdog** | Prevents future zeroing/staleness; FX & marketing stay current; a hung sync can't block a tier. |
+| **UI:** ProfitabilityTab order pagination (Prev/Next now refetch); Daily-perf AOV sparkline (was plotting revenue) | Functional + cosmetic. |
+
+**Stuck-order staleness — ELIMINATED (3 fixes).** AWB's only order-status source is Frisbo, which can freeze an order non-terminal even after delivery (verified: search *and* single-order GET return the same frozen status). Fixes: (a) sync **"don't-downgrade-terminal" rule** — a settled order is never regressed to a non-terminal status; (b) **Scripturi reconciliation** (`services/stuck_reconciliation.py`) — adopts the sister app's **courier-resolved** status (gets the real delivered/returned/cancelled outcome); (c) **aged-out write-off** (scheduled daily, no external dep) — a shipped order stuck >90 days is closed terminally as a transport loss. **Applied: 642 Scripturi-resolved (501 delivered/+174K RON, 16 returned, 125 cancelled) + 470 aged-out written off → 0 orders stuck beyond 90 days.** The 829 still non-terminal are all <90d = legitimately in-transit (active). **April P&L delivered 45,481 → 45,604 = Scripturi's 45,603 — parity.** The daily aged-out tier makes it self-maintaining (no order can stay stuck past 90d again). Richer future-freeze resolution still benefits from a **courier-tracking API** (DPD/Sameday/Packeta — credentials AWB lacks); interim is the reconcile scratch after each Scripturi refresh. Residuals surfaced via `/api/sync/stale-orders`. **Not applied: USD→live FX** — Scripturi uses fixed 4.55, so AWB keeps 4.55 to stay 1:1. 61 tests pass; build clean.
+
+### 2026-06-05 — Ad-spend parity with Scripturi (per-SKU FB/TikTok marketing + daily-perf spend)
+
+Matched AWB's reports to Scripturi after a colleague added per-SKU Facebook/TikTok ad-spend attribution there. Spec: `docs/REPORTS_AUDIT/04_ADSPEND_PARITY_SPEC.md`; verification: `05_ADSPEND_PARITY_VERIFICATION.md`.
+
+**Files:** `app/models/sku_ad_spend_daily.py` (new), `app/models/__init__.py`, `app/api/sku_profitability/endpoint.py`, `app/api/analytics/daily_perf.py`, `backend/scratch/import_scripturi_marketing.py` (new), `backend/scratch/import_scripturi_daily_marketing.py` (new, optional), `frontend/.../SkuProfitabilityTab.jsx`, `frontend/.../DailyPerformanceTab.jsx`.
+
+| Change | Description | Details |
+| --- | ----------- | ------- |
+| **Per-SKU marketing (the gap)** | AWB's `sku_marketing_costs` was empty → marketing line was always 0 | New `sku_ad_spend_daily(date, sku, fb_ron, tk_ron)` table, imported daily from Scripturi at fixed **USD→RON 4.55** (2,579 rows; HA-/Hairo SKUs only). Endpoint sums the exact window → matches Scripturi's date-range mode (not a monthly pro-rate). |
+| **1:1 verified** | April per-SKU marketing | AWB **66,610.33 RON** vs Scripturi **66,610.45** (0.12 RON / sub-cent). April = FB-only (TikTok starts 2026-05-15). |
+| **New fields** | per-SKU `marketing_fb`, `marketing_tk`, `cpa`, `roas`, `delivery_rate` + summary totals | UI: CPA/ROAS/Livrare% columns + FB/TikTok split tooltip. |
+| **Daily-perf ad-spend** | Brand-level fb/tk/total spend + ROAS/CPA added to the Daily Performance dashboard | Sourced from AWB's **own** `marketing_daily_costs` ("Raport Zilnic 2" sheet, already populated) — NOT Scripturi (the two sources differ ~5-10%, documented). No overwrite of AWB data. |
+| **No risky migration** | new table only (`create_all`/`CREATE TABLE IF NOT EXISTS`); existing models untouched | Decisions: marketing-line parity only — AWB keeps its more-correct per-country VAT + revenue-share transport (profit_net differs by those known knobs by design). |
+
+**Verification:** 61 backend tests pass; eslint + `npm run build` clean.
+
+### 2026-06-04 — Full empirical AWB-vs-Scripturi audit (per-order, 2026-04/05)
+
+Per-order reconciliation joining AWB `order_number` == Scripturi `order_name` (100% universe match for 2026), comparing revenue, COGS, and status classification across all reports. **Verdict: AWB reports correctly**; every material gap is upstream Frisbo status-sync, a stale Scripturi snapshot, or intentional design.
+
+**Files:** `backend/scratch/full_audit_2026_04.py` (new harness), `docs/REPORTS_AUDIT/03_EMPIRICAL_AUDIT_2026.md` (new report). Method: 6 parallel diagnostic agents + synthesis.
+
+| Finding | Impact | Category |
+| --- | ----------- | ------- |
+| **Grandia stuck-status** | 85 GRAN orders `fulfilled`/`waiting_for_courier` despite valid AWB+tracking & Shopify-DELIVERED → **107.5k RON** undercounted (95% of April gap) | upstream Frisbo sync; reconciliation-layer fix (do NOT change `classify()`) |
+| **Cross-store COGS collapse** | global `sku_costs` ignores per-store cost (`fata-masa-rotunda` 33 vs 11.58; EST/NUB numeric SKUs 9.0 vs 7.95) → **+17.5k/mo over-cost** | AWB bug → make COGS store-aware |
+| **`exclude_from_stock` → COGS** | gift/bundle SKUs zero COGS in AWB, Scripturi costs them → **−13.9k/mo** | business decision (couples with the above; they cancel) |
+| **covoria.ro empty line_items** | 220 delivered orders sync with `line_items=[]` → **−5.9k/mo** under-cost | Frisbo payload gap (April-specific) |
+| **GRAND furniture partial lines** | some multi-line orders drop lines (GRAND7873 missing GD-IL-INT-11141) → **−7.1k/mo** | Frisbo payload gap |
+| Snapshot timing (May +403k) | 3,407 in-transit→delivered since Scripturi's 2026-06-02 snapshot | intentional / self-heals |
+| Status 99.59% agreement, SKU velocity | Scripturi drops 15.6% of orders (incl. all of Nubra); AWB more complete | Scripturi-side |
+
+### 2026-06-04 — Wave-3 polish: 5-tier SKU performance labels + BulkActionBar wired into SKU profitability
+
+**Files changed:** `frontend/src/pages/analytics/SkuProfitabilityTab.jsx`.
+
+| Feature | Description | Details |
+| --- | ----------- | ------- |
+| **5-tier performance labels** | New "Performanță" column + filter chips: ⭐ Vedetă / ✅ Profitabil / 📦 Volum / ⚠️ Slab / 🔴 Pierdere / ➖ Fără cost | Computed **client-side** from the metrics the endpoint already returns (margin %, contribution, units, has_cost) — zero backend change. "High volume" = units ≥ median of cost-known sellers (self-scaling). Column is sortable (by tier rank), CSV-exportable, and the chips filter the table. |
+| **BulkActionBar wired in** | Row checkboxes + select-all → floating bar (the component existed but was only stubbed in Watchlists) | **Copiază SKU** (clipboard) + **Adaugă în Watchlist** (picker modal: choose an existing list or create a new one) + Deselectează. Each added SKU carries a metric snapshot (revenue, contribution, margin, units, tier). |
+| **Verified** | Watchlist create→add→read→delete flow tested end-to-end against the backend (object `snapshot_json` round-trips, incl. emoji/RO chars); eslint clean; `npm run build` green. | Column-prefs storage id bumped to `-v2` so the new column shows by default. |
+
+### 2026-06-04 — Cold-path perf: line_items SQL projection across all 6 heavy endpoints (the flagged ~30s fix)
+
+Resolved the flagged cold first-load of the heavy analytics endpoints. Profiling showed the cost was **full-ORM `select(Order)` loads** streaming the bloated `line_items` JSON — not the Python loop (0.05s) or Google Sheets (0.10s).
+
+**Files changed:** `backend/app/core/line_items_projection.py` (new, shared), `backend/app/core/order_filters.py`, and 6 endpoints: `analytics/profitability.py`, `sku_profitability/endpoint.py`, `sales_velocity/endpoint.py`, `sku_risk/endpoint.py`, `analytics/daily_perf.py`, `analytics/product_deliverability.py`.
+
+| Fix | Description | Details |
+| --- | ----------- | ------- |
+| **Root cause** | `line_items` is ~19× bloated | avg 1,884 B/order (20 keys/item: tax_lines, discount_allocations, tip_*, …); the loops only read `{sku, quantity, price}` (+ `title_1` for velocity/risk) = ~97 B. |
+| **Projection** | New shared `PROJECTED_LINE_ITEMS` / `PROJECTED_LINE_ITEMS_NAMED` select a slimmed `{sku,q,p}`(`,name`) array server-side (`jsonb_agg(jsonb_build_object(...))`) instead of `select(Order)` | Each endpoint now column-selects only the scalars it reads + the projection. `sku_hash`/`order_has_excluded_sku` made shape-tolerant. |
+| **Result** | **P&L main query 16.6s → 4.0s; fallback 12s → 1.7s; cold P&L ~30s → ~10s, SKU-profit ~9s, product-deliverability ~4s, daily-perf ~0.5s.** Warm (cached) stays instant. | TTL cache + indexes unchanged. |
+| **Verified equivalent** | Line-level `(sku,qty,price)` extraction matches the old path **0 mismatches / 57,439 orders**; `name`==`title_1` **0 / 11,141**; 0 sku-hash mismatches; P&L `mar2025` fixed-window identical; **61 backend tests pass**; new code lint-clean. | Pure-function argument: identical inputs ⇒ identical output. daily-perf's always-empty product name preserved exactly. |
+
+### 2026-06-04 — Imported COGS from Scripturi into `sku_costs` (override existing)
+
+Refreshed AWB's per-SKU COGS from the Scripturi program's authoritative cost data and overrode existing values.
+
+**Files changed:** `backend/scratch/import_scripturi_cogs.py` (new).
+
+**Source:** local SQLite copies of the Scripturi VPS data — `product_analytics.db → analytics_products` (Shopify `inventoryItem.unitCost` cache, per store) + `profitability.db → profit_cogs_override` (20 manual overrides, authoritative).
+
+| Step | Description | Details |
+| --- | ----------- | ------- |
+| **Resolution** | One cost per SKU (AWB `sku_costs.sku` is globally unique) | Override wins → else freshest `updated_at` sync → tie-break highest cost. 166 cross-store conflicts (mostly generic numeric SKUs) resolved this way; all matched AWB's existing values. |
+| **⚠️ No FX conversion** | Scripturi's `currency` column is the Shopify store's *display* currency, **not** the unit of the cost number | **Verified**: every EUR/CZK/PLN row's raw amount equals AWB's existing RON cost exactly, and none match amount×rate. Converting would have 5×-inflated COGS for ~137 SKUs (e.g. `roz-XS` 35.62 → a wrong 177 RON). Amounts taken as RON. |
+| **Names preserved** | Curated AWB display names kept; Scripturi titles only fill blanks | `COALESCE(NULLIF(sku_costs.name,''), EXCLUDED.name)` in the upsert. |
+| **Result** | 1,659 SKUs upserted: **11 new + 19 real overrides + 1,629 already matched** | `sku_costs` 2,405 → 2,416 rows, all RON. AWB was already ~98% seeded from this source; this refreshed the drifted 30 and added 11. |
+| **Reversible** | Backed up before writing | prod table `sku_costs_backup_20260604_125926` + CSV; atomic transaction (DDL+upsert+commit). |
+
+### 2026-06-04 — UI/UX + performance overhaul + new analytics features + marketplace scaffolding
+
+A multi-wave upgrade across performance, UI/UX, new Scripturi-inspired features, and marketplace integrations.
+
+**Wave 1 — Performance.** Frontend: code-split all routes + analytics tabs (`React.lazy`/`Suspense`), dynamic `xlsx` import, React-Query `staleTime` — **initial bundle 1,594 kB → 367 kB main** (gzip 477→119). Backend: composite indexes `(frisbo_created_at, store_uid)` + `(store_uid, frisbo_created_at)` (`migrate_analytics_indexes.py`, CONCURRENTLY), and a shared TTL cache (`app/core/analytics_cache.py` + `@cached_analytics`) on the 5 heavy endpoints, cleared on sync completion — **P&L repeat-load 31.8s → 0.18s**. `SalesVelocityTab` filter/sort memoized.
+*Known follow-up:* cold P&L/velocity/DPD-audit first-load is still ~30s (full-table Python aggregation) — needs a dedicated SQL-pushdown/column-select refactor of Tier-1 code.
+
+**Wave 2 — Core UI/UX.** Fixed the dead store-filter (Analytics now has a real URL-persisted shared store multi-select threaded into tabs); error toasts persist until dismissed; mutation toasts added across SkuProfitability/SkuCosts; responsive sidebar (mobile hamburger + off-canvas drawer + backdrop + close-on-nav); new `Skeleton` primitive. *(The full hand-rolled-table → `DataTable` migration is backlogged.)*
+
+**Wave 3 — New features (Scripturi-inspired).** Three new Analytics tabs:
+- **Performanță Zilnică** (`api/analytics/daily_perf.py`, `DailyPerformanceTab.jsx`) — per-brand daily KPI cards w/ vs-yesterday deltas + 7-day sparklines + charts + top-products drill-down.
+- **Audit DPD** (`api/courier_audit.py`, `CourierAuditTab.jsx`) — courier weight-audit: learns per-SKU weights, flags overbilled AWBs, dispute-CSV export (found 3,531 kg excess over a sample month). Fixed a segfault (date filter pushed to SQL + bounded JOIN instead of an all-time scan + giant `IN()`).
+- **Watchlists** (`models/watchlist.py`, `api/watchlists.py`, `migrate_watchlists.py`, `WatchlistsTab.jsx` + `BulkActionBar.jsx`) — snapshot-delta SKU tracking + shared bulk-action bar.
+
+**Wave 4 — eMAG scaffolding** (`services/emag/`, `models/marketplace_order.py`, `migrate_marketplace_orders.py`, `api/emag_report.py`, `EmagReportTab.jsx`). Async EmagClient (RO/BG/HU), 30-min inert sync tier, sales report. **Inert until** `EMAG_<MP>_USER/PASS` env vars are set AND the server IP is allowlisted per marketplace.
+
+**Wave 5 — Trendyol seller-API report** (`services/trendyol/`, `api/analytics/trendyol_profitability.py`, `TrendyolProfitabilityTab.jsx`). Async TrendyolClient (settlement quirks preserved: one transactionType/call, size=500, ±30/+45-day windows, RO+BG), settlements P&L through AWB's VAT/BNR engine, COGS matched against `SkuCost`. **Inert until** these `.env` vars are set: `TRENDYOL_API_KEY`, `TRENDYOL_API_SECRET`, `TRENDYOL_SELLER_ID` (values exist in the Scripturi source).
+
+**Verification:** 61 backend tests pass; frontend builds clean; ruff/eslint clean on new code. **⚠️ Prod migrations to run before deploy:** `migrate_analytics_indexes.py`, `migrate_watchlists.py`, `migrate_marketplace_orders.py` (all additive/idempotent; the first uses CONCURRENTLY).
+
+### 2026-06-04 — Live-data reconciliation, classifier fix, configurable exclusions, CS-agent report
+
+Re-audited the past requests for missed items, then closed the gaps — validated against **both live databases** (read-only) on `38.242.226.83`: AWB `AWBprint` + Scripturi `Profitabilitate-Livrabilitate`.
+
+**Files changed:** `app/core/status_classification.py`, `app/core/order_filters.py`, `app/core/vat.py` (use), `app/models/exclusion_rule.py` (new), `app/api/exclusion_rules.py` (new), `app/api/cs_report.py` (new), `app/api/analytics/{profitability,profitability_orders,deliverability,product_deliverability}.py`, `app/api/{sku_profitability,sku_risk,sales_velocity}/endpoint.py`, `app/services/{sync_service,scheduler}.py`, `app/main.py`, `migrate_exclusion_rules.py` (new), `frontend/src/pages/analytics/CsReportTab.jsx` (new) + `Analytics.jsx`, `docs/INTREBARI_PROIECT.md` (new), `docs/REPORTS_AUDIT/02_CROSS_VERIFICATION.md`, `backend/scratch/reconcile_awb_vs_scripturi.py` (new).
+
+| Fix | Description | Details |
+| --- | ----------- | ------- |
+| **Empirical reconciliation** | The cross-check was only documentary | Ran AWB vs Scripturi on live data. Per-store Nov-2025 counts match (≤0.2% on shared stores); the only total gap is store coverage (belasil/grandia in AWB, covoria in Scripturi). Harness: `scratch/reconcile_awb_vs_scripturi.py` (creds via env). |
+| **`fulfilled` mis-bucketed** | Counted as shipped/in_transit | Live data: all `fulfilled` have `shipment_status=not_created` & mostly no AWB → never shipped. Moved to not-shipped. **All-time delivery rate 82.86% → 83.41%**. Added `errors_incorrect_shipping_address` + `awaiting_shipment_generation_initialization`; classifier now covers every prod status (zero silent "other"). |
+| **Unconvertible FX (Q)** | Foreign currency summed 1:1 as RON | P&L now **excludes** orders with no BNR rate and surfaces `unconvertible_count` (not a silent drop). Per-order listing flags `unconvertible`. |
+| **SKU per-country VAT (U)** | SKU report used one blended rate | Each line nets out at its order's own country/time VAT (RO/CZ 21, PL 23, BG 20; RO 19→21 split). |
+| **Missing-COGS (T)** | Cost-less SKUs booked COGS=0 → looked 100% profitable | Contribution/margin/cogs nulled for cost-less SKUs; excluded from the avg-margin denominator. |
+| **Configurable exclusions** | Hardcoded `('test',)` tuple | New `exclusion_rules` table + CRUD (`/api/analytics/exclusion-rules`): admins exclude any **tag** or **SKU** (Scripturi parity). Built-ins now **`test` + `sample`**. Applied across all 7 reports (tags) + the P&L loops (SKU). |
+| **Stale-order Tier-6 (D5)** | Tier-5 recheck only covered ≤30 days | Added Tier-6 `recheck_90d` (created_at, daily) for the long tail (returns/deliveries resolving 30–90 days out without an `updated_at` bump). |
+| **CS-agent report** | Scripturi feature AWB lacked | New `/api/analytics/cs-report` + "Agenți CS" tab — orders/revenue per agent by order tag (configurable). ⚠️ Near-empty until tags backfill: agent tagging is sparse upstream (≈15 orders) and Frisbo merchant-tag delivery is unconfirmed — flagged in the UI. |
+| **Whole-project questions** | Only a profitability question set existed | New `docs/INTREBARI_PROIECT.md` — 60 clarifying questions across sync, rules, print, deliverability, UI, DB. |
+
+**⚠️ Deploy ordering:** run `migrate_exclusion_rules.py` AND `migrate_order_tags_note.py` on prod **before** deploying this code — `Order.tags`/`note` and the `exclusion_rules` table do not exist on prod yet, and the model references them. Tag-based exclusion + the CS report stay inert (safe no-op) until tags are backfilled by a `full`/Tier-5 sync.
+
+### 2026-06-03 — Frisbo API integration: tags/notes, stale-order fix, test-order exclusion
+
+Analyzed the full Frisbo Store-View API (OpenAPI 3.1 — 12 endpoints, 157 schemas; documented as the global `frisbo-api` skill + `docs/frisbo/openapi.json`). The API now returns **tags, notes, and raw courier statuses** on `/orders/search`. Integrated that data and hardened the sync. Report cross-verification vs Scripturi in `docs/REPORTS_AUDIT/02_CROSS_VERIFICATION.md`.
+
+> ⚠️ **Needs migration + backfill before the tag exclusion takes effect:** run `python migrate_order_tags_note.py` on prod, then a `full` sync (or wait for Tier-5) to populate `tags`. Until then, tag exclusion is a safe no-op (all orders `tags=NULL`).
+
+**Files changed:** `backend/app/services/frisbo/parser.py`, `backend/app/models/order.py`, `backend/app/services/sync_service.py`, `backend/app/services/scheduler.py`, `backend/migrate_order_tags_note.py` (new), `backend/app/core/order_filters.py` (new), `backend/app/core/status_classification.py`, `backend/app/api/analytics/{deliverability,profitability,profitability_orders,product_deliverability}.py`, `backend/app/api/{sku_profitability,sku_risk,sales_velocity}/endpoint.py`, `backend/tests/test_status_classification.py`
+
+| Change | Description | Details |
+| --- | ----------- | ------- |
+| **Notes/tags ingest** | Parser now extracts Frisbo `tags` (lowercased keys) + `note`; persisted to new `orders.tags` (JSONB) + `orders.note` (TEXT). | Coalesced on update so a tags-less response never wipes values. |
+| **Stale-order fix (Tier 5)** | New `recheck_30d` sync tier filters by **created_at** (every 3h) and re-reads current status regardless of `updated_at`. | Root cause: all prior tiers filtered `updated_at`; if Frisbo ingests a courier-status change without bumping `updated_at`, none re-read the order → stale. |
+| **Test-order exclusion** | Shared `exclude_test_orders_condition()` drops `tag=test` orders from **all 7** order-loading analytics endpoints — matches Scripturi. | No-op until tags are backfilled. |
+| **Complete status classifier** | `status_classification` now covers the **full 53-value** Frisbo `aggregated_status` enum (personal_pickup, lost_in_transit/_warehouse, shipment_refunded, shipping_canceled, fulfillment_cancelled, sending, …) so none falls silently to "other". | Deliverability SQL refactored to source its buckets from the same sets → one source of truth. 39 unit tests. |
+
+### 2026-06-03 — Reports correctness audit + fixes (vs Scripturi reference)
+
+Audited every Reports-tab calculation against AWB's own spec docs and the Scripturi sister-app + dataset (full register in `docs/REPORTS_AUDIT/`). Phase 1 fixes the confirmed bugs that make AWB internally consistent with its own authoritative P&L engine. Phase 2 implements the user-decided items: **per-country VAT**, **packaging removed** (already captured), **first-sale-aware velocity**. (Test-order exclusion was deferred — Frisbo carries no order tags.)
+
+> ⚠️ **Needs validation before push:** the per-country VAT and velocity changes move headline numbers correctly but were verified by unit tests + import only (local DB is empty). Run the touched endpoints against the real DB and eyeball a known period before deploying. **No DB migration needed** — country is derived from the store domain at runtime.
+
+**Files changed:** `backend/app/core/status_classification.py` (new), `backend/app/core/vat.py` (new), `backend/app/api/analytics/profitability.py`, `backend/app/api/analytics/profitability_orders.py`, `backend/app/api/sku_profitability/endpoint.py`, `backend/app/api/analytics/product_deliverability.py`, `backend/app/api/sales_velocity/endpoint.py`, `backend/tests/test_status_classification.py` (new), `backend/tests/test_vat.py` (new), `docs/REPORTS_AUDIT/` (new)
+
+**Phase 2 (user-decided):**
+
+| Fix | Description | Details |
+| --- | ----------- | ------- |
+| **Per-country VAT** (H) | New `app/core/vat.py` resolves VAT per order by store country (RO/CZ 21%, PL 23%, BG 20%) + keeps RO's 19%→21% (2025-08-01) time-split. The P&L now accumulates fara_tva per order with each order's own rate; per-store P&L uses that store's rate. | Country derived from store domain TLD at runtime — **no migration**. 8 unit tests. |
+| **Packaging removed** (Y) | The 3.7 RON/order packaging was dead-but-subtracted in SKU profitability while excluded from the aggregate. Removed everywhere (it's already captured in transport/business costs). | SKU profitability and aggregate now agree. |
+| **First-sale-aware velocity** (I) | Velocity now divides a SKU by the days since its first sale in the window, not the full window, so fresh winners aren't under-counted / over-stated on days-of-stock. | Gross-headline display (X) is a frontend switch; backend already returns `gross_velocity`. |
+
+**Phase 1:**
+
+| Fix | Description | Details |
+| --- | ----------- | ------- |
+| **Shared status classifier** (J/F/K) | Four hand-copied `aggregated_status → category` maps had drifted. Extracted one source of truth `app/core/status_classification.py` consumed by profitability, per-order and SKU reports. | 27 unit tests assert all ~17 Frisbo statuses map identically across reports. |
+| **Refused parcels counted as returned** (B) | `refused`/`unsuccessful_delivery` fell into `other`, keeping COGS and booking 0 profit instead of the real `-transport` loss. Now folded into `returned`. | Contradicted the deliverability tab + `compute_final_outcome` + spec. |
+| **Per-order P&L reconciles with aggregate** (C/D/L) | Per-order endpoint double-counted COGS on returns, re-added agency commission (already a monthly cost), and subtracted packaging the aggregate excludes. Now: COGS=0 on returned/cancelled, returned loss = `-transport`, no agency, no packaging. | The two profitability views now agree. |
+| **SKU profitability applies VAT** (A, critical) | `dynamic_vat_rate` was computed but never used — every SKU contribution/margin was VAT-inclusive. Now revenue/COGS/transport/fees are reported `fara_tva`; marketing stays no-TVA. | Matches the main P&L basis. |
+| **SKU realized-only + distinct orders** (E/AA) | in_transit was booked as realized; `orders_delivered` counted per line-item. Now in_transit is a separate pending bucket and delivered orders are counted distinctly. | |
+| **SKU marketing pro-rated by window** (M) | Monthly SKU marketing was subtracted in full regardless of window; now pro-rated by the fraction of each month inside the query range. | |
+| **Product deliverability denominators** (N/O) | Per-store `shipped` omitted in_transit/out_for_delivery; the order denominator counted raw line-items. Now per-store shipped matches the group definition and each order counts once per distinct product group. | |
+| **Velocity period off-by-one** (P) | `period_days` was N-1 (end-of-day truncation), over-stating velocity and dropping the last chart day. Now inclusive (`+1`). | First-sale-aware velocity (Finding I) deferred to bundle with the gross/net decision. |
+
 ### 2026-05-19 — Livrabilitate Produse: advanced filters + include/exclude + shared presets
 
 **Files changed:** `backend/app/models/analytics_filter_preset.py` (new), `backend/app/models/__init__.py`, `backend/app/api/analytics_filter_presets.py` (new), `backend/app/main.py`, `backend/migrate_analytics_filter_presets.py` (new), `frontend/src/components/ui/AdvancedFiltersDrawer.jsx` (new), `frontend/src/components/ui/IncludeExcludeModal.jsx` (new), `frontend/src/components/ui/FilterPresetsBar.jsx` (new), `frontend/src/components/ui/index.js`, `frontend/src/services/api/analyticsFilterPresets.js` (new), `frontend/src/services/api/index.js`, `frontend/src/components/ProductDeliverabilityTab.jsx`

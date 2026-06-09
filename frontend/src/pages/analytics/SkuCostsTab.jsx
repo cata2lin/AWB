@@ -111,18 +111,22 @@ export default function SkuCostsTab() {
             }
             await loadSkuCosts()
             setEditingSku(null)
+            toastSuccess('Cost SKU salvat')
         } catch (err) {
             console.error('Failed to save SKU cost:', err)
+            toastError(err)
         }
     }
 
     const handleDeleteSkuCost = async (sku) => {
-        if (!confirm(`Delete cost for SKU "${sku}"?`)) return
+        if (!confirm(`Ștergi costul pentru SKU „${sku}”?`)) return
         try {
             await skuCostsApi.deleteSkuCost(sku)
             await loadSkuCosts()
+            toastSuccess('Cost SKU șters')
         } catch (err) {
             console.error('Failed to delete SKU cost:', err)
+            toastError(err)
         }
     }
 
@@ -132,8 +136,10 @@ export default function SkuCostsTab() {
             await skuCostsApi.createSkuCost(newSku)
             await loadSkuCosts()
             setNewSku({ sku: '', name: '', cost: 0 })
+            toastSuccess('SKU creat')
         } catch (err) {
             console.error('Failed to create SKU cost:', err)
+            toastError(err)
         }
     }
 
@@ -142,8 +148,10 @@ export default function SkuCostsTab() {
             await skuCostsApi.createSkuCost({ sku: sku.sku, name: sku.name || '', cost: 0, currency: 'RON' })
             await loadSkuCosts()
             setDiscoveredSkus(prev => prev.filter(s => s.sku !== sku.sku))
+            toastSuccess('SKU adăugat')
         } catch (err) {
             console.error('Failed to add SKU:', err)
+            toastError(err)
         }
     }
 
@@ -159,8 +167,10 @@ export default function SkuCostsTab() {
             setSelectedSkus(new Set())
             setBulkCostValue('')
             setBulkEditMode(false)
+            toastSuccess(`${skusToUpdate.length} costuri actualizate`)
         } catch (err) {
             console.error('Bulk update failed:', err)
+            toastError(err)
         }
     }
 

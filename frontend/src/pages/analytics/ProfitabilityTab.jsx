@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import {
     Package, RefreshCw, DollarSign, AlertTriangle, Truck, Calendar,
 } from 'lucide-react'
@@ -15,6 +15,7 @@ export default function ProfitabilityTab({ stores = [], selectedStores = [], day
     const [orderProfitPage, setOrderProfitPage] = useState(0)
     const [orderProfitStatus, setOrderProfitStatus] = useState('')
     const [orderProfitLoading, setOrderProfitLoading] = useState(false)
+    const [ordersLoaded, setOrdersLoaded] = useState(false)  // gate auto-refetch to after first explicit load
 
     // Profitability date period filter (independent of global date filter)
     // NOTE: Currently unused in the visible UI — kept for parity with the original
@@ -97,6 +98,36 @@ export default function ProfitabilityTab({ stores = [], selectedStores = [], day
     // kept intentionally to preserve the original Analytics.jsx surface area.
     void profitPeriod; void profitDateFrom; void profitDateTo; void profitStores
 
+    // Named loader for the order-profitability table (greppable, reused by the
+    // button AND the pagination effect — previously the fetch lived inline in the
+    // button's onClick so Prev/Next changed the page counter but never refetched).
+    const loadOrderProfit = async () => {
+        setOrderProfitLoading(true)
+        try {
+            const params = new URLSearchParams()
+            if (selectedStores.length > 0) params.set('store_uids', selectedStores.join(','))
+            if (days) params.set('days', days.toString())
+            if (orderProfitStatus) params.set('status', orderProfitStatus)
+            params.set('skip', (orderProfitPage * 25).toString())
+            params.set('limit', '25')
+            const res = await authFetch(`${API_URL}/analytics/profitability/orders?${params}`)
+            const data = await res.json()
+            setOrderProfitData(data)
+        } catch (err) {
+            console.error('Failed to fetch order profitability:', err)
+        } finally {
+            setOrderProfitLoading(false)
+        }
+    }
+
+    // After the first explicit load, refetch whenever the page or status changes
+    // (Prev/Next + the status dropdown). Gated by ordersLoaded so the table doesn't
+    // auto-fetch on mount.
+    useEffect(() => {
+        if (ordersLoaded) loadOrderProfit()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [orderProfitPage, orderProfitStatus])
+
     return (
         <div className="space-y-6">
             {/* ═══ CONTRIBUTION MARGIN P&L ═══ */}
@@ -127,23 +158,12 @@ export default function ProfitabilityTab({ stores = [], selectedStores = [], day
                             <option value="cancelled">Cancelled</option>
                         </select>
                         <button
-                            onClick={async () => {
-                                setOrderProfitLoading(true)
-                                try {
-                                    const params = new URLSearchParams()
-                                    if (selectedStores.length > 0) params.set('store_uids', selectedStores.join(','))
-                                    if (days) params.set('days', days.toString())
-                                    if (orderProfitStatus) params.set('status', orderProfitStatus)
-                                    params.set('skip', (orderProfitPage * 25).toString())
-                                    params.set('limit', '25')
-                                    const res = await authFetch(`${API_URL}/analytics/profitability/orders?${params}`)
-                                    const data = await res.json()
-                                    setOrderProfitData(data)
-                                } catch (err) {
-                                    console.error('Failed to fetch order profitability:', err)
-                                } finally {
-                                    setOrderProfitLoading(false)
-                                }
+                            onClick={() => {
+                                // Reset to page 0 on an explicit (re)load; the effect
+                                // handles subsequent page/status-driven refetches.
+                                if (orderProfitPage !== 0) setOrderProfitPage(0)
+                                setOrdersLoaded(true)
+                                loadOrderProfit()
                             }}
                             disabled={orderProfitLoading}
                             className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center gap-1"

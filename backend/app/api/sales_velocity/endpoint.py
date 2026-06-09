@@ -9,7 +9,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 from zoneinfo import ZoneInfo
 
 from app.services.product_grouping import classify_stores, pick_best_primary
@@ -19,6 +19,7 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.analytics_cache import cached_analytics
 from app.core.timezone import (
     to_bucharest_iso,
     to_bucharest_date,
@@ -67,6 +68,7 @@ def _safe_div(a, b):
 
 
 @router.get("/sales-velocity")
+@cached_analytics("sales-velocity")
 async def get_sales_velocity(
     days: int = Query(30, ge=1, le=365),
     date_from: Optional[str] = Query(None),
@@ -113,7 +115,11 @@ async def get_sales_velocity(
         dt_from = start_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
         dt_to = end_of_today_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
-    period_days = max((dt_to - dt_from).days, 1)
+    # Inclusive day count: dt_to is end-of-day (23:59:59) of the LAST day, so the
+    # raw .days is N-1 for an N-day range. +1 makes velocity divide by the real
+    # number of days, lengthens the previous comparison period to match, and lets
+    # the daily chart loops render the final calendar day (Finding P).
+    period_days = max((dt_to - dt_from).days + 1, 1)
 
     # ── Per-store UTC boundaries (for timezone-aware filtering) ──────────
     # Pre-compute the UTC start/end for each store timezone so we can
@@ -149,9 +155,26 @@ async def get_sales_velocity(
     # Widen the query window by 2 hours to capture orders that might fall
     # inside a store's local date range but outside Bucharest boundaries.
     query_margin = timedelta(hours=2)
-    query = select(Order).where(
+    from app.core.order_filters import build_tag_exclusion_condition
+    from app.core.line_items_projection import PROJECTED_LINE_ITEMS_NAMED
+
+    _excl = await build_tag_exclusion_condition(db)
+    # Slim column-select + projected (named) line_items instead of full ORM rows —
+    # see app/core/line_items_projection. Items arrive as {sku,q,p,name}.
+    query = select(
+        Order.currency,
+        Order.frisbo_created_at,
+        Order.aggregated_status,
+        Order.shipment_status,
+        Order.fulfillment_status,
+        Order.store_uid,
+        Order.shipping_address,
+        Order.order_number,
+        PROJECTED_LINE_ITEMS_NAMED,
+    ).where(
         Order.frisbo_created_at >= prev_from - query_margin,
         Order.frisbo_created_at <= dt_to + query_margin,
+        _excl,  # drop excluded-tag orders (built-in test/sample + configured rules)
     )
 
     if store_uids:
@@ -160,7 +183,7 @@ async def get_sales_velocity(
             query = query.where(Order.store_uid.in_(uid_list))
 
     result = await db.execute(query)
-    all_orders = result.scalars().all()
+    all_orders = result.all()
 
     # ── FX rate preload for non-RON currencies ───────────────────────────
     from app.core.timezone import romania_today
@@ -455,14 +478,8 @@ async def get_sales_velocity(
     total_orders_all = len(all_orders)
 
     for order in all_orders:
-        # Parse line items
-        items_raw = order.line_items or []
-        if isinstance(items_raw, str):
-            try:
-                items_raw = json.loads(items_raw)
-            except (json.JSONDecodeError, TypeError):
-                items_raw = []
-
+        # Parse line items (projected {sku,q,p,name} items)
+        items_raw = order.li or []
         if not items_raw:
             continue
 
@@ -495,13 +512,12 @@ async def get_sales_velocity(
 
         # Parse items
         for item in items_raw:
-            inv = item.get("inventory_item", {}) or {}
-            sku = inv.get("sku", "") or ""
+            sku = item.get("sku", "") or ""
             if not sku:
                 continue
 
-            qty = float(item.get("quantity", 1) or 1)
-            price = float(item.get("price", 0) or 0)
+            qty = float(item.get("q", 1) or 1)
+            price = float(item.get("p", 0) or 0)
             # Convert price to RON using per-order date BNR rate
             order_currency = (order.currency or "RON").upper()
             if order_currency != "RON":
@@ -513,7 +529,7 @@ async def get_sales_velocity(
                 if fx is not None:
                     price = price * fx
             line_rev = price * qty
-            product_name = inv.get("title_1", "") or ""
+            product_name = item.get("name", "") or ""
 
             if is_current:
                 # Look up merged group for this SKU (nubra gets isolated)
@@ -730,7 +746,26 @@ async def get_sales_velocity(
 
         revenue = agg["revenue"]
         unit_cost = sku_cost_map.get(sku, 0)
-        velocity = _safe_div(units, period_days)
+
+        # First-sale-aware divisor (Finding I): a SKU first sold mid-window is
+        # divided only by the days it has actually been selling, so fresh winners
+        # aren't under-counted (and their days-of-stock isn't over-stated).
+        eff_days = period_days
+        sale_days = [
+            dk for dk, u in agg["daily_units"].items() if u > 0 and dk != "unknown"
+        ]
+        if sale_days:
+            try:
+                first_d = datetime.strptime(min(sale_days), "%Y-%m-%d").date()
+                from_d = to_bucharest(dt_from).date()
+                to_d = to_bucharest(dt_to).date()
+                eff_days = max(
+                    1, min(period_days, (to_d - max(from_d, first_d)).days + 1)
+                )
+            except (ValueError, TypeError):
+                eff_days = period_days
+
+        velocity = _safe_div(units, eff_days)
 
         # Previous period comparison
         prev = sku_previous.get(comp_key, {"units_sold": 0})
@@ -786,7 +821,7 @@ async def get_sales_velocity(
         # ::nubra-suffix mismatch in one shot.
         image_url = sku_image_map.get(comp_key, "") or sku_image_fallback.get(sku, "")
 
-        gross_velocity = _safe_div(gross_units, period_days)
+        gross_velocity = _safe_div(gross_units, eff_days)
         # Use gross velocity (all orders placed) for stock coverage estimate;
         # net velocity may be 0 for short windows where deliveries haven't happened yet
         effective_velocity = gross_velocity if gross_velocity > 0 else velocity

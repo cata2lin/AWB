@@ -1,8 +1,17 @@
 /**
  * P&L Excel Export Utility
  * Exports P&L and P&L Comparativ data to .xlsx files using SheetJS.
+ *
+ * SheetJS (~7 MB on disk) is loaded ON DEMAND via dynamic import so it stays out
+ * of the main bundle — export is a rare on-click action.
  */
-import * as XLSX from 'xlsx'
+let _xlsxPromise = null
+function getXLSX() {
+    if (!_xlsxPromise) {
+        _xlsxPromise = import('xlsx').then((m) => m.default || m)
+    }
+    return _xlsxPromise
+}
 
 /**
  * Format a number as Romanian-style money (e.g., 1.234,56)
@@ -82,9 +91,10 @@ const buildPnlRows = (pnl, config) => {
 /**
  * Export single-store P&L to Excel (one sheet per store + total)
  */
-export function exportPnlToExcel(profitabilityData) {
+export async function exportPnlToExcel(profitabilityData) {
     if (!profitabilityData) return
 
+    const XLSX = await getXLSX()
     const wb = XLSX.utils.book_new()
     const pnl = profitabilityData.pnl
     const config = profitabilityData.config || {}
@@ -176,9 +186,10 @@ export function exportPnlToExcel(profitabilityData) {
 /**
  * Export P&L Comparativ (multi-store side-by-side) to Excel
  */
-export function exportPnlComparativToExcel(profitabilityData) {
+export async function exportPnlComparativToExcel(profitabilityData) {
     if (!profitabilityData) return
 
+    const XLSX = await getXLSX()
     const wb = XLSX.utils.book_new()
     const pnl = profitabilityData.pnl
     const config = profitabilityData.config || {}

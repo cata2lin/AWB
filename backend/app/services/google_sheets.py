@@ -8,10 +8,11 @@ marketing_daily_costs DB table.
 Source sheets: "Raport Zilnic 2" (all brands), "Grandia" (Grandia only)
 Columns: A=Date, B=Brand, C=Facebook, D=TikTok, S=Google Ads
 """
+
 import logging
 import csv
 import io
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Optional, Dict
 from collections import defaultdict
 
@@ -37,7 +38,11 @@ BRAND_TO_STORE = {
     "bonhaus pl": "bonhaus.pl",
     "bonhaus bg": "bonhaus.bg",
     "bonhaus cz": "bonhaus.cz",
-    "bonhaus ro": "bonhausro.ro",
+    # The Bonhaus-RO brand's ORDERS live under the AWB store historically named
+    # "casaofertelor.ro" (store_uid 95c51908…, 54k BON-prefixed orders, no other
+    # store carries BON). Mapping its marketing to a non-existent "bonhausro.ro"
+    # orphaned ~1.23M RON of spend in the overall P&L total with no per-store line.
+    "bonhaus ro": "casaofertelor.ro",
     "apreciat": "apreciat.ro",
     "belasil": "belasil.ro",
     "carpetto": "carpetto.ro",
@@ -92,68 +97,99 @@ async def _fetch_sheet_data(sheet_name: str) -> list:
         )
         logger.info(f"📊 Fetching CPA data from sheet: {sheet_name}")
         resp = await client.get(url, follow_redirects=True)
-        
+
         if resp.status_code != 200:
-            logger.error(f"Failed to fetch sheet '{sheet_name}': HTTP {resp.status_code}")
+            logger.error(
+                f"Failed to fetch sheet '{sheet_name}': HTTP {resp.status_code}"
+            )
             return []
-        
+
         reader = csv.reader(io.StringIO(resp.text))
         rows = list(reader)
-        logger.info(f"📊 Got {len(rows)-1} data rows from '{sheet_name}'")
+        logger.info(f"📊 Got {len(rows) - 1} data rows from '{sheet_name}'")
         return rows
 
 
-async def sync_marketing_costs(db: AsyncSession, date_from: date, date_to: date) -> dict:
+async def sync_marketing_costs(
+    db: AsyncSession, date_from: date, date_to: date
+) -> dict:
     """
     Fetch marketing costs from Google Sheets and upsert into the DB cache.
-    
+
     Returns summary stats of what was synced.
     """
     from app.models.marketing_daily_cost import MarketingDailyCost
-    
+
     # Collect all daily records: { (date, store_name): { facebook, tiktok, google, source_sheet } }
     daily_records = {}
-    
+    sheets_ok = 0
+    sheets_failed = []
+
     for sheet_name in CPA_SHEETS:
         try:
             rows = await _fetch_sheet_data(sheet_name)
             if len(rows) < 2:
+                sheets_failed.append(sheet_name)
                 continue
-            
+            sheets_ok += 1
+
             for row in rows[1:]:
                 if len(row) < 4:
                     continue
-                
+
                 row_date = _parse_date(row[0])
                 if row_date is None:
                     continue
                 if row_date < date_from or row_date > date_to:
                     continue
-                
+
                 # Brand mapping
                 brand = row[1].strip() if len(row) > 1 else ""
                 if sheet_name == "Grandia":
                     brand = "Grandia"
-                
+
                 store_name = BRAND_TO_STORE.get(brand.lower().strip())
                 if not store_name:
                     continue
-                
+
                 facebook = _parse_float(row[2]) if len(row) > 2 else 0.0
                 tiktok = _parse_float(row[3]) if len(row) > 3 else 0.0
                 google = _parse_float(row[18]) if len(row) > 18 else 0.0
-                
+
                 key = (row_date, store_name)
                 if key not in daily_records:
-                    daily_records[key] = {'facebook': 0, 'tiktok': 0, 'google': 0, 'source_sheet': sheet_name}
-                
-                daily_records[key]['facebook'] += facebook
-                daily_records[key]['tiktok'] += tiktok
-                daily_records[key]['google'] += google
-                
+                    daily_records[key] = {
+                        "facebook": 0,
+                        "tiktok": 0,
+                        "google": 0,
+                        "source_sheet": sheet_name,
+                    }
+
+                daily_records[key]["facebook"] += facebook
+                daily_records[key]["tiktok"] += tiktok
+                daily_records[key]["google"] += google
+
         except Exception as e:
+            sheets_failed.append(sheet_name)
             logger.error(f"Error reading sheet '{sheet_name}': {e}")
-    
+
+    # NON-DESTRUCTIVE GUARD: if NO sheet returned data, do NOT delete the range —
+    # a transient fetch failure (gviz hiccup, network) would otherwise wipe good
+    # cached marketing to 0 with no error surfaced to the P&L. Leave the DB untouched.
+    if sheets_ok == 0:
+        logger.error(
+            f"📊 Marketing sync ABORTED for {date_from}..{date_to}: all sheets "
+            f"failed/empty ({sheets_failed}). DB left untouched to avoid zeroing it."
+        )
+        return {
+            "records_synced": 0,
+            "error": "all marketing sheets failed/empty — DB left untouched",
+            "sheets_failed": sheets_failed,
+            "date_from": str(date_from),
+            "date_to": str(date_to),
+            "stores": 0,
+        }
+
     # Delete existing records in the date range, then insert fresh
     await db.execute(
         delete(MarketingDailyCost).where(
@@ -163,29 +199,31 @@ async def sync_marketing_costs(db: AsyncSession, date_from: date, date_to: date)
             )
         )
     )
-    
+
     inserted = 0
     for (cost_date, store_name), costs in daily_records.items():
         record = MarketingDailyCost(
             cost_date=cost_date,
             store_name=store_name,
-            facebook=round(costs['facebook'], 2),
-            tiktok=round(costs['tiktok'], 2),
-            google=round(costs['google'], 2),
-            source_sheet=costs['source_sheet'],
+            facebook=round(costs["facebook"], 2),
+            tiktok=round(costs["tiktok"], 2),
+            google=round(costs["google"], 2),
+            source_sheet=costs["source_sheet"],
             synced_at=datetime.utcnow(),
         )
         db.add(record)
         inserted += 1
-    
+
     await db.commit()
-    
-    logger.info(f"📊 Marketing costs synced: {inserted} daily records for {date_from} to {date_to}")
+
+    logger.info(
+        f"📊 Marketing costs synced: {inserted} daily records for {date_from} to {date_to}"
+    )
     return {
-        'records_synced': inserted,
-        'date_from': str(date_from),
-        'date_to': str(date_to),
-        'stores': len(set(sn for (_, sn) in daily_records.keys())),
+        "records_synced": inserted,
+        "date_from": str(date_from),
+        "date_to": str(date_to),
+        "stores": len(set(sn for (_, sn) in daily_records.keys())),
     }
 
 
@@ -196,7 +234,7 @@ async def get_marketing_costs_from_db(
 ) -> Dict[str, Dict[str, float]]:
     """
     Read marketing costs from the DB cache, aggregated per store for the date range.
-    
+
     Returns:
         {
             store_name: { "facebook": X, "tiktok": Y, "google": Z, "total": T },
@@ -204,7 +242,7 @@ async def get_marketing_costs_from_db(
         }
     """
     from app.models.marketing_daily_cost import MarketingDailyCost
-    
+
     result = await db.execute(
         select(MarketingDailyCost).where(
             and_(
@@ -214,25 +252,27 @@ async def get_marketing_costs_from_db(
         )
     )
     records = result.scalars().all()
-    
-    aggregated = defaultdict(lambda: {"facebook": 0.0, "tiktok": 0.0, "google": 0.0, "total": 0.0})
-    
+
+    aggregated = defaultdict(
+        lambda: {"facebook": 0.0, "tiktok": 0.0, "google": 0.0, "total": 0.0}
+    )
+
     for r in records:
         aggregated[r.store_name]["facebook"] += r.facebook
         aggregated[r.store_name]["tiktok"] += r.tiktok
         aggregated[r.store_name]["google"] += r.google
         aggregated[r.store_name]["total"] += r.facebook + r.tiktok + r.google
-        
+
         aggregated["__total__"]["facebook"] += r.facebook
         aggregated["__total__"]["tiktok"] += r.tiktok
         aggregated["__total__"]["google"] += r.google
         aggregated["__total__"]["total"] += r.facebook + r.tiktok + r.google
-    
+
     # Round all values
     for store_data in aggregated.values():
         for k in store_data:
             store_data[k] = round(store_data[k], 2)
-    
+
     return dict(aggregated)
 
 
@@ -248,10 +288,12 @@ async def get_marketing_costs(
     # Try DB cache first
     if db is not None:
         cached = await get_marketing_costs_from_db(db, date_from, date_to)
-        if cached and '__total__' in cached and cached['__total__']['total'] > 0:
-            logger.info(f"📊 Marketing costs from DB cache: {cached['__total__']['total']:.2f} total")
+        if cached and "__total__" in cached and cached["__total__"]["total"] > 0:
+            logger.info(
+                f"📊 Marketing costs from DB cache: {cached['__total__']['total']:.2f} total"
+            )
             return cached
-        
+
         # Cache miss — sync from Google Sheets then read from cache
         logger.info("📊 Marketing costs cache miss — syncing from Google Sheets...")
         try:
@@ -261,55 +303,57 @@ async def get_marketing_costs(
                 return cached
         except Exception as e:
             logger.error(f"Failed to sync marketing costs: {e}")
-    
+
     # Fallback: live fetch from Google Sheets (no caching)
     return await _fetch_live(date_from, date_to)
 
 
 async def _fetch_live(date_from: date, date_to: date) -> Dict[str, Dict[str, float]]:
     """Direct fetch from Google Sheets without caching (fallback)."""
-    result = defaultdict(lambda: {"facebook": 0.0, "tiktok": 0.0, "google": 0.0, "total": 0.0})
-    
+    result = defaultdict(
+        lambda: {"facebook": 0.0, "tiktok": 0.0, "google": 0.0, "total": 0.0}
+    )
+
     for sheet_name in CPA_SHEETS:
         try:
             rows = await _fetch_sheet_data(sheet_name)
             if len(rows) < 2:
                 continue
-            
+
             for row in rows[1:]:
                 if len(row) < 4:
                     continue
-                
+
                 row_date = _parse_date(row[0])
                 if row_date is None or row_date < date_from or row_date > date_to:
                     continue
-                
+
                 brand = row[1].strip() if len(row) > 1 else ""
                 if sheet_name == "Grandia":
                     brand = "Grandia"
-                
+
                 store_name = BRAND_TO_STORE.get(brand.lower().strip())
                 if not store_name:
                     continue
-                
+
                 facebook = _parse_float(row[2]) if len(row) > 2 else 0.0
                 tiktok = _parse_float(row[3]) if len(row) > 3 else 0.0
                 google = _parse_float(row[18]) if len(row) > 18 else 0.0
-                
+
                 result[store_name]["facebook"] += facebook
                 result[store_name]["tiktok"] += tiktok
                 result[store_name]["google"] += google
                 result[store_name]["total"] += facebook + tiktok + google
-                
+
                 result["__total__"]["facebook"] += facebook
                 result["__total__"]["tiktok"] += tiktok
                 result["__total__"]["google"] += google
                 result["__total__"]["total"] += facebook + tiktok + google
         except Exception as e:
             logger.error(f"Error reading sheet '{sheet_name}': {e}")
-    
+
     for store_data in result.values():
         for k in store_data:
             store_data[k] = round(store_data[k], 2)
-    
+
     return dict(result)

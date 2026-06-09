@@ -1,49 +1,59 @@
 """
 Application configuration using Pydantic Settings.
 """
+
 import json
+from pathlib import Path
 from typing import List, Dict
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from dotenv import load_dotenv
+
+# Load .env into os.environ so os.getenv-based integrations (the eMAG / Trendyol
+# clients) see the values too — pydantic-settings reads .env into Settings only,
+# not into os.environ. Explicit path so it works regardless of cwd.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
+
     # Database
     database_url: str = "postgresql://postgres:123@localhost:5432/awbprint"
-    
+
     # Frisbo API
     frisbo_api_url: str = "https://ingest.apis.store-view.frisbo.dev"
     frisbo_api_token: str = ""  # Legacy single token (backward compat)
     frisbo_org_tokens: str = "[]"  # JSON array of {name, token} objects
-    
+
     # Rate limiting (20 req/sec as per Frisbo docs)
     frisbo_rate_limit: int = 20
-    
+
     # Sync interval (minutes)
     sync_interval_minutes: int = 10
-    
+
     # JWT Auth
     jwt_secret_key: str = "changeme"
     jwt_expiry_hours: int = 24
-    
+
     # PDF Storage (relative path works for local dev)
     pdf_storage_path: str = "./storage"
-    
+
     # TOM API (Purchase Order integration — https://tom.arona.ro)
     tom_base_url: str = ""
     tom_api_key_id: str = ""
     tom_hmac_secret: str = ""
     tom_source_code: str = "VIGO"
-    
+
     # Inventory Sync DB (external stock source — same PG server, different database)
-    inventory_sync_db_url: str = "postgresql://scraper:Scraper123%23@38.242.226.83/InventorySync"
-    
+    inventory_sync_db_url: str = (
+        "postgresql://scraper:Scraper123%23@38.242.226.83/InventorySync"
+    )
+
     def get_org_tokens(self) -> List[Dict[str, str]]:
         """
         Parse and return all organization tokens.
-        
+
         Returns a list of {name, token} dicts.
         Falls back to the legacy single token if FRISBO_ORG_TOKENS is empty.
         """
@@ -53,21 +63,22 @@ class Settings(BaseSettings):
                 return tokens
         except (json.JSONDecodeError, TypeError):
             pass
-        
+
         # Fallback: use legacy single token
         if self.frisbo_api_token:
             return [{"name": "default", "token": self.frisbo_api_token}]
-        
+
         return []
-    
+
     def get_org_token_map(self) -> Dict[str, Dict[str, str]]:
         """
         Build a mapping of organization_uid -> {name, token} by decoding the JWT payloads.
-        
+
         Each Frisbo JWT contains the org_uid in its payload:
           {"iat": ..., "organization_uid": "..."}
         """
         import base64
+
         result = {}
         for t in self.get_org_tokens():
             try:
@@ -80,15 +91,20 @@ class Settings(BaseSettings):
             except Exception:
                 continue
         return result
-    
+
     def get_token_for_org(self, org_uid: str) -> Dict[str, str]:
         """Find the correct token config for a given organization_uid. Falls back to first token."""
         org_map = self.get_org_token_map()
-        return org_map.get(org_uid, self.get_org_tokens()[0] if self.get_org_tokens() else {})
-    
+        return org_map.get(
+            org_uid, self.get_org_tokens()[0] if self.get_org_tokens() else {}
+        )
+
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = (
+            "ignore"  # tolerate extra .env keys (TRENDYOL_*, EMAG_*, JWT_SECRET_KEY)
+        )
 
 
 @lru_cache

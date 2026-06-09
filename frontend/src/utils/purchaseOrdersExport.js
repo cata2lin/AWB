@@ -1,10 +1,10 @@
 /**
  * Purchase Orders Excel Export.
  * Uses SheetJS to generate XLSX with reorder analytics.
+ * SheetJS is loaded on demand (dynamic import) to keep it out of the main bundle.
  */
-import * as XLSX from 'xlsx'
-
-export function exportPurchaseOrdersToExcel(products, meta) {
+export async function exportPurchaseOrdersToExcel(products, meta) {
+    const XLSX = await import('xlsx').then((m) => m.default || m)
     const rows = products.map((p, i) => ({
         '#': i + 1,
         'SKU': p.sku,

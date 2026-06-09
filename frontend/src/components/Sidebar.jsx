@@ -133,7 +133,7 @@ function NavGroup({ item, pathname, collapsed }) {
     )
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false }) {
     const location = useLocation()
     const collapsed = useAppStore((s) => s.sidebarCollapsed)
     const toggle = useAppStore((s) => s.toggleSidebar)
@@ -154,7 +154,9 @@ export default function Sidebar() {
 
     return (
         <aside
-            className={`${widthClass} h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-[width] duration-200 ease-out`}
+            className={`${widthClass} h-screen bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-[width,transform] duration-200 ease-out
+                fixed inset-y-0 left-0 z-40 md:static md:z-auto md:translate-x-0
+                ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}
         >
             {/* Logo + collapse toggle */}
             <div className={`h-14 flex items-center ${collapsed ? 'justify-center px-2' : 'px-4 justify-between'} border-b border-zinc-200 dark:border-zinc-800`}>

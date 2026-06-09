@@ -20,6 +20,7 @@ Edge cases handled:
   - Store include/exclude filters applied at ORDER level (not product level)
   - min_orders noise filter to exclude long-tail anomalies
 """
+
 import json
 import logging
 from collections import defaultdict
@@ -32,8 +33,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.timezone import date_str_to_utc_start, date_str_to_utc_end, romania_now, to_bucharest_date
-from app.models import Order, Store, SkuCost
+from app.core.analytics_cache import cached_analytics
+from app.core.timezone import (
+    date_str_to_utc_start,
+    date_str_to_utc_end,
+)
+from app.models import Order, Store
 from app.models.product import Product
 from app.services.product_grouping import classify_stores, pick_best_primary
 
@@ -42,12 +47,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Status groupings (identical to store deliverability endpoint) ──────────
-DELIVERED_STATUSES = frozenset({'delivered', 'customer_pickup', 'in_parcel_locker'})
-RETURNED_STATUSES  = frozenset({'back_to_sender', 'returning_to_sender', 'incorrect_address', 'lost'})
-REFUSED_STATUSES   = frozenset({'refused', 'unsuccessful_delivery'})
-IN_TRANSIT_STATUSES = frozenset({'in_transit', 'fulfilled', 'redirected', 'deferred_delivery', 'on_hold'})
-OUT_FOR_DELIVERY_STATUSES = frozenset({'out_for_delivery'})
-PROCESSING_STATUSES = frozenset({'processing', 'not_fulfilled'})
+DELIVERED_STATUSES = frozenset({"delivered", "customer_pickup", "in_parcel_locker"})
+RETURNED_STATUSES = frozenset(
+    {"back_to_sender", "returning_to_sender", "incorrect_address", "lost"}
+)
+REFUSED_STATUSES = frozenset({"refused", "unsuccessful_delivery"})
+IN_TRANSIT_STATUSES = frozenset(
+    {"in_transit", "fulfilled", "redirected", "deferred_delivery", "on_hold"}
+)
+OUT_FOR_DELIVERY_STATUSES = frozenset({"out_for_delivery"})
+PROCESSING_STATUSES = frozenset({"processing", "not_fulfilled"})
 
 # Nubra shares barcodes/SKUs with other stores but is a completely separate brand.
 # Never merge Nubra orders into the same product group as other stores.
@@ -57,33 +66,49 @@ NUBRA_UID = "7d1a2e21-7efb-4cd7-b4e7-09ef875430a9-1774614410-JJ99XONT29"
 def _get_status_bucket(status: Optional[str]) -> str:
     """Map aggregated_status → one of: delivered, returned, refused, in_transit, out_for_delivery, processing, cancelled, other."""
     if not status:
-        return 'processing'
+        return "processing"
     s = status.lower()
     if s in DELIVERED_STATUSES:
-        return 'delivered'
+        return "delivered"
     if s in RETURNED_STATUSES:
-        return 'returned'
+        return "returned"
     if s in REFUSED_STATUSES:
-        return 'refused'
+        return "refused"
     if s in IN_TRANSIT_STATUSES:
-        return 'in_transit'
+        return "in_transit"
     if s in OUT_FOR_DELIVERY_STATUSES:
-        return 'out_for_delivery'
-    if s == 'cancelled':
-        return 'cancelled'
+        return "out_for_delivery"
+    if s == "cancelled":
+        return "cancelled"
     if s in PROCESSING_STATUSES:
-        return 'processing'
-    return 'other'
+        return "processing"
+    return "other"
 
 
 @router.get("/product-deliverability")
+@cached_analytics("product-deliverability")
 async def get_product_deliverability(
-    store_uids: Optional[str] = Query(None, description="Include only these store UIDs (comma-separated)"),
-    exclude_store_uids: Optional[str] = Query(None, description="Exclude these store UIDs (comma-separated)"),
-    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD (order created_at)"),
-    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD (order created_at)"),
-    days: Optional[int] = Query(None, ge=1, le=730, description="Last N days (alternative to date_from/date_to)"),
-    min_orders: int = Query(5, ge=1, le=500, description="Minimum order appearances to include a product (noise filter)"),
+    store_uids: Optional[str] = Query(
+        None, description="Include only these store UIDs (comma-separated)"
+    ),
+    exclude_store_uids: Optional[str] = Query(
+        None, description="Exclude these store UIDs (comma-separated)"
+    ),
+    date_from: Optional[str] = Query(
+        None, description="Start date YYYY-MM-DD (order created_at)"
+    ),
+    date_to: Optional[str] = Query(
+        None, description="End date YYYY-MM-DD (order created_at)"
+    ),
+    days: Optional[int] = Query(
+        None, ge=1, le=730, description="Last N days (alternative to date_from/date_to)"
+    ),
+    min_orders: int = Query(
+        5,
+        ge=1,
+        le=500,
+        description="Minimum order appearances to include a product (noise filter)",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -104,14 +129,24 @@ async def get_product_deliverability(
             hour=0, minute=0, second=0, microsecond=0
         )
         dt_from = start_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-        dt_to = now_buc.replace(hour=23, minute=59, second=59).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        dt_to = (
+            now_buc.replace(hour=23, minute=59, second=59)
+            .astimezone(ZoneInfo("UTC"))
+            .replace(tzinfo=None)
+        )
     else:
         # Default: last 30 days
         tz = ZoneInfo("Europe/Bucharest")
         now_buc = datetime.now(tz)
-        start_buc = (now_buc - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_buc = (now_buc - timedelta(days=29)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         dt_from = start_buc.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-        dt_to = now_buc.replace(hour=23, minute=59, second=59).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        dt_to = (
+            now_buc.replace(hour=23, minute=59, second=59)
+            .astimezone(ZoneInfo("UTC"))
+            .replace(tzinfo=None)
+        )
 
     # ── 2. Parse store filters ─────────────────────────────────────────────
     include_uids: Optional[Set[str]] = None
@@ -126,9 +161,19 @@ async def get_product_deliverability(
     # NOTE: asyncio.gather on the same SQLAlchemy AsyncSession is NOT safe —
     # async sessions use a single underlying connection and cannot handle
     # concurrent awaits. All queries must be sequential.
-    order_query = select(Order).where(
+    from app.core.order_filters import build_tag_exclusion_condition
+    from app.core.line_items_projection import PROJECTED_LINE_ITEMS
+
+    _excl = await build_tag_exclusion_condition(db)
+    # Slim column-select + projected line_items (not full ORM) — see
+    # app/core/line_items_projection. Only aggregated_status + store_uid + the
+    # slimmed {sku,q,p} items are read below.
+    order_query = select(
+        Order.aggregated_status, Order.store_uid, PROJECTED_LINE_ITEMS
+    ).where(
         Order.frisbo_created_at >= dt_from,
         Order.frisbo_created_at <= dt_to,
+        _excl,  # drop excluded-tag orders (built-in test/sample + configured rules)
     )
     if include_uids:
         order_query = order_query.where(Order.store_uid.in_(list(include_uids)))
@@ -136,7 +181,7 @@ async def get_product_deliverability(
         order_query = order_query.where(Order.store_uid.notin_(list(exclude_uids)))
 
     orders_res = await db.execute(order_query)
-    all_orders = orders_res.scalars().all()
+    all_orders = orders_res.all()
 
     stores_res = await db.execute(select(Store))
     all_stores = stores_res.scalars().all()
@@ -144,8 +189,8 @@ async def get_product_deliverability(
 
     products_res = await db.execute(
         select(Product)
-        .where(Product.sku.isnot(None), Product.sku != '')
-        .where(Product.state == 'active')
+        .where(Product.sku.isnot(None), Product.sku != "")
+        .where(Product.state == "active")
     )
     all_products = list(products_res.scalars().all())
 
@@ -184,9 +229,11 @@ async def get_product_deliverability(
             ungrouped.append(p)
 
     # group_key → metadata
-    master_sku_map: Dict[str, str] = {}       # any variant SKU → group_key
-    store_sku_map: Dict[tuple, str] = {}      # (store_uid, sku) → group_key
-    group_meta: Dict[str, dict] = {}          # group_key → {display_sku, name, stock, image, store_uids}
+    master_sku_map: Dict[str, str] = {}  # any variant SKU → group_key
+    store_sku_map: Dict[tuple, str] = {}  # (store_uid, sku) → group_key
+    group_meta: Dict[
+        str, dict
+    ] = {}  # group_key → {display_sku, name, stock, image, store_uids}
 
     def _extract_store_uids(p) -> list:
         uids = p.store_uids or []
@@ -208,7 +255,7 @@ async def get_product_deliverability(
                 return None
         if isinstance(imgs, list) and imgs:
             img = imgs[0]
-            return img.get('src') if isinstance(img, dict) else str(img)
+            return img.get("src") if isinstance(img, dict) else str(img)
         return None
 
     def process_group(group: list, fallback_key: str):
@@ -218,7 +265,9 @@ async def get_product_deliverability(
         if not key:
             return
 
-        best, has_explicit = pick_best_primary(group, ro_store_uids, intl_store_uids, uid_to_product)
+        best, has_explicit = pick_best_primary(
+            group, ro_store_uids, intl_store_uids, uid_to_product
+        )
 
         # Stock: prefer the barcode-bearing product
         stock_product = best
@@ -271,46 +320,58 @@ async def get_product_deliverability(
     ZERO = lambda: {
         "total_orders": 0,
         "total_units": 0,
-        "delivered": 0, "delivered_units": 0,
-        "returned": 0,  "returned_units": 0,
-        "refused": 0,   "refused_units": 0,
+        "delivered": 0,
+        "delivered_units": 0,
+        "returned": 0,
+        "returned_units": 0,
+        "refused": 0,
+        "refused_units": 0,
         "cancelled": 0,
-        "in_transit": 0, "out_for_delivery": 0,
+        "in_transit": 0,
+        "out_for_delivery": 0,
         "processing": 0,
         "other": 0,
         # Store breakdown: store_uid → counts
-        "by_store": defaultdict(lambda: {"orders": 0, "delivered": 0, "returned": 0, "refused": 0, "cancelled": 0}),
+        "by_store": defaultdict(
+            lambda: {
+                "orders": 0,
+                "delivered": 0,
+                "returned": 0,
+                "refused": 0,
+                "cancelled": 0,
+                "in_transit": 0,
+                "out_for_delivery": 0,
+            }
+        ),
     }
 
     agg: Dict[str, dict] = defaultdict(ZERO)
 
     for order in all_orders:
-        items_raw = order.line_items or []
-        if isinstance(items_raw, str):
-            try:
-                items_raw = json.loads(items_raw)
-            except Exception:
-                items_raw = []
+        items_raw = order.li or []  # projected {sku,q,p} items
         if not items_raw:
             continue
 
-        status_bucket = _get_status_bucket(order.aggregated_status)
+        bucket = _get_status_bucket(order.aggregated_status)
         store_uid = order.store_uid or ""
 
+        # Resolve every line item to its product group_key first, summing units.
+        # An order then counts ONCE per DISTINCT group_key (Finding O) — so a SKU
+        # repeated on two lines, or two sibling variants that collapse into one
+        # barcode group, no longer inflate that group's order count.
+        units_by_gk: Dict[str, int] = defaultdict(int)
         for item in items_raw:
-            inv = item.get("inventory_item", {}) or {}
-            sku = (inv.get("sku", "") or item.get("sku", "") or "").strip()
+            sku = (item.get("sku", "") or "").strip()
             if not sku:
                 continue
+            qty = int(float(item.get("q", 1) or 1))
+            units_by_gk[_group_key(sku, store_uid)] += qty
 
-            qty = int(float(item.get("quantity", 1) or 1))
-            gk = _group_key(sku, store_uid)
-
+        for gk, qty in units_by_gk.items():
             g = agg[gk]
             g["total_orders"] += 1
             g["total_units"] += qty
 
-            bucket = status_bucket
             g[bucket] = g.get(bucket, 0) + 1
             if bucket == "delivered":
                 g["delivered_units"] += qty
@@ -320,18 +381,32 @@ async def get_product_deliverability(
                 g["refused_units"] += qty
 
             # Per-store breakdown
-            g["by_store"][store_uid]["orders"] += 1
-            if bucket in ("delivered", "returned", "refused", "cancelled"):
-                g["by_store"][store_uid][bucket] += 1
+            bs = g["by_store"][store_uid]
+            bs["orders"] += 1
+            if bucket in (
+                "delivered",
+                "returned",
+                "refused",
+                "cancelled",
+                "in_transit",
+                "out_for_delivery",
+            ):
+                bs[bucket] = bs.get(bucket, 0) + 1
 
     # ── 6. Build response ─────────────────────────────────────────────────
     products_out = []
     totals = {
-        "total_orders": 0, "total_units": 0,
-        "delivered": 0, "delivered_units": 0,
-        "returned": 0, "returned_units": 0,
-        "refused": 0, "refused_units": 0,
-        "cancelled": 0, "in_transit": 0, "out_for_delivery": 0,
+        "total_orders": 0,
+        "total_units": 0,
+        "delivered": 0,
+        "delivered_units": 0,
+        "returned": 0,
+        "returned_units": 0,
+        "refused": 0,
+        "refused_units": 0,
+        "cancelled": 0,
+        "in_transit": 0,
+        "out_for_delivery": 0,
         "processing": 0,
     }
 
@@ -339,39 +414,62 @@ async def get_product_deliverability(
         if g["total_orders"] < min_orders:
             continue
 
-        meta = group_meta.get(gk, {
-            "display_sku": gk.split("::")[0],
-            "name": gk.split("::")[0],
-            "stock": None,
-            "image": None,
-            "store_uids": set(),
-            "barcode": "",
-        })
+        meta = group_meta.get(
+            gk,
+            {
+                "display_sku": gk.split("::")[0],
+                "name": gk.split("::")[0],
+                "stock": None,
+                "image": None,
+                "store_uids": set(),
+                "barcode": "",
+            },
+        )
 
         # Shipped = everything that physically left the warehouse
-        shipped = g["delivered"] + g["in_transit"] + g["out_for_delivery"] + g["returned"] + g["refused"]
+        shipped = (
+            g["delivered"]
+            + g["in_transit"]
+            + g["out_for_delivery"]
+            + g["returned"]
+            + g["refused"]
+        )
         total = g["total_orders"]
 
-        delivery_rate     = round(g["delivered"] / shipped * 100, 2) if shipped else 0.0
-        return_rate       = round((g["returned"] + g["refused"]) / shipped * 100, 2) if shipped else 0.0
-        refusal_rate      = round(g["refused"] / shipped * 100, 2) if shipped else 0.0
+        delivery_rate = round(g["delivered"] / shipped * 100, 2) if shipped else 0.0
+        return_rate = (
+            round((g["returned"] + g["refused"]) / shipped * 100, 2) if shipped else 0.0
+        )
+        refusal_rate = round(g["refused"] / shipped * 100, 2) if shipped else 0.0
         cancellation_rate = round(g["cancelled"] / total * 100, 2) if total else 0.0
-        expedition_rate   = round(shipped / total * 100, 2) if total else 0.0
+        expedition_rate = round(shipped / total * 100, 2) if total else 0.0
 
         # Store breakdown list
         by_store = []
         for s_uid, s_data in g["by_store"].items():
-            s_shipped = s_data["delivered"] + s_data.get("returned", 0) + s_data.get("refused", 0)
-            by_store.append({
-                "store_uid": s_uid,
-                "store_name": stores_map.get(s_uid, s_uid),
-                "orders": s_data["orders"],
-                "delivered": s_data["delivered"],
-                "returned": s_data.get("returned", 0),
-                "refused": s_data.get("refused", 0),
-                "cancelled": s_data.get("cancelled", 0),
-                "delivery_rate": round(s_data["delivered"] / s_shipped * 100, 2) if s_shipped else 0.0,
-            })
+            # Same "shipped" definition as the group/store-level report:
+            # delivered + in_transit + out_for_delivery + returned + refused (Finding N).
+            s_shipped = (
+                s_data["delivered"]
+                + s_data.get("in_transit", 0)
+                + s_data.get("out_for_delivery", 0)
+                + s_data.get("returned", 0)
+                + s_data.get("refused", 0)
+            )
+            by_store.append(
+                {
+                    "store_uid": s_uid,
+                    "store_name": stores_map.get(s_uid, s_uid),
+                    "orders": s_data["orders"],
+                    "delivered": s_data["delivered"],
+                    "returned": s_data.get("returned", 0),
+                    "refused": s_data.get("refused", 0),
+                    "cancelled": s_data.get("cancelled", 0),
+                    "delivery_rate": round(s_data["delivered"] / s_shipped * 100, 2)
+                    if s_shipped
+                    else 0.0,
+                }
+            )
         by_store.sort(key=lambda x: x["orders"], reverse=True)
 
         row = {
@@ -382,8 +480,9 @@ async def get_product_deliverability(
             "image": meta["image"],
             "stock_available": meta["stock"],
             "store_uids": list(meta["store_uids"]),
-            "store_names": [stores_map.get(u, u) for u in meta["store_uids"] if u in stores_map],
-
+            "store_names": [
+                stores_map.get(u, u) for u in meta["store_uids"] if u in stores_map
+            ],
             # Counts
             "total_orders": total,
             "total_units": g["total_units"],
@@ -397,23 +496,31 @@ async def get_product_deliverability(
             "in_transit": g["in_transit"] + g["out_for_delivery"],
             "processing": g["processing"],
             "shipped": shipped,
-
             # Rates
             "delivery_rate": delivery_rate,
             "return_rate": return_rate,
             "refusal_rate": refusal_rate,
             "cancellation_rate": cancellation_rate,
             "expedition_rate": expedition_rate,
-
             # Store breakdown
             "by_store": by_store,
         }
         products_out.append(row)
 
         # Accumulate totals
-        for k in ("total_orders", "total_units", "delivered", "delivered_units",
-                  "returned", "returned_units", "refused", "refused_units",
-                  "cancelled", "in_transit", "processing"):
+        for k in (
+            "total_orders",
+            "total_units",
+            "delivered",
+            "delivered_units",
+            "returned",
+            "returned_units",
+            "refused",
+            "refused_units",
+            "cancelled",
+            "in_transit",
+            "processing",
+        ):
             totals[k] = totals.get(k, 0) + g.get(k, 0)
         totals["in_transit"] += g.get("out_for_delivery", 0)
 
@@ -421,15 +528,29 @@ async def get_product_deliverability(
     products_out.sort(key=lambda x: x["total_orders"], reverse=True)
 
     # Compute aggregate rates for totals row
-    shipped_t = (totals["delivered"] + totals["in_transit"] +
-                 totals["returned"] + totals["refused"])
+    shipped_t = (
+        totals["delivered"]
+        + totals["in_transit"]
+        + totals["returned"]
+        + totals["refused"]
+    )
     total_t = totals["total_orders"]
     totals["shipped"] = shipped_t
-    totals["delivery_rate"]     = round(totals["delivered"] / shipped_t * 100, 2) if shipped_t else 0.0
-    totals["return_rate"]       = round((totals["returned"] + totals["refused"]) / shipped_t * 100, 2) if shipped_t else 0.0
-    totals["refusal_rate"]      = round(totals["refused"] / shipped_t * 100, 2) if shipped_t else 0.0
-    totals["cancellation_rate"] = round(totals["cancelled"] / total_t * 100, 2) if total_t else 0.0
-    totals["expedition_rate"]   = round(shipped_t / total_t * 100, 2) if total_t else 0.0
+    totals["delivery_rate"] = (
+        round(totals["delivered"] / shipped_t * 100, 2) if shipped_t else 0.0
+    )
+    totals["return_rate"] = (
+        round((totals["returned"] + totals["refused"]) / shipped_t * 100, 2)
+        if shipped_t
+        else 0.0
+    )
+    totals["refusal_rate"] = (
+        round(totals["refused"] / shipped_t * 100, 2) if shipped_t else 0.0
+    )
+    totals["cancellation_rate"] = (
+        round(totals["cancelled"] / total_t * 100, 2) if total_t else 0.0
+    )
+    totals["expedition_rate"] = round(shipped_t / total_t * 100, 2) if total_t else 0.0
 
     return {
         "products": products_out,

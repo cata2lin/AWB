@@ -10,7 +10,9 @@ const extractMessage = (err) => {
 
 export const toastSuccess = (msg) => toast.success(msg)
 
-export const toastError = (err) => toast.error(extractMessage(err))
+// Errors persist until dismissed (close button) — they carry actionable detail the
+// user must read, per CLAUDE.md Tier 3. Overrides the global 3.5s auto-dismiss.
+export const toastError = (err) => toast.error(extractMessage(err), { duration: Infinity })
 
 export const toastInfo = (msg) => toast.info(msg)
 

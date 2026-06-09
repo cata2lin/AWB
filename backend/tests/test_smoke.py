@@ -64,6 +64,40 @@ def test_profitability_responds(client):
     assert "detail" not in body or r.status_code == 200
 
 
+@pytest.mark.slow
+def test_pnl_delivered_count_matches_deliverability(client):
+    """Regression for the variable-shadowing bug: the P&L `excluded_skus` set was
+    clobbered by the `exclude_from_stock` SKUs, so the whole-order skip silently
+    dropped every order containing a gift/bundle SKU (1,696 delivered orders /
+    ~219K RON in April). After the fix the P&L delivered count must (re-)align with
+    the deliverability delivered count over the same window — they share `classify()`.
+
+    We allow a ≤1.5% shortfall (orders with unconvertible foreign FX are excluded
+    from the P&L but not deliverability); the bug was a ~3.7% drop, well outside it.
+    """
+    params = {"days": 30}
+    pnl = client.get("/api/analytics/profitability", params=params).json()
+    deliv = client.get("/api/analytics/deliverability", params=params).json()
+
+    pnl_delivered = (pnl.get("summary") or {}).get("delivered_orders")
+    # sum delivered across deliverability stores (tolerate key variants)
+    deliv_delivered = 0
+    for s in deliv.get("stores", []):
+        for k in ("delivered", "delivered_orders", "livrate", "livrata"):
+            if isinstance(s.get(k), (int, float)):
+                deliv_delivered += s[k]
+                break
+
+    assert pnl_delivered is not None, "P&L missing summary.delivered_orders"
+    if deliv_delivered > 0:
+        ratio = pnl_delivered / deliv_delivered
+        assert ratio >= 0.985, (
+            f"P&L delivered ({pnl_delivered}) is {(1 - ratio) * 100:.1f}% below "
+            f"deliverability ({deliv_delivered}) — the exclude_from_stock whole-order "
+            f"drop may have regressed."
+        )
+
+
 def test_summary_responds(client):
     """Dashboard KPI summary endpoint."""
     r = client.get("/api/analytics/summary", params={"days": 7})

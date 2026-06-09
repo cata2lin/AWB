@@ -33,7 +33,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional, List
-from sqlalchemy import select, desc
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
@@ -41,13 +41,33 @@ from app.core.config import settings
 from app.models import Order, OrderAwb, Store, SyncLog
 from app.services.frisbo.client import FrisboClient
 from app.services.frisbo.parser import parse_order
+from app.core.status_classification import classify
 
 logger = logging.getLogger(__name__)
+
+# Terminal classification buckets — once an order reaches one of these it should
+# never regress to a non-terminal status on a later sync (Frisbo can freeze/glitch a
+# settled order back to waiting_for_courier; that's not reality). Also protects the
+# statuses set by the stuck-order reconciliation against the courier feed.
+_TERMINAL_CATS = {"delivered", "returned", "cancelled"}
 
 # ── Tier window sizes (all use updated_at, so any status change is caught) ──
 RECENT_SYNC_DAYS = 7  # Tier 2 "recent_7d": updated_at >= now - 7 days
 WINDOW_SYNC_DAYS = 30  # Tier 3 "window_30d": updated_at >= now - 30 days
 DEEP_SYNC_DAYS = 90  # Tier 4 "deep_90d": updated_at >= now - 90 days
+
+# Tier 5/6 "recheck_*": re-fetch by CREATED_AT (not updated_at). The updated_at
+# tiers only re-read an order when Frisbo bumps its updated_at; if a courier-status
+# change is ingested WITHOUT bumping updated_at, those tiers never see it and the
+# order goes stale. These tiers re-read every order created in the last N days and
+# refresh its current aggregated_status regardless — the cure for stale orders.
+#   • Tier 5 "recheck_30d" — last 30 days, frequent (every 3h): the hot window.
+#   • Tier 6 "recheck_90d" — last 90 days, daily: covers the long tail (returns and
+#     slow deliveries can resolve 30-90 days out). Beyond ~90 days orders are
+#     effectively always terminal (verified against prod: Nov-2025 orders were
+#     ~99.5% delivered/returned/cancelled), so 90 days is a sound practical bound.
+RECHECK_BY_CREATED_DAYS = 30
+RECHECK_BY_CREATED_DAYS_LONG = 90
 
 # Legacy sync_type keys are mapped to the new tier they best represent. Callers
 # still sending "3_day" or "45_day" continue to work; the SyncLog records the
@@ -83,6 +103,8 @@ async def get_last_successful_sync_time() -> Optional[datetime]:
                         "recent_7d",
                         "window_30d",
                         "deep_90d",
+                        "recheck_30d",
+                        "recheck_90d",
                         "full",
                         "custom",
                         # Legacy keys kept for historic rows (pre-alias rename)
@@ -251,6 +273,38 @@ async def sync_orders(
                 logger.info(
                     f"📦 DEEP_90D: updated_at >= {updated_at_start} "
                     f"(absolute {DEEP_SYNC_DAYS}-day window)"
+                )
+
+            elif sync_type == "recheck_30d":
+                # Tier 5: re-fetch by CREATED_AT (not updated_at) so recent orders
+                # are re-read and their current aggregated_status refreshed EVEN IF
+                # Frisbo never bumped updated_at on a courier-status change — the
+                # root cause of stale orders. Complements the updated_at tiers
+                # (which still catch status changes on older orders when bumped).
+                cutoff_recheck = datetime.utcnow() - timedelta(
+                    days=RECHECK_BY_CREATED_DAYS
+                )
+                created_at_start = cutoff_recheck.isoformat()
+                sync_log.incremental_since = cutoff_recheck
+                logger.info(
+                    f"📦 RECHECK_30D: created_at >= {created_at_start} "
+                    f"(re-reads current status regardless of updated_at)"
+                )
+
+            elif sync_type == "recheck_90d":
+                # Tier 6: same created_at recheck as Tier 5 but a wider 90-day window,
+                # run daily. Cures staleness on the long tail — orders that change
+                # status (final delivery, return) 30-90 days after creation without
+                # Frisbo bumping updated_at, which both the updated_at tiers and the
+                # 30-day recheck would miss.
+                cutoff_recheck = datetime.utcnow() - timedelta(
+                    days=RECHECK_BY_CREATED_DAYS_LONG
+                )
+                created_at_start = cutoff_recheck.isoformat()
+                sync_log.incremental_since = cutoff_recheck
+                logger.info(
+                    f"📦 RECHECK_90D: created_at >= {created_at_start} "
+                    f"(long-tail status refresh regardless of updated_at)"
                 )
 
             elif sync_type == "custom" and date_from:
@@ -478,9 +532,16 @@ async def sync_orders(
                                     existing.shipment_status = (
                                         new_shipment or existing.shipment_status
                                     )
-                                    existing.aggregated_status = (
-                                        new_agg or existing.aggregated_status
-                                    )
+                                    # Don't DOWNGRADE a settled order: if it's already
+                                    # terminal (delivered/returned/cancelled) and Frisbo
+                                    # now sends a non-terminal status, keep the terminal
+                                    # one. Terminal→terminal and any→terminal still apply.
+                                    if new_agg and not (
+                                        classify(existing.aggregated_status)
+                                        in _TERMINAL_CATS
+                                        and classify(new_agg) not in _TERMINAL_CATS
+                                    ):
+                                        existing.aggregated_status = new_agg
                                     # Auto-clear stale courier alert
                                     if (
                                         existing.waiting_for_courier_since
@@ -514,12 +575,25 @@ async def sync_orders(
                                         parsed.get("payment_gateway")
                                         or existing.payment_gateway
                                     )
-                                    if parsed.get("line_items") is not None:
+                                    # Only overwrite line_items when the new payload
+                                    # actually HAS items. The parser returns [] (never
+                                    # None) for an absent/empty payload, so the old
+                                    # `is not None` guard let a partial Frisbo response
+                                    # wipe good line_items to [] → COGS silently became
+                                    # 0 (599 delivered orders were hit this way). A
+                                    # genuinely item-less order is a data anomaly we
+                                    # prefer to leave as-is rather than zero a good one.
+                                    if parsed.get("line_items"):
                                         existing.line_items = parsed["line_items"]
                                         existing.item_count = parsed["item_count"]
                                         existing.unique_sku_count = parsed[
                                             "unique_sku_count"
                                         ]
+                                    # Tags/note: coalesce so a response that omits
+                                    # them never wipes existing values, but a
+                                    # populated list/string refreshes them.
+                                    existing.tags = parsed.get("tags") or existing.tags
+                                    existing.note = parsed.get("note") or existing.note
                                     existing.synced_at = datetime.utcnow()
                                     updated_count += 1
                                     org_updated += 1
@@ -559,6 +633,8 @@ async def sync_orders(
                                         total_discounts=parsed.get("total_discounts"),
                                         currency=parsed.get("currency", "RON"),
                                         payment_gateway=parsed.get("payment_gateway"),
+                                        tags=parsed.get("tags"),
+                                        note=parsed.get("note"),
                                         synced_at=datetime.utcnow(),
                                     )
                                     db.add(order_obj)
@@ -777,6 +853,13 @@ async def sync_orders(
             sync_log.status = "completed"
             sync_log.completed_at = datetime.utcnow()
             await db.commit()
+
+            # Invalidate the analytics TTL cache so reports reflect the fresh data
+            # immediately after a sync (instead of serving cached numbers for the TTL).
+            if new_count or updated_count:
+                from app.core.analytics_cache import cache_clear
+
+                cache_clear()
 
             total_elapsed = time.time() - sync_start_time
 

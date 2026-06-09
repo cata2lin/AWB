@@ -1,26 +1,64 @@
 import { Fragment, useMemo, useState } from 'react'
 import {
-    TrendingUp, RefreshCw, Search, ChevronDown, Plus, Trash2, AlertTriangle, Download,
+    TrendingUp, RefreshCw, Search, ChevronDown, Plus, Trash2, AlertTriangle, Download, X,
 } from 'lucide-react'
 import { formatNumber, marginColor, marginBg } from '../../utils/analyticsHelpers'
 import { analyticsApi, skuMarketingCostsApi } from '../../services/api'
+import { authFetch, API_URL } from '../../utils/authFetch'
 import ColumnsMenu from '../../components/ui/ColumnsMenu'
+import BulkActionBar from '../../components/BulkActionBar'
 import { useColumnVisibility } from '../../hooks/useColumnVisibility'
 import { exportCsv } from '../../utils/csvExport'
+import { toastSuccess, toastError } from '../../utils/toast'
 
 const SKU_PROFIT_COLUMNS = [
     { key: 'sku',          header: 'SKU',         alwaysVisible: true },
     { key: 'name',         header: 'Nume' },
+    { key: 'tier',         header: 'Performanță' },
     { key: 'units_sold',   header: 'Unități' },
     { key: 'revenue',      header: 'Venituri' },
     { key: 'cogs',         header: 'COGS' },
     { key: 'transport',    header: 'Transport' },
     { key: 'fees',         header: 'Taxe' },
     { key: 'marketing',    header: 'Marketing' },
+    { key: 'cpa',          header: 'CPA' },
+    { key: 'roas',         header: 'ROAS' },
+    { key: 'delivery_rate', header: 'Livrare %' },
     { key: 'contribution', header: 'Contribuție' },
     { key: 'margin_pct',   header: 'Marjă %' },
     { key: 'return_rate',  header: 'Retur %' },
 ]
+
+// 5-tier SKU performance classification, computed client-side from the metrics the
+// endpoint already returns (no backend change). "High volume" = units_sold at/above
+// the median of cost-known sellers, so the split adapts to the current dataset.
+const TIERS = {
+    star:    { label: '⭐ Vedetă',    rank: 5, cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' },
+    good:    { label: '✅ Profitabil', rank: 4, cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
+    volume:  { label: '📦 Volum',     rank: 3, cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' },
+    weak:    { label: '⚠️ Slab',      rank: 2, cls: 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300' },
+    loss:    { label: '🔴 Pierdere',  rank: 1, cls: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300' },
+    unknown: { label: '➖ Fără cost', rank: 0, cls: 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400' },
+}
+const TIER_ORDER = ['star', 'good', 'volume', 'weak', 'loss', 'unknown']
+
+function classifyTier(p, medianUnits) {
+    if (!p.has_cost) return 'unknown'
+    const margin = p.margin_pct ?? 0
+    if ((p.contribution ?? 0) < 0 || margin < 0) return 'loss'
+    const highVol = (p.units_sold || 0) >= medianUnits
+    if (margin >= 35 && highVol) return 'star'
+    if (margin >= 20) return 'good'
+    if (highVol) return 'volume'
+    return 'weak'
+}
+
+function median(nums) {
+    if (!nums.length) return 0
+    const s = [...nums].sort((a, b) => a - b)
+    const mid = Math.floor(s.length / 2)
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+}
 
 export default function SkuProfitabilityTab({ stores = [] }) {
     const [skuProfitData, setSkuProfitData] = useState(null)
@@ -34,12 +72,16 @@ export default function SkuProfitabilityTab({ stores = [] }) {
     const [skuProfitExpanded, setSkuProfitExpanded] = useState(null)
     const [newMktCost, setNewMktCost] = useState({ sku: '', label: '', amount: '', month: '' })
     const [addingMktFor, setAddingMktFor] = useState(null)
+    // Bulk selection + tier filter + add-to-watchlist picker
+    const [selectedSkus, setSelectedSkus] = useState(() => new Set())
+    const [tierFilter, setTierFilter] = useState(null)
+    const [wlPicker, setWlPicker] = useState(null) // null | { lists, choice, newName, saving }
 
     const {
         visibleKeys,
         setVisibleKeys,
         defaultVisibleKeys,
-    } = useColumnVisibility('profitabilitate-sku', SKU_PROFIT_COLUMNS)
+    } = useColumnVisibility('profitabilitate-sku-v3', SKU_PROFIT_COLUMNS)
     const colVisible = useMemo(
         () => (key) => visibleKeys.includes(key) || SKU_PROFIT_COLUMNS.find((c) => c.key === key)?.alwaysVisible,
         [visibleKeys],
@@ -75,19 +117,23 @@ export default function SkuProfitabilityTab({ stores = [] }) {
             })
             setNewMktCost({ sku: '', label: '', amount: '', month: '' })
             setAddingMktFor(null)
+            toastSuccess('Cost marketing adăugat')
             // Refresh data
             fetchData()
         } catch (err) {
             console.error('Add marketing cost error:', err)
+            toastError(err)
         }
     }
 
     const handleDeleteMktCost = async (id) => {
         try {
             await skuMarketingCostsApi.delete(id)
+            toastSuccess('Cost marketing șters')
             fetchData()
         } catch (err) {
             console.error('Delete marketing cost error:', err)
+            toastError(err)
         }
     }
 
@@ -136,8 +182,17 @@ export default function SkuProfitabilityTab({ stores = [] }) {
     const products = skuProfitData?.products || []
     const summary = skuProfitData?.summary || {}
 
-    // Filter
-    const filtered = products.filter(p => {
+    // Enrich each product with its performance tier. "High volume" is relative to
+    // the median units of cost-known sellers, so the classification self-scales.
+    const medianUnits = median(
+        products.filter(p => p.has_cost && (p.units_sold || 0) > 0).map(p => p.units_sold)
+    )
+    const withTier = products.map(p => ({ ...p, _tier: classifyTier(p, medianUnits) }))
+    const tierCounts = withTier.reduce((acc, p) => { acc[p._tier] = (acc[p._tier] || 0) + 1; return acc }, {})
+
+    // Filter (search + tier chip)
+    const filtered = withTier.filter(p => {
+        if (tierFilter && p._tier !== tierFilter) return false
         if (!skuProfitSearch) return true
         const q = skuProfitSearch.toLowerCase()
         return (p.sku || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q)
@@ -147,11 +202,106 @@ export default function SkuProfitabilityTab({ stores = [] }) {
     const sorted = [...filtered].sort((a, b) => {
         const col = skuProfitSort.col
         const dir = skuProfitSort.dir === 'asc' ? 1 : -1
+        if (col === 'tier') return ((TIERS[a._tier]?.rank ?? 0) - (TIERS[b._tier]?.rank ?? 0)) * dir
         const av = a[col] ?? 0
         const bv = b[col] ?? 0
         if (typeof av === 'string') return av.localeCompare(bv) * dir
         return (av - bv) * dir
     })
+
+    // ── Bulk selection ───────────────────────────────────────────────────────
+    const toggleSelect = (sku) => setSelectedSkus(prev => {
+        const next = new Set(prev)
+        if (next.has(sku)) next.delete(sku); else next.add(sku)
+        return next
+    })
+    const allShownSelected = sorted.length > 0 && sorted.every(p => selectedSkus.has(p.sku))
+    const toggleSelectAll = () => setSelectedSkus(prev => {
+        if (sorted.length && sorted.every(p => prev.has(p.sku))) {
+            const next = new Set(prev); sorted.forEach(p => next.delete(p.sku)); return next
+        }
+        const next = new Set(prev); sorted.forEach(p => next.add(p.sku)); return next
+    })
+    const clearSelection = () => setSelectedSkus(new Set())
+
+    const handleCopySkus = async () => {
+        const skus = Array.from(selectedSkus)
+        if (!skus.length) { toastError('Niciun SKU selectat'); return }
+        const text = skus.join('\n')
+        try {
+            await navigator.clipboard.writeText(text)
+            toastSuccess(`${skus.length} SKU-uri copiate`)
+        } catch {
+            const ta = document.createElement('textarea')
+            ta.value = text; document.body.appendChild(ta); ta.select()
+            document.execCommand('copy'); document.body.removeChild(ta)
+            toastSuccess(`${skus.length} SKU-uri copiate`)
+        }
+    }
+
+    // Open the watchlist picker (fetch existing lists first)
+    const handleOpenWatchlistPicker = async () => {
+        if (!selectedSkus.size) { toastError('Niciun SKU selectat'); return }
+        try {
+            const res = await authFetch(`${API_URL}/analytics/watchlists`)
+            const json = res.ok ? await res.json() : { watchlists: [] }
+            const lists = json.watchlists || []
+            setWlPicker({ lists, choice: lists[0]?.id ?? 'new', newName: '', saving: false })
+        } catch (e) {
+            toastError(e)
+        }
+    }
+
+    const handleConfirmAddToWatchlist = async () => {
+        if (!wlPicker) return
+        const skus = Array.from(selectedSkus)
+        // Capture a metric snapshot per SKU so the watchlist shows useful columns.
+        const bySku = Object.fromEntries(withTier.map(p => [p.sku, p]))
+        const items = skus.map(sku => {
+            const p = bySku[sku] || {}
+            return {
+                sku,
+                snapshot_json: {
+                    nume: p.name || '',
+                    venituri: Math.round(p.revenue || 0),
+                    contributie: Math.round(p.contribution || 0),
+                    marja_pct: p.margin_pct ?? null,
+                    unitati: p.units_sold ?? null,
+                    retur_pct: p.return_rate ?? null,
+                    performanta: TIERS[p._tier]?.label || '',
+                },
+            }
+        })
+        setWlPicker(prev => ({ ...prev, saving: true }))
+        try {
+            // Resolve the target watchlist id (creating it first if "new").
+            let targetId = wlPicker.choice
+            if (wlPicker.choice === 'new') {
+                const name = (wlPicker.newName || '').trim()
+                if (!name) { toastError('Dă un nume watchlist-ului'); setWlPicker(prev => ({ ...prev, saving: false })); return }
+                const res = await authFetch(`${API_URL}/analytics/watchlists`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name }),
+                })
+                if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                targetId = (await res.json()).id
+            }
+            // Bulk-add the selected SKUs (with metric snapshot) to the target list.
+            const res2 = await authFetch(`${API_URL}/analytics/watchlists/${targetId}/items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+            if (!res2.ok) throw new Error(`HTTP ${res2.status}`)
+            toastSuccess(`${items.length} SKU-uri adăugate în watchlist`)
+            setWlPicker(null)
+            clearSelection()
+        } catch (e) {
+            toastError(e)
+            setWlPicker(prev => ({ ...prev, saving: false }))
+        }
+    }
 
     const toggleSort = (col) => {
         setSkuProfitSort(prev => ({
@@ -285,10 +435,13 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                         key: c.key,
                                         label: c.header,
                                         accessor: (row) => {
+                                            if (c.key === 'tier') return TIERS[row._tier]?.label || ''
                                             if (['revenue', 'cogs', 'transport', 'fees', 'marketing', 'contribution'].includes(c.key)) {
                                                 return Math.round(row[c.key] || 0)
                                             }
                                             if (c.key === 'margin_pct' || c.key === 'return_rate') return `${row[c.key] ?? 0}%`
+                                            if (c.key === 'delivery_rate') return row[c.key] != null ? `${row[c.key]}%` : ''
+                                            if (c.key === 'cpa' || c.key === 'roas') return row[c.key] ?? ''
                                             return row[c.key] ?? ''
                                         },
                                     }))
@@ -301,12 +454,36 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                         </div>
                     </div>
 
+                    {/* Tier filter chips */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Performanță:</span>
+                        {TIER_ORDER.filter(k => tierCounts[k]).map(k => (
+                            <button
+                                key={k}
+                                onClick={() => setTierFilter(tierFilter === k ? null : k)}
+                                className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${TIERS[k].cls} ${tierFilter === k ? 'ring-2 ring-offset-1 ring-amber-400 dark:ring-offset-zinc-900' : 'opacity-90 hover:opacity-100'}`}
+                                title={`Filtrează: ${TIERS[k].label}`}>
+                                {TIERS[k].label} <span className="opacity-70">({tierCounts[k]})</span>
+                            </button>
+                        ))}
+                        {tierFilter && (
+                            <button onClick={() => setTierFilter(null)}
+                                className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 underline">
+                                resetează
+                            </button>
+                        )}
+                    </div>
+
                     {/* Main Product Table */}
                     <div className="bg-white dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700/50 overflow-clip">
                         <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
                             <table className="w-full text-sm">
                                 <thead className="bg-zinc-50 dark:bg-zinc-900 sticky top-0 z-10">
                                     <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                                        <th className="px-3 py-2.5 w-8 text-center">
+                                            <input type="checkbox" checked={allShownSelected} onChange={toggleSelectAll}
+                                                className="rounded border-zinc-300 dark:border-zinc-600 cursor-pointer" title="Selectează tot" />
+                                        </th>
                                         <th className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs w-8"></th>
                                         {colVisible('sku') && (
                                             <th onClick={() => toggleSort('sku')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
@@ -316,6 +493,11 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                         {colVisible('name') && (
                                             <th onClick={() => toggleSort('name')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
                                                 Nume {sortIcon('name')}
+                                            </th>
+                                        )}
+                                        {colVisible('tier') && (
+                                            <th onClick={() => toggleSort('tier')} className="text-left px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Performanță {sortIcon('tier')}
                                             </th>
                                         )}
                                         {colVisible('units_sold') && (
@@ -348,6 +530,21 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                                 Marketing {sortIcon('marketing')}
                                             </th>
                                         )}
+                                        {colVisible('cpa') && (
+                                            <th onClick={() => toggleSort('cpa')} title="Cost pe comandă (marketing / comenzi)" className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                CPA {sortIcon('cpa')}
+                                            </th>
+                                        )}
+                                        {colVisible('roas') && (
+                                            <th onClick={() => toggleSort('roas')} title="Return on ad spend (venituri / marketing)" className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                ROAS {sortIcon('roas')}
+                                            </th>
+                                        )}
+                                        {colVisible('delivery_rate') && (
+                                            <th onClick={() => toggleSort('delivery_rate')} title="Rată livrare = livrate / (livrate+refuzate+în curs)" className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
+                                                Livrare % {sortIcon('delivery_rate')}
+                                            </th>
+                                        )}
                                         {colVisible('contribution') && (
                                             <th onClick={() => toggleSort('contribution')} className="text-right px-3 py-2.5 font-semibold text-zinc-600 dark:text-zinc-200 text-xs cursor-pointer hover:text-zinc-900 dark:hover:text-white">
                                                 Contribuție {sortIcon('contribution')}
@@ -368,19 +565,49 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                 <tbody>
                                     {sorted.map((p) => (
                                         <Fragment key={p.sku}>
-                                            <tr className={`border-b border-zinc-100 dark:border-zinc-700/30 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition-colors cursor-pointer ${!p.has_cost ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
+                                            <tr className={`border-b border-zinc-100 dark:border-zinc-700/30 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition-colors cursor-pointer ${selectedSkus.has(p.sku) ? 'bg-violet-50/60 dark:bg-violet-900/10' : !p.has_cost ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
                                                 onClick={() => setSkuProfitExpanded(skuProfitExpanded === p.sku ? null : p.sku)}>
+                                                <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <input type="checkbox" checked={selectedSkus.has(p.sku)} onChange={() => toggleSelect(p.sku)}
+                                                        className="rounded border-zinc-300 dark:border-zinc-600 cursor-pointer" />
+                                                </td>
                                                 <td className="px-3 py-2">
                                                     <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${skuProfitExpanded === p.sku ? 'rotate-180' : ''}`} />
                                                 </td>
                                                 {colVisible('sku') && <td className="px-3 py-2 font-mono text-xs text-zinc-800 dark:text-zinc-100 font-medium">{p.sku}</td>}
                                                 {colVisible('name') && <td className="px-3 py-2 text-zinc-700 dark:text-zinc-200 text-xs max-w-[200px] truncate">{p.name || '—'}</td>}
+                                                {colVisible('tier') && (
+                                                    <td className="px-3 py-2">
+                                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${TIERS[p._tier].cls}`}>
+                                                            {TIERS[p._tier].label}
+                                                        </span>
+                                                    </td>
+                                                )}
                                                 {colVisible('units_sold') && <td className="px-3 py-2 text-right text-zinc-800 dark:text-zinc-100">{formatNumber(p.units_sold)}</td>}
                                                 {colVisible('revenue') && <td className="px-3 py-2 text-right font-medium text-zinc-900 dark:text-white">{formatNumber(Math.round(p.revenue))}</td>}
                                                 {colVisible('cogs') && <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{formatNumber(Math.round(p.cogs))}</td>}
                                                 {colVisible('transport') && <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">{formatNumber(Math.round(p.transport))}</td>}
                                                 {colVisible('fees') && <td className="px-3 py-2 text-right text-purple-600 dark:text-purple-400">{formatNumber(Math.round(p.fees))}</td>}
-                                                {colVisible('marketing') && <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">{formatNumber(Math.round(p.marketing))}</td>}
+                                                {colVisible('marketing') && (
+                                                    <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400" title={(p.marketing_fb || p.marketing_tk) ? `FB ${formatNumber(Math.round(p.marketing_fb || 0))} · TikTok ${formatNumber(Math.round(p.marketing_tk || 0))}` : undefined}>
+                                                        {formatNumber(Math.round(p.marketing))}
+                                                    </td>
+                                                )}
+                                                {colVisible('cpa') && <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-300">{p.cpa != null ? formatNumber(p.cpa) : '—'}</td>}
+                                                {colVisible('roas') && (
+                                                    <td className="px-3 py-2 text-right">
+                                                        {p.roas != null ? (
+                                                            <span className={`text-xs font-semibold ${p.roas >= 3 ? 'text-emerald-600 dark:text-emerald-400' : p.roas >= 1.5 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                                {p.roas.toFixed(1)}×
+                                                            </span>
+                                                        ) : <span className="text-zinc-400">—</span>}
+                                                    </td>
+                                                )}
+                                                {colVisible('delivery_rate') && (
+                                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-300">
+                                                        {p.delivery_rate != null ? `${p.delivery_rate}%` : '—'}
+                                                    </td>
+                                                )}
                                                 {colVisible('contribution') && (
                                                     <td className={`px-3 py-2 text-right font-semibold ${p.contribution >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                                                         {formatNumber(Math.round(p.contribution))}
@@ -404,7 +631,7 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                             {/* Expanded Row */}
                                             {skuProfitExpanded === p.sku && (
                                                 <tr>
-                                                    <td colSpan={1 + SKU_PROFIT_COLUMNS.filter(c => colVisible(c.key)).length} className="bg-zinc-50 dark:bg-zinc-900/40 px-6 py-4">
+                                                    <td colSpan={2 + SKU_PROFIT_COLUMNS.filter(c => colVisible(c.key)).length} className="bg-zinc-50 dark:bg-zinc-900/40 px-6 py-4">
                                                         <div className="space-y-4">
                                                             {/* Detail cards */}
                                                             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -546,7 +773,7 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                                     ))}
                                     {sorted.length === 0 && (
                                         <tr>
-                                            <td colSpan={1 + SKU_PROFIT_COLUMNS.filter(c => colVisible(c.key)).length} className="text-center py-12 text-zinc-500 dark:text-zinc-400">
+                                            <td colSpan={2 + SKU_PROFIT_COLUMNS.filter(c => colVisible(c.key)).length} className="text-center py-12 text-zinc-500 dark:text-zinc-400">
                                                 Niciun produs găsit
                                             </td>
                                         </tr>
@@ -582,6 +809,62 @@ export default function SkuProfitabilityTab({ stores = [] }) {
                     )}
                 </>
             ) : null}
+
+            {/* Floating bulk-action toolbar (selection-driven) */}
+            <BulkActionBar
+                selectedCount={selectedSkus.size}
+                onCopySkus={handleCopySkus}
+                onAddToWatchlist={handleOpenWatchlistPicker}
+                onClear={clearSelection}
+            />
+
+            {/* Add-to-watchlist picker modal */}
+            {wlPicker && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+                    onClick={() => !wlPicker.saving && setWlPicker(null)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-2xl w-full max-w-sm p-5"
+                        onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                                Adaugă {selectedSkus.size} SKU-uri în watchlist
+                            </h3>
+                            <button onClick={() => setWlPicker(null)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {wlPicker.lists.map(l => (
+                                <label key={l.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                                    <input type="radio" name="wl-choice" checked={wlPicker.choice === l.id}
+                                        onChange={() => setWlPicker(prev => ({ ...prev, choice: l.id }))} />
+                                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: l.color || '#8b5cf6' }} />
+                                    <span className="text-sm text-zinc-700 dark:text-zinc-200">{l.name}</span>
+                                    <span className="ml-auto text-xs text-zinc-400">{l.item_count ?? 0}</span>
+                                </label>
+                            ))}
+                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                                <input type="radio" name="wl-choice" checked={wlPicker.choice === 'new'}
+                                    onChange={() => setWlPicker(prev => ({ ...prev, choice: 'new' }))} />
+                                <Plus className="w-3.5 h-3.5 text-zinc-400" />
+                                <input type="text" placeholder="Watchlist nou..." value={wlPicker.newName}
+                                    onFocus={() => setWlPicker(prev => ({ ...prev, choice: 'new' }))}
+                                    onChange={(e) => setWlPicker(prev => ({ ...prev, newName: e.target.value }))}
+                                    className="flex-1 bg-transparent text-sm text-zinc-700 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none" />
+                            </label>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => setWlPicker(null)} disabled={wlPicker.saving}
+                                className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                                Anulează
+                            </button>
+                            <button onClick={handleConfirmAddToWatchlist} disabled={wlPicker.saving}
+                                className="px-4 py-1.5 text-sm rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 font-medium">
+                                {wlPicker.saving ? 'Se salvează...' : 'Adaugă'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

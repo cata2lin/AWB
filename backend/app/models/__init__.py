@@ -11,6 +11,7 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.business_cost import BusinessCost
 from app.models.marketing_daily_cost import MarketingDailyCost
 from app.models.sku_marketing_cost import SkuMarketingCost
+from app.models.sku_ad_spend_daily import SkuAdSpendDaily
 from app.models.user import User
 from app.models.user_activity import UserActivity
 from app.models.product import Product
@@ -21,6 +22,9 @@ from app.models.generated_barcode import GeneratedBarcode
 from app.models.system_setting import SystemSetting
 from app.models.custom_product import CustomProduct
 from app.models.analytics_filter_preset import AnalyticsFilterPreset
+from app.models.exclusion_rule import ExclusionRule
+from app.models.watchlist import Watchlist, WatchlistItem
+from app.models.marketplace_order import MarketplaceOrder
 
 __all__ = [
     "Store",
@@ -38,6 +42,7 @@ __all__ = [
     "BusinessCost",
     "MarketingDailyCost",
     "SkuMarketingCost",
+    "SkuAdSpendDaily",
     "User",
     "UserActivity",
     "Product",
@@ -48,4 +53,8 @@ __all__ = [
     "SystemSetting",
     "CustomProduct",
     "AnalyticsFilterPreset",
+    "ExclusionRule",
+    "Watchlist",
+    "WatchlistItem",
+    "MarketplaceOrder",
 ]

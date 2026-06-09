@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
     TrendingUp, Package, Truck, ChevronDown, ChevronUp, RefreshCw, Filter,
     BarChart3, Store, ArrowRight, ArrowUpRight, ArrowDownRight, DollarSign,
@@ -154,7 +154,7 @@ export default function SalesVelocityTab({ stores = [] }) {
 
     const isCustomDate = velocityDateFrom && velocityDateTo
 
-    const filteredProducts = velocityData?.products
+    const filteredProducts = useMemo(() => velocityData?.products
         ? velocityData.products.filter(p => {
             // Text search
             if (velocitySearch) {
@@ -196,9 +196,14 @@ export default function SalesVelocityTab({ stores = [] }) {
             }
             return true
         })
-        : []
+        : [], [
+        velocityData, velocitySearch, velocityMaxUnits, velocityMinRevenue, velocityMaxRevenue,
+        velocityMinStock, velocityMaxStock, velocityMinPoIncoming, velocityMaxPoIncoming,
+        velocityMinDaysLeft, velocityMaxDaysLeft, velocityTrendFilter, velocityTrendMinPct,
+        velocityTrendMaxPct, velocityExcludeStores, velocitySkuInclude, velocitySkuExclude,
+    ])
 
-    const sortedProducts = [...filteredProducts].map(p => ({
+    const sortedProducts = useMemo(() => [...filteredProducts].map(p => ({
         ...p,
         necesar_recomandat: Math.max(0, Math.ceil((velocityTargetCoverage * (p.velocity || 0)) - ((p.stock_available || 0) + (p.po_incoming || 0))))
     })).sort((a, b) => {
@@ -206,7 +211,7 @@ export default function SalesVelocityTab({ stores = [] }) {
         const av = a[col] ?? -1, bv = b[col] ?? -1
         if (typeof av === 'string') return velocitySort.dir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv)
         return velocitySort.dir === 'desc' ? bv - av : av - bv
-    })
+    }), [filteredProducts, velocityTargetCoverage, velocitySort])
 
     const VSort = ({ col, label, tip }) => (
         <th

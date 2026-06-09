@@ -33,7 +33,13 @@ from app.api import (
     comision_agentie,
     custom_products,
     analytics_filter_presets,
+    exclusion_rules,
+    cs_report,
+    courier_audit,
+    watchlists,
+    emag_report,
 )
+from app.api.analytics import daily_perf, trendyol_profitability
 from app.api import settings as settings_api
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
@@ -93,6 +99,13 @@ async def lifespan(app: FastAPI):
 
         logging.getLogger(__name__).warning(f"Auto-create admin failed: {e}")
 
+    # A local / read-only test instance can set AWB_NO_SCHEDULER=1 to run the API WITHOUT
+    # the background scheduler or the stale-sync cleanup. Otherwise, on the SHARED prod DB,
+    # it would cancel a live deployment's in-flight syncs and double-schedule against prod.
+    import os as _os
+
+    _scheduler_enabled = _os.getenv("AWB_NO_SCHEDULER") != "1"
+
     # Clear any stale "running" syncs from previous process (they're dead)
     try:
         from sqlalchemy import select
@@ -104,7 +117,7 @@ async def lifespan(app: FastAPI):
                 select(SyncLog).where(SyncLog.status == "running")
             )
             stale = result.scalars().all()
-            if stale:
+            if stale and _scheduler_enabled:
                 import logging
 
                 for s in stale:
@@ -121,10 +134,15 @@ async def lifespan(app: FastAPI):
         logging.getLogger(__name__).warning(f"Stale sync cleanup failed: {e}")
 
     # Start background scheduler for automatic syncs
-    scheduler.start()
     import logging as _log
 
-    _log.getLogger(__name__).info("📅 Background scheduler started")
+    if _scheduler_enabled:
+        scheduler.start()
+        _log.getLogger(__name__).info("📅 Background scheduler started")
+    else:
+        _log.getLogger(__name__).info(
+            "⏸️  Scheduler + startup sync DISABLED (AWB_NO_SCHEDULER=1) — read-only/local mode"
+        )
 
     # Trigger an incremental sync 30s after startup so statuses are fresh.
     # Guard against multiple tasks on uvicorn hot-reload (process re-entry).
@@ -145,12 +163,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             _log.getLogger(__name__).warning(f"Startup sync failed (non-critical): {e}")
 
-    asyncio.create_task(_startup_sync())
+    if _scheduler_enabled:
+        asyncio.create_task(_startup_sync())
 
     yield
 
     # Shutdown scheduler gracefully
-    scheduler.shutdown(wait=False)
+    if _scheduler_enabled:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
@@ -224,6 +244,15 @@ app.include_router(
 )
 app.include_router(comision_agentie.router, prefix="/api", tags=["comision-agentie"])
 app.include_router(custom_products.router, prefix="/api")
+app.include_router(exclusion_rules.router, prefix="/api", tags=["exclusion-rules"])
+app.include_router(cs_report.router, prefix="/api", tags=["cs-report"])
+app.include_router(courier_audit.router, prefix="/api", tags=["courier-audit"])
+app.include_router(daily_perf.router, prefix="/api", tags=["daily-perf"])
+app.include_router(watchlists.router, prefix="/api", tags=["watchlists"])
+app.include_router(emag_report.router, prefix="/api", tags=["emag-report"])
+app.include_router(
+    trendyol_profitability.router, prefix="/api", tags=["trendyol-profitability"]
+)
 app.include_router(
     analytics_filter_presets.router,
     prefix="/api/analytics-filter-presets",

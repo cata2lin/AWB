@@ -8,7 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, text
 
 from app.core.database import get_db
 from app.core.timezone import to_bucharest_iso
@@ -174,6 +174,132 @@ async def cancel_sync(db: AsyncSession = Depends(get_db)):
     return {
         "message": f"Cancelled {cancelled_count} running sync(s)",
         "cancelled_count": cancelled_count,
+    }
+
+
+# aggregated_status values that are NOT terminal — an order in one of these for a
+# long time, despite having a tracking number + AWB, is likely a Frisbo status freeze
+# (the courier delivered/returned it but Frisbo never advanced the status). AWB has no
+# secondary courier/Shopify status source, so it cannot auto-resolve these — this
+# endpoint surfaces them so they are visible + actionable rather than silently dropped.
+_NONTERMINAL_STATUSES = (
+    "fulfilled",
+    "waiting_for_courier",
+    "processing",
+    "not_fulfilled",
+    "ready_for_pickup",
+    "new",
+    "errors_incorrect_shipping_address",
+    "awaiting_shipment_generation_initialization",
+    "in_transit",
+    "out_for_delivery",
+    "on_hold",
+    "sending",
+    "redirected",
+    "deferred_delivery",
+)
+
+
+@router.get("/stale-orders")
+async def get_stale_orders(
+    min_age_days: int = 14, limit: int = 200, db: AsyncSession = Depends(get_db)
+):
+    """Data-quality report: orders stuck in a non-terminal status despite having a
+    tracking number + AWB and being older than `min_age_days` — i.e. Frisbo never
+    advanced their lifecycle (the courier likely already delivered/returned them).
+    AWB re-pulls these every sync but Frisbo keeps returning the frozen status, and
+    there is no courier/Shopify fallback to resolve them — so they are reported here
+    for visibility instead of silently undercounting delivered orders."""
+    cutoff = datetime.utcnow() - timedelta(days=int(min_age_days))
+    params = {"st": list(_NONTERMINAL_STATUSES), "cutoff": cutoff}
+
+    summary = (
+        await db.execute(
+            text(
+                """
+        SELECT COUNT(*) n, COALESCE(SUM(total_price),0) rev
+        FROM orders
+        WHERE aggregated_status = ANY(:st) AND tracking_number IS NOT NULL
+          AND awb_count >= 1 AND frisbo_created_at < :cutoff
+        """
+            ),
+            params,
+        )
+    ).first()
+
+    by_status = [
+        {"status": r.aggregated_status, "count": r.n}
+        for r in (
+            await db.execute(
+                text(
+                    """
+        SELECT aggregated_status, COUNT(*) n FROM orders
+        WHERE aggregated_status = ANY(:st) AND tracking_number IS NOT NULL
+          AND awb_count >= 1 AND frisbo_created_at < :cutoff
+        GROUP BY aggregated_status ORDER BY n DESC"""
+                ),
+                params,
+            )
+        ).all()
+    ]
+
+    by_store = [
+        {"store_uid": r.store_uid, "store": r.name, "count": r.n}
+        for r in (
+            await db.execute(
+                text(
+                    """
+        SELECT o.store_uid, s.name, COUNT(*) n FROM orders o JOIN stores s ON o.store_uid=s.uid
+        WHERE o.aggregated_status = ANY(:st) AND o.tracking_number IS NOT NULL
+          AND o.awb_count >= 1 AND o.frisbo_created_at < :cutoff
+        GROUP BY o.store_uid, s.name ORDER BY n DESC"""
+                ),
+                params,
+            )
+        ).all()
+    ]
+
+    sample = [
+        {
+            "order_number": r.order_number,
+            "store_uid": r.store_uid,
+            "aggregated_status": r.aggregated_status,
+            "tracking_number": r.tracking_number,
+            "courier_name": r.courier_name,
+            "total_price": float(r.total_price or 0),
+            "created_at": to_bucharest_iso(r.frisbo_created_at),
+            "age_days": r.age_days,
+        }
+        for r in (
+            await db.execute(
+                text(
+                    """
+        SELECT order_number, store_uid, aggregated_status, tracking_number, courier_name,
+               total_price, frisbo_created_at,
+               EXTRACT(DAY FROM now() - frisbo_created_at)::int age_days
+        FROM orders
+        WHERE aggregated_status = ANY(:st) AND tracking_number IS NOT NULL
+          AND awb_count >= 1 AND frisbo_created_at < :cutoff
+        ORDER BY frisbo_created_at ASC LIMIT :limit"""
+                ),
+                {**params, "limit": int(limit)},
+            )
+        ).all()
+    ]
+
+    return {
+        "min_age_days": min_age_days,
+        "stale_count": summary.n,
+        "hidden_revenue": round(float(summary.rev or 0), 2),
+        "by_status": by_status,
+        "by_store": by_store,
+        "sample": sample,
+        "note": (
+            "These orders are stuck UPSTREAM in Frisbo (status never advanced past a "
+            "non-terminal state despite a valid AWB/tracking). AWB has no courier/Shopify "
+            "fallback to auto-resolve them. Recommended: verify against the courier, or add "
+            "a courier-tracking integration so AWB can confirm delivery independently."
+        ),
     }
 
 
