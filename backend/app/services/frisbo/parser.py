@@ -287,17 +287,21 @@ def parse_order(raw_order: Dict) -> Dict:
     parsed["payment_gateway"] = gateway_names[0] if gateway_names else None
 
     # --- Tags (Shopify storefront tags, via Frisbo OrderTags.selling_channel) ---
-    # Each tag item is {key: "<tag>", value: <str|null>}. We store the list of
-    # tag keys (lowercased) so reports can exclude e.g. "test"/"duplicata" orders,
-    # matching the Scripturi tag-based exclusion.
+    # Each tag item is {key: "tag", value: "<actual_tag>"} — the REAL Shopify tag is in
+    # `value`; `key` is the literal constant "tag". Verified on live Frisbo data:
+    # {"selling_channel":[{"key":"tag","value":"releasit_cod_form"},{"key":"tag","value":"test"}]}.
+    # (Previously this read `key`, so every order's tags came back as ["tag","tag",...]
+    # and NO tag-based feature worked — test/duplicata exclusion and CS-agent attribution.)
+    # We store the list of tag values (lowercased) so reports can exclude e.g.
+    # "test"/"duplicata" orders, matching Scripturi's tag-based exclusion.
     tags_obj = raw_order.get("tags", {}) or {}
     tag_items = (
         tags_obj.get("selling_channel", []) or [] if isinstance(tags_obj, dict) else []
     )
     parsed["tags"] = [
-        (t.get("key") or "").strip().lower()
+        (t.get("value") or "").strip().lower()
         for t in tag_items
-        if isinstance(t, dict) and (t.get("key") or "").strip()
+        if isinstance(t, dict) and (t.get("value") or "").strip()
     ]
 
     # --- Note (free-text note + selling-channel note) ---

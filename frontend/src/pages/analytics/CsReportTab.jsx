@@ -37,6 +37,15 @@ function resolvePeriod(period) {
 
 const ron = (n) => `${formatNumber(Math.round(n || 0))} lei`
 
+// Mutually-exclusive status buckets (sum = total), matching the backend / Scripturi.
+const BUCKETS = [
+    { key: 'livrate', label: 'Livrate', cls: 'text-emerald-600 dark:text-emerald-400' },
+    { key: 'in_curs', label: 'În curs', cls: 'text-blue-600 dark:text-blue-400' },
+    { key: 'neexpediate', label: 'Neexpediate', cls: 'text-zinc-500 dark:text-zinc-400' },
+    { key: 'refuzate', label: 'Refuzate', cls: 'text-red-600 dark:text-red-400' },
+    { key: 'anulate', label: 'Anulate', cls: 'text-amber-600 dark:text-amber-400' },
+]
+
 export default function CsReportTab({ selectedStores = [] }) {
     const [data, setData] = useState(null)
     const [loading, setLoading] = useState(false)
@@ -107,17 +116,28 @@ export default function CsReportTab({ selectedStores = [] }) {
                 </div>
             )}
 
-            {/* Data-availability banner — explains a near-empty report instead of looking broken */}
-            {isEmpty && data?.data_note && (
+            {/* Empty-state — explains a near-empty report instead of looking broken */}
+            {isEmpty && (
                 <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 flex gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-amber-800 dark:text-amber-200">
                         <div className="font-semibold">Niciun agent etichetat în această perioadă</div>
-                        <p className="mt-1 text-amber-700 dark:text-amber-300/90">{data.data_note}</p>
+                        <p className="mt-1 text-amber-700 dark:text-amber-300/90">
+                            Se numără doar comenzile care poartă eticheta unui agent (din tag-urile Shopify, via Frisbo).
+                        </p>
                         <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                            Comenzi scanate: {formatNumber(data.orders_scanned || 0)} · Etichete: {(data.cs_tags || []).join(', ')}
+                            Comenzi scanate: {formatNumber(data?.orders_scanned || 0)} · Etichete: {(data?.cs_tags || []).join(', ')}
                         </p>
                     </div>
+                </div>
+            )}
+
+            {/* Frisbo tag-coverage caveat — shown whenever there IS data, so the
+                Frisbo-limited counts aren't mistaken for the full CS workload. */}
+            {!loading && !isEmpty && data?.data_note && (
+                <div className="rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 px-4 py-2.5 flex gap-2.5 text-xs text-sky-800 dark:text-sky-300">
+                    <AlertTriangle className="w-4 h-4 text-sky-500 flex-shrink-0 mt-0.5" />
+                    <span>{data.data_note}</span>
                 </div>
             )}
 
@@ -150,6 +170,15 @@ export default function CsReportTab({ selectedStores = [] }) {
                                             <div className="font-medium text-zinc-900 dark:text-white">{ron(a.delivered_revenue_ron)}</div>
                                         </div>
                                     </div>
+                                    {a.buckets && (
+                                        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                                            {BUCKETS.map((b) => (
+                                                <span key={b.key} className={b.cls}>
+                                                    {b.label}: <strong>{formatNumber(a.buckets[b.key] || 0)}</strong>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                     {a.by_store.length > 0 && (
                                         <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-700/60 space-y-1">
                                             {a.by_store.map((s) => (
@@ -170,6 +199,9 @@ export default function CsReportTab({ selectedStores = [] }) {
                         <span className="text-zinc-600 dark:text-zinc-300">Total comenzi etichetate: <strong className="text-zinc-900 dark:text-white">{formatNumber(totals.orders)}</strong></span>
                         <span className="text-zinc-600 dark:text-zinc-300">Livrate: <strong className="text-zinc-900 dark:text-white">{formatNumber(totals.delivered)}</strong></span>
                         <span className="text-zinc-600 dark:text-zinc-300">Încasări livrate: <strong className="text-zinc-900 dark:text-white">{ron(totals.delivered_revenue_ron)}</strong></span>
+                        {totals.buckets && BUCKETS.map((b) => (
+                            <span key={b.key} className="text-zinc-600 dark:text-zinc-300">{b.label}: <strong className={b.cls}>{formatNumber(totals.buckets[b.key] || 0)}</strong></span>
+                        ))}
                     </div>
                 </>
             )}

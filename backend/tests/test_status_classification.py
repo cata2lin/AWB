@@ -25,7 +25,9 @@ from app.core.status_classification import (
 # deliverability_calculation_reference.md, section 2a) -> expected category.
 EXPECTED = {
     "delivered": "delivered",
-    "customer_pickup": "delivered",
+    # customer_pickup = parcel reached the pickup point but not yet collected (Frisbo
+    # freezes it; courier feed shows ~1/278 actually collected) -> in_transit, NOT delivered.
+    "customer_pickup": "in_transit",
     "in_parcel_locker": "delivered",
     "back_to_sender": "returned",
     "returning_to_sender": "returned",

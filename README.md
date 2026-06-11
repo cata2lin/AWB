@@ -942,6 +942,35 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-06-11 — CS report: testability (unit tests + real-data parity harness)
+
+**Files changed:** `backend/app/api/cs_report.py`, `backend/tests/test_cs_report.py` (new), `backend/scratch/verify_cs_report_parity.py` (new)
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **Extracted a pure, testable core** | The aggregation was inline in the async endpoint (needs a DB to run). | Pulled it into `aggregate_cs(records, cs_tags)` — a pure function over plain dicts (`tags/status/store/revenue_ron`); the endpoint now just builds records (FX) and calls it. No behaviour change. |
+| **Unit tests** | No tests pinned the CS logic to Scripturi's contract. | `tests/test_cs_report.py` — 10 deterministic tests (bucket mapping, exact-token match incl. Oana≠OanaO, case-insensitivity, distinct-order totals, per-agent double-count, revenue/delivered-revenue, per-store split, skip untagged/unconvertible, empty input, bucket-sum invariant). Fast, CI-runnable, DB-free. |
+| **Real-data parity harness** | Frisbo's incomplete tags blocked an end-to-end "does it match Scripturi" check. | `scratch/verify_cs_report_parity.py` applies Scripturi's **complete** tags to AWB's own May orders, runs `aggregate_cs`, and diffs vs Scripturi's CS output. **Result: per-agent order counts MATCH EXACTLY (534=534: Raluca 185, Oana 159, Andra 142, Anna 40, OanaO 12); buckets agree 95.44%, residual = the documented status-feed gap (Frisbo-frozen vs courier-resolved) — the CS logic is provably identical.** |
+
+### 2026-06-11 — CS report full parity with Scripturi
+
+**Files changed:** `backend/app/api/cs_report.py`, `frontend/src/pages/analytics/CsReportTab.jsx`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **Per-agent status buckets** | Scripturi's CS report breaks each agent's orders into `livrate/in_curs/neexpediate/refuzate/anulate` (mutually exclusive, sum=total); AWB only had total/delivered. | Added the 5-bucket breakdown derived from the canonical `classify()` (`_CAT_TO_BUCKET`), per-agent and per-store, plus grand totals counted per **distinct** order (an order tagged by 2 agents counts once in totals, once per agent) — matching Scripturi exactly. UI shows the buckets on each agent card + the totals row. |
+| **Exact-token tag match** | Was substring (`"oana" in joined_tags`) → "Oana" wrongly matched "OanaO". | Now matches exact comma-tokens, mirroring Scripturi. Default cs_tags aligned to Scripturi's set (`Raluca/Oana/Daniela/Andra/Anna/OanaO`). |
+| **Data-coverage caveat (measured)** | The report depends on the **Frisbo-tags parser fix** (same day) — agent tags now flow through; before, all tags were `["tag"]` so it was empty. | **Root cause: Frisbo only STARTED carrying Shopify tags/notes ~mid-May 2026 and did NOT backfill history.** Tag coverage by order-creation month, 2 orgs: **0% before May → ~15-17% in May (field went live mid-month) → ~99% from June.** So the May parity gap (AWB 59 agent-tagged vs Scripturi 534; `test` 155 vs 1,336) is a **transitional artifact of measuring May, which straddles the cutover — NOT a permanent Frisbo limit.** From June on, Frisbo carries ~all creation-time tags, so the CS report + test-exclusion become accurate from Frisbo alone (the Frisbo-only goal). Only pre-mid-May history stays tag-less. Logic/display is at full Scripturi parity; a `data_note` UI banner explains the historic gap. |
+
+### 2026-06-11 — Classifier + Frisbo-tags accuracy fixes (May reconciliation)
+
+**Files changed:** `backend/app/core/status_classification.py`, `backend/app/services/frisbo/parser.py`, `backend/tests/test_status_classification.py`, `docs/REPORTS_AUDIT/11_MAY_FULL_RECONCILIATION_2026-06-11.md`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **`customer_pickup` ≠ delivered** | The classifier mapped Frisbo `customer_pickup` → delivered, over-counting delivered revenue+COGS. | Verified vs the courier feed (May): of 278 `customer_pickup` orders only **1** was actually collected (164 still in transit, 54 returned, 37 cancelled). Moved to `in_transit`. Delivered count 46,743 → **46,465**, vs Scripturi 46,456 (gap +287 → **+9**). Takes effect at report time (no re-sync). |
+| **Frisbo tags read wrong field** | The parser read `tags.selling_channel[].key` (always the literal `"tag"`), so every order's tags were `["tag","tag",…]` and **no tag feature worked** (test/duplicata exclusion, CS-agent attribution). | The real Shopify tag is in `.value`. Fixed to read `value`. Now yields real tags (`releasit_cod_form`, `duplicata`, `test`, agent names `raluca`/`oana`/…). **Needs deploy + re-sync to backfill** (the scheduler must run the fixed parser). Caveat: Frisbo's tag feed is incomplete — it carries `test` on only ~12% of the orders Shopify marks test, so full test-exclusion parity still needs the Shopify/Scripturi identity. |
+
 ### 2026-06-09 — `AWB_NO_SCHEDULER` flag for read-only/local instances
 
 **Files changed:** `backend/app/main.py`

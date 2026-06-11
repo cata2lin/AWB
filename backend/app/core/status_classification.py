@@ -29,7 +29,7 @@ granular IN_TRANSIT ∪ OUT_FOR_DELIVERY, so the financial "shipped" set
 # ── Granular display buckets (match the deliverability tab's columns) ─────────
 # Covers the FULL Frisbo OrderAggregatedStatusOption enum (53 values) so no real
 # status silently falls through to "other". See ~/.claude/skills/frisbo-api.
-DELIVERED = {"delivered", "customer_pickup", "personal_pickup", "in_parcel_locker"}
+DELIVERED = {"delivered", "personal_pickup", "in_parcel_locker"}
 RETURNED = {
     "back_to_sender",
     "returned",
@@ -49,6 +49,14 @@ IN_TRANSIT = {
     "deferred_delivery",
     "on_hold",
     "sending",
+    # `customer_pickup` fires when the parcel REACHES a pickup point, then Frisbo
+    # freezes it — it does NOT mean the customer collected it. Verified against the
+    # courier feed (May-2026): of 278 customer_pickup orders only 1 was actually
+    # collected (Livrata); 164 still awaiting pickup, 54 returned, 37 cancelled. So it
+    # is a non-terminal in-transit state, NOT delivered (was wrongly in DELIVERED →
+    # over-counted delivered revenue + COGS). A genuine collection later moves it to
+    # `delivered`/`personal_pickup`. See docs/REPORTS_AUDIT/11.
+    "customer_pickup",
 }
 OUT_FOR_DELIVERY = {"out_for_delivery"}
 # Genuinely not-shipped / pre-expedition statuses -> category "other".

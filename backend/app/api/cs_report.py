@@ -40,8 +40,155 @@ from app.models import Order, Store, SystemSetting
 
 router = APIRouter()
 
-DEFAULT_CS_TAGS = ["Raluca", "Oana", "Daniela"]
+# Matches Scripturi's configured cs_tags (profit_settings) so both reports track the
+# same agents out of the box.
+DEFAULT_CS_TAGS = ["Raluca", "Oana", "Daniela", "Andra", "Anna", "OanaO"]
 CS_TAGS_SETTING_KEY = "cs.agent_tags"
+
+# Mutually-exclusive status buckets, mirroring Scripturi's CS_BUCKETS
+# (api/customer_service.py _cs_bucket): livrate / in_curs / neexpediate / refuzate /
+# anulate, summing to the agent's total. AWB derives them from the canonical
+# classify(): delivered→livrate, returned→refuzate, cancelled→anulate,
+# in_transit→in_curs, other (pre-expedition)→neexpediate.
+CS_BUCKETS = ["livrate", "in_curs", "neexpediate", "refuzate", "anulate"]
+_CAT_TO_BUCKET = {
+    "delivered": "livrate",
+    "returned": "refuzate",
+    "cancelled": "anulate",
+    "in_transit": "in_curs",
+    "other": "neexpediate",
+}
+
+
+def _empty_buckets():
+    return {b: 0 for b in CS_BUCKETS}
+
+
+def aggregate_cs(records, cs_tags):
+    """Pure CS-report aggregation — the single testable core (no DB, no I/O).
+
+    ``records`` is an iterable of dicts, one per order:
+      - ``tags``: list[str]            — the order's tags
+      - ``status``: str                — Frisbo ``aggregated_status`` (classified here)
+      - ``store``: str                 — resolved store name (for the per-store split)
+      - ``revenue_ron``: float | None  — already FX-converted; ``None`` => skip (unconvertible)
+
+    ``cs_tags`` is the list of agent tags (original casing kept in the output).
+
+    Matching is EXACT-token and case-insensitive (so "Oana" never catches "OanaO"),
+    grand totals are per DISTINCT order, and buckets come from the canonical
+    ``classify()`` — all mirroring Scripturi's ``api/customer_service.py``.
+    Returns ``{agents, totals, orders_scanned, orders_matched}``; the endpoint adds
+    ``cs_tags`` / ``buckets_order`` / ``data_note``.
+    """
+    cs_tags_lower = {t.lower(): t for t in cs_tags}
+    agent_data = {
+        tag: {
+            "tag": tag,
+            "total_orders": 0,
+            "total_revenue_ron": 0.0,
+            "delivered_orders": 0,
+            "delivered_revenue_ron": 0.0,
+            "buckets": _empty_buckets(),
+            "by_store": {},
+        }
+        for tag in cs_tags
+    }
+    grand = {
+        "total_orders": 0,
+        "total_revenue_ron": 0.0,
+        "delivered_orders": 0,
+        "delivered_revenue_ron": 0.0,
+        "buckets": _empty_buckets(),
+    }
+    scanned = 0
+
+    for rec in records:
+        scanned += 1
+        tag_set = {
+            str(t).strip().lower() for t in (rec.get("tags") or []) if str(t).strip()
+        }
+        if not tag_set:
+            continue
+        matched = [orig for low, orig in cs_tags_lower.items() if low in tag_set]
+        if not matched:
+            continue
+        revenue_ron = rec.get("revenue_ron")
+        if revenue_ron is None:
+            continue  # unconvertible — skip (consistent with the P&L, Finding Q)
+
+        bucket = _CAT_TO_BUCKET.get(classify(rec.get("status")), "neexpediate")
+        is_delivered = bucket == "livrate"
+        store_name = rec.get("store") or "?"
+
+        grand["total_orders"] += 1
+        grand["total_revenue_ron"] += revenue_ron
+        grand["buckets"][bucket] += 1
+        if is_delivered:
+            grand["delivered_orders"] += 1
+            grand["delivered_revenue_ron"] += revenue_ron
+
+        for tag_original in matched:
+            ad = agent_data[tag_original]
+            ad["total_orders"] += 1
+            ad["total_revenue_ron"] += revenue_ron
+            ad["buckets"][bucket] += 1
+            st = ad["by_store"].setdefault(
+                store_name,
+                {
+                    "orders": 0,
+                    "revenue_ron": 0.0,
+                    "delivered": 0,
+                    "delivered_revenue": 0.0,
+                    "buckets": _empty_buckets(),
+                },
+            )
+            st["orders"] += 1
+            st["revenue_ron"] += revenue_ron
+            st["buckets"][bucket] += 1
+            if is_delivered:
+                ad["delivered_orders"] += 1
+                ad["delivered_revenue_ron"] += revenue_ron
+                st["delivered"] += 1
+                st["delivered_revenue"] += revenue_ron
+
+    agents = []
+    for tag in cs_tags:
+        ad = agent_data[tag]
+        agents.append(
+            {
+                "tag": ad["tag"],
+                "total_orders": ad["total_orders"],
+                "total_revenue_ron": round(ad["total_revenue_ron"], 2),
+                "delivered_orders": ad["delivered_orders"],
+                "delivered_revenue_ron": round(ad["delivered_revenue_ron"], 2),
+                "buckets": ad["buckets"],
+                "by_store": [
+                    {
+                        "store": k,
+                        "orders": v["orders"],
+                        "revenue_ron": round(v["revenue_ron"], 2),
+                        "delivered": v["delivered"],
+                        "delivered_revenue": round(v["delivered_revenue"], 2),
+                        "buckets": v["buckets"],
+                    }
+                    for k, v in sorted(ad["by_store"].items())
+                ],
+            }
+        )
+
+    return {
+        "agents": agents,
+        "totals": {
+            "orders": grand["total_orders"],
+            "revenue_ron": round(grand["total_revenue_ron"], 2),
+            "delivered": grand["delivered_orders"],
+            "delivered_revenue_ron": round(grand["delivered_revenue_ron"], 2),
+            "buckets": grand["buckets"],
+        },
+        "orders_scanned": scanned,
+        "orders_matched": grand["total_orders"],
+    }
 
 
 async def _get_cs_tags(db: AsyncSession) -> list:
@@ -96,7 +243,6 @@ async def cs_report(
     from app.api.exchange_rates import preload_rates, get_rate_from_cache
 
     cs_tags = await _get_cs_tags(db)
-    cs_tags_lower = {t.lower(): t for t in cs_tags}
 
     conditions = [await build_tag_exclusion_condition(db)]
     if store_uids:
@@ -129,23 +275,9 @@ async def cs_report(
     else:
         rate_cache = {}
 
-    agent_data = {
-        tag: {
-            "tag": tag,
-            "total_orders": 0,
-            "total_revenue_ron": 0.0,
-            "delivered_orders": 0,
-            "delivered_revenue_ron": 0.0,
-            "by_store": {},
-        }
-        for tag in cs_tags
-    }
-
+    # Build plain records (FX done here) and hand off to the pure, testable core.
+    records = []
     for order in orders:
-        tags = order.tags or []
-        if not tags:
-            continue
-        order_tag_set = " ".join(str(t).lower() for t in tags)
         currency = (order.currency or "RON").upper()
         order_date = to_bucharest_date(order.frisbo_created_at) or romania_today()
         revenue = order.total_price or 0
@@ -154,68 +286,29 @@ async def cs_report(
             revenue_ron = round(revenue * fx, 2) if fx else None
         else:
             revenue_ron = revenue
-        if revenue_ron is None:
-            continue  # unconvertible — skip (consistent with the P&L, Finding Q)
-
-        is_delivered = classify(order.aggregated_status) == "delivered"
-        store_name = stores.get(order.store_uid, order.store_uid)
-
-        for tag_lower, tag_original in cs_tags_lower.items():
-            if tag_lower in order_tag_set:
-                ad = agent_data[tag_original]
-                ad["total_orders"] += 1
-                ad["total_revenue_ron"] += revenue_ron
-                st = ad["by_store"].setdefault(
-                    store_name,
-                    {"orders": 0, "revenue_ron": 0.0, "delivered": 0},
-                )
-                st["orders"] += 1
-                st["revenue_ron"] += revenue_ron
-                if is_delivered:
-                    ad["delivered_orders"] += 1
-                    ad["delivered_revenue_ron"] += revenue_ron
-                    st["delivered"] += 1
-
-    agents = []
-    for tag in cs_tags:
-        ad = agent_data[tag]
-        agents.append(
+        records.append(
             {
-                "tag": ad["tag"],
-                "total_orders": ad["total_orders"],
-                "total_revenue_ron": round(ad["total_revenue_ron"], 2),
-                "delivered_orders": ad["delivered_orders"],
-                "delivered_revenue_ron": round(ad["delivered_revenue_ron"], 2),
-                "by_store": [
-                    {
-                        "store": k,
-                        "orders": v["orders"],
-                        "revenue_ron": round(v["revenue_ron"], 2),
-                        "delivered": v["delivered"],
-                    }
-                    for k, v in sorted(ad["by_store"].items())
-                ],
+                "tags": order.tags or [],
+                "status": order.aggregated_status,
+                "store": stores.get(order.store_uid, order.store_uid),
+                "revenue_ron": revenue_ron,
             }
         )
 
-    tagged = sum(a["total_orders"] for a in agents)
+    result = aggregate_cs(records, cs_tags)
     return {
-        "agents": agents,
-        "totals": {
-            "orders": tagged,
-            "revenue_ron": round(sum(a["total_revenue_ron"] for a in agents), 2),
-            "delivered": sum(a["delivered_orders"] for a in agents),
-            "delivered_revenue_ron": round(
-                sum(a["delivered_revenue_ron"] for a in agents), 2
-            ),
-        },
-        "orders_scanned": len(orders),
-        "orders_matched": tagged,
+        **result,
         "cs_tags": cs_tags,
-        # Surfaced so the UI can explain a near-empty result rather than look broken.
+        "buckets_order": CS_BUCKETS,
+        # Frisbo only STARTED carrying Shopify tags ~mid-May 2026 and did NOT backfill
+        # older orders. Verified across 2 orgs (magdeal, belasil): 0% tag coverage before
+        # May, ~15-17% in May as the field went live mid-month, ~99% from June. So a CS
+        # report for a HISTORIC month is near-empty; the current/future months come through
+        # essentially complete straight from Frisbo — NOT a permanent limitation.
         "data_note": (
-            "Only orders carrying an agent tag (via Frisbo OrderTags) are counted. "
-            "Agent tagging is currently sparse upstream; results may be near-empty "
-            "until tags are backfilled and confirmed to flow through Frisbo."
+            "Frisbo a început să transmită etichetele Shopify abia de la mijlocul lui "
+            "mai 2026 și nu a completat retroactiv comenzile mai vechi (0% înainte de mai, "
+            "~15% în mai, ~99% din iunie). Pentru luni istorice raportul apare gol; pentru "
+            "luna curentă acoperirea vine aproape completă direct din Frisbo."
         ),
     }
