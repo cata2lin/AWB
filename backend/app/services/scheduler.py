@@ -31,6 +31,7 @@ sync_service.sync_orders(); this module only wires triggers + cadences.
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
 
@@ -199,6 +200,29 @@ def setup_sync_jobs():
         max_instances=1,
     )
     logger.info("📅 Marketing self-heal every 12 hours (trailing 35d)")
+
+    # ── Marketing FULL re-sync — weekly (Sun 03:00) ─────────────────────────
+    # The 12h self-heal above only covers a 35-day trailing window, so sheet rows that
+    # are ADDED or CORRECTED more than 35 days after their date are never re-read
+    # (this caused the 2026-01 value drift + the grandia 2026-05-06 missing day). This
+    # weekly pass re-syncs the FULL history (2025-01-01 = the marketing-data epoch) so
+    # retroactive sheet edits always reach the DB. Uses a CronTrigger (fixed weekly
+    # time), NOT a >1-day interval — an interval longer than the backend's restart
+    # cadence would reset on every restart and rarely fire. Non-destructive (the sync
+    # aborts and leaves the DB untouched if every sheet fetch fails).
+    async def _marketing_full_resync_job():
+        async with AsyncSessionLocal() as db:
+            await sync_marketing_costs(db, _date(2025, 1, 1), _date.today())
+
+    scheduler.add_job(
+        _marketing_full_resync_job,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=0),
+        id="marketing_full_resync",
+        name="Marketing full re-sync (CPA sheet → full history, weekly Sun 03:00)",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("📅 Marketing full re-sync weekly (Sun 03:00, full history)")
 
     # ── BNR exchange-rate sync — every 12 h ─────────────────────────────────
     # The FX table was only synced at app startup, so a long-running process never

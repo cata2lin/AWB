@@ -942,6 +942,14 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-06-19 — Weekly full marketing re-sync (catch retroactive CPA-sheet edits)
+
+**Files changed:** `backend/app/services/scheduler.py`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **Weekly full-history marketing re-sync** | The 12h self-heal only re-syncs a **35-day trailing window**, so CPA-sheet rows added or corrected more than 35 days after their date were never re-read. This silently caused a **2026-01 value drift (−6,649 RON)** and a missing **grandia.ro 2026-05-06** day (~19.8k RON) — both since reconciled to 0. | Added a `marketing_full_resync` job on a **`CronTrigger` (Sunday 03:00)** that re-syncs the **full CPA-sheet history** (2025-01-01 → today). Non-destructive (aborts if all fetches fail). CronTrigger, not a >1-day interval, so it fires at a fixed time regardless of backend restarts (an interval longer than the restart cadence would rarely fire). The existing 12h/35-day self-heal stays for daily freshness. **Takes effect on backend restart.** |
+
 ### 2026-06-11 — CS report: testability (unit tests + real-data parity harness)
 
 **Files changed:** `backend/app/api/cs_report.py`, `backend/tests/test_cs_report.py` (new), `backend/scratch/verify_cs_report_parity.py` (new)
