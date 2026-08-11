@@ -830,7 +830,7 @@ Static endpoints (e.g., `/couriers`, `/mark-all-printed`) are declared before dy
 ```env
 # Frisbo API
 FRISBO_API_TOKEN=<JWT token>
-FRISBO_API_URL=https://ingest.apis.store-view.frisbo.dev  # default
+FRISBO_API_URL=https://ingest.apis.orqestra.app  # default (moved from store-view.frisbo.dev 2026-06)
 
 # Database
 DATABASE_URL=postgresql://postgres:123@localhost:5432/awbprint
@@ -941,6 +941,14 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 ---
 
 ## Changelog
+
+### 2026-06-19 — Frisbo API base host → orqestra.app
+
+**Files changed:** `backend/app/core/config.py`, `docker-compose.yml`, `README.md`, `docs/frisbo/openapi.json`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **New Frisbo base URL** | Frisbo moved its API base from `https://ingest.apis.store-view.frisbo.dev` to **`https://ingest.apis.orqestra.app`**. | Same API paths + Bearer auth — verified live on the new host for every endpoint family the app uses: `/orders/search`, `/orders/order/{uid}`, `/orders/order/{uid}/shipments`, `/inventory_items/search` (all 200), and end-to-end through `FrisboClient.search_orders/get_order/search_products`. Changed the `frisbo_api_url` default in `config.py` (single source — the client and `print_batch.py` both read it), plus the `docker-compose.yml` env and docs. Still overridable via the `FRISBO_API_URL` env var. **Both hosts currently work, so the migration is zero-downtime.** **Prod:** on the app server, ensure `FRISBO_API_URL` is unset (uses the new default) or set to the new host, then restart `awb-backend`. |
 
 ### 2026-06-19 — Weekly full marketing re-sync (catch retroactive CPA-sheet edits)
 

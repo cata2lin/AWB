@@ -21,8 +21,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://postgres:123@localhost:5432/awbprint"
 
-    # Frisbo API
-    frisbo_api_url: str = "https://ingest.apis.store-view.frisbo.dev"
+    # Frisbo API — base host moved from ingest.apis.store-view.frisbo.dev to the
+    # orqestra domain (2026-06). Same API paths + Bearer auth; overridable via the
+    # FRISBO_API_URL env var.
+    frisbo_api_url: str = "https://ingest.apis.orqestra.app"
     frisbo_api_token: str = ""  # Legacy single token (backward compat)
     frisbo_org_tokens: str = "[]"  # JSON array of {name, token} objects
 

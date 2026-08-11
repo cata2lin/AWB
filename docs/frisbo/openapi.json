@@ -7173,8 +7173,8 @@
   },
   "servers": [
     {
-      "url": "https://ingest.apis.store-view.frisbo.dev",
-      "description": "Production server"
+      "url": "https://ingest.apis.orqestra.app",
+      "description": "Production server (base moved from ingest.apis.store-view.frisbo.dev, 2026-06)"
     }
   ],
   "x-ext-urls": {}
