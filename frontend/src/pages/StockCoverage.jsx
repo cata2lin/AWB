@@ -54,7 +54,7 @@ const formatDateTime = (iso) => {
 
 const formatCoverage = (r) => {
     if (r.stock == null || r.stock <= 0) return '—'
-    if (r.coverage_days == null) return '—'
+    if (r.coverage_days == null) return 'niciodată'
     if (r.coverage_days > ONE_YEAR) return '> 1 an'
     return `${formatNumber(Math.round(r.coverage_days))} zile`
 }
@@ -296,7 +296,7 @@ export default function StockCoverage() {
             render: (r) => <span className={`whitespace-nowrap ${sinceSaleClass(r.days_since_last_sale)}`}>{formatSinceSale(r)}</span>,
         },
         {
-            key: 'coverage_days', header: 'Stocul ajunge', sortable: true, align: 'right',
+            key: 'coverage_days', header: 'Se termină în', sortable: true, align: 'right',
             render: (r) => <span className="whitespace-nowrap text-zinc-700 dark:text-zinc-300">{formatCoverage(r)}</span>,
         },
         {
@@ -349,7 +349,7 @@ export default function StockCoverage() {
                 'Stoc': r.stock ?? '',
                 [soldLabel]: r.sold_units,
                 'Fără vânzare de (zile)': r.days_since_last_sale ?? '> 365',
-                'Stocul ajunge (zile)': r.coverage_days ?? formatCoverage(r),
+                'Se termină în (zile)': r.coverage_days ?? formatCoverage(r),
                 'Valoare stoc (RON)': r.stock_value ?? '',
                 'Buc/zi': r.velocity,
                 'Vândute pe toate magazinele': r.pool_sold_units,
