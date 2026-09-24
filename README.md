@@ -942,6 +942,30 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-09-24 — Stoc & Viteză v2: pagina răspunde la „ce nu se vinde”
+
+**Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **One stock, one coverage, one verdict per row** | v1 showed store stock + total stock and two "days" columns per row, and repeated each product once per store on "Toate magazinele" — confusing for the actual question (dead stock). | Rows now carry `stock`, `coverage_days` and a `status` (Nu se vinde / Foarte lent > 1 an / Lent > 6 luni / OK / Se termină < 14 zile / Fără stoc). Coverage over a year shows „> 1 an” instead of e.g. 29.730 zile. |
+| **„Toate magazinele” = one row per product** | Master total stock, sales and last sale across every store; click a row for the per-store breakdown (`?master_product_id=`). | Belasil / Labnoir / duppo.md (not in stock-sync) show the shared pool, with the store's own sales under the pooled figure. |
+| **Fără vânzare de / Valoare stoc** | Days since the last non-cancelled sale (365-day lookback, one SQL aggregate, excluded tags dropped) and stock × `sku_costs.cost`. | KPIs: products with stock, stock value, not selling (count + RON blocked), slow (count + RON blocked). Quick filters Toate / Nu se vând / Lente / Se termină, persisted in the URL. Default sort: worst status first, most money blocked first. |
+| **Server-side store filter** | The page downloaded every store (~2.7 MB) and filtered in the browser. | Requests now pass `store_uids` (default `__toate__`); ~0.9 MB for the all-stores view, far less per store. |
+
+### 2026-09-24 — Stoc & Viteză: stoc master + zile de vânzare pe fiecare magazin
+
+**Files changed:** `backend/app/api/stock_coverage/`, `backend/app/services/stock_sync_client.py`, `backend/app/core/config.py`, `backend/app/main.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`, `frontend/src/App.jsx`, `frontend/src/components/Sidebar.jsx`, `.env.example`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **New page `/stoc-viteza`** | Per-store list of every product a store carries: SKU, name, stock on that store, total master stock, units sold in the last 30/60/90 days, units/day and days of stock left (store and total). | Store + period filters persist in the URL; Excel export; KPI row (products, store stock, < 14 days left, stock without sales). Products with no sales are included — they are the dead-stock rows the Viteză Vânzări tab never shows. |
+| **Stock from stock-sync, not `products.stock_available`** | `stock_available` comes from the old InventorySync and is frozen since 2026-07-22. | New read-only client (`/v1/stores`, `/v1/listings?matchStatus=MATCHED`, `/v1/master-products`, `/v1/stock`, ~40 calls). Stock is fetched for ALL master products: ~600 masters with no listing hold most of the ~117k unallocated units, shown on a „Nealocat” pseudo-store. |
+| **Store / SKU mapping** | AWB orders only carry SKU; the same SKU maps to different products on different stores. | (store, SKU) → master via that store's listings. AWB store ↔ stock-sync store by `COALESCE(xconnector_domain, shopify_domain, slug.myshopify.com)`; ORC/HU/SK have no domain in AWB and are mapped by uid. Belasil, Labnoir, duppo.md are not in stock-sync: no store stock, products via the AWB catalog barcode, days computed on the pooled rate across all stores. |
+| **Velocity** | Units sold (cancelled excluded, excluded tags dropped) ÷ period days, Bucharest calendar days. | Report cached 10 min per period (stock only moves at the 02:00 sync / manual runs); first load ~5 s (30 d) to ~13 s (90 d). |
+
+**Prod:** set `STOCK_SYNC_API_TOKEN` (Second Brain `STOCK_SYNC_AWB_REPORT_TOKEN`) and optionally `STOCK_SYNC_API_URL` in `backend/.env`, then restart. Without the token the page shows a 503 with an actionable message.
+
 ### 2026-06-19 — Frisbo API base host → orqestra.app
 
 **Files changed:** `backend/app/core/config.py`, `docker-compose.yml`, `README.md`, `docs/frisbo/openapi.json`

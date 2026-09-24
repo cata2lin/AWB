@@ -17,6 +17,7 @@ const Rules = lazy(() => import('./pages/Rules'))
 const Settings = lazy(() => import('./pages/Settings'))
 const History = lazy(() => import('./pages/History'))
 const Analytics = lazy(() => import('./pages/Analytics'))
+const StockCoverage = lazy(() => import('./pages/StockCoverage'))
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'))
 const Logs = lazy(() => import('./pages/Logs'))
 const ComisionAgentie = lazy(() => import('./pages/ComisionAgentie'))
@@ -60,6 +61,7 @@ function AppContent() {
                 <Route path="/duplicates" element={<Duplicates />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/stoc-viteza" element={<StockCoverage />} />
                 <Route path="/purchase-orders" element={<PurchaseOrders />} />
                 <Route path="/purchase-orders/:poNumber" element={<PurchaseOrders />} />
                 <Route path="/history" element={<History />} />

@@ -38,6 +38,7 @@ from app.api import (
     courier_audit,
     watchlists,
     emag_report,
+    stock_coverage,
 )
 from app.api.analytics import daily_perf, trendyol_profitability
 from app.api import settings as settings_api
@@ -228,6 +229,7 @@ app.include_router(
 )
 app.include_router(sku_risk.router, prefix="/api", tags=["sku-risk"])
 app.include_router(sales_velocity.router, prefix="/api", tags=["sales-velocity"])
+app.include_router(stock_coverage.router, prefix="/api", tags=["stock-coverage"])
 app.include_router(sku_profitability.router, prefix="/api", tags=["sku-profitability"])
 app.include_router(
     sku_marketing_costs.router, prefix="/api", tags=["sku-marketing-costs"]
