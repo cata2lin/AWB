@@ -49,10 +49,13 @@ PERFUME_NAME_RE = re.compile(
 PLACEHOLDER_SKU_RE = re.compile(r"surpriza|mystery|cutie-cadou|^test", re.IGNORECASE)
 NEGATIVE_STATUSES = {"mort", "nu_se_vinde", "lent", "foarte_lent"}
 YEAR_DAYS = 365
-# Goods arriving: container intakes are often booked as a CORRECTION whose note says
-# "recepție" (e.g. "Receptie container C55"), not only as RECEIVING. "recuperare stoc
-# livrare" (parcels coming back) is not an arrival.
-RECEIPT_NOTE_RE = re.compile(r"recep[tț]i", re.IGNORECASE)
+# Goods arriving = a supplier delivery or container intake, told apart by the ledger
+# note: "recepție livrare …", "recuperare stoc livrare …" (delivery lines re-booked)
+# and "Receptie container C55" (booked as a CORRECTION). Neither the reason nor a
+# 0 → stock jump is enough: inventory counts, scanner adjustments ("ajustare stoc din
+# scaner") and moves between warehouses also do that to old stock.
+RECEIPT_NOTE_RE = re.compile(r"recep[tț]i|recuperare stoc livrare", re.IGNORECASE)
+NOT_RECEIPT_NOTE_RE = re.compile(r"scaner|mutare", re.IGNORECASE)
 MIN_RECEIPT_UNITS = 10
 # A listing waiting in stock-sync's relink review is live on its store but not linked
 # to its master yet — a different fix from "listed nowhere".
@@ -151,18 +154,16 @@ def stock_status(
 
 
 def _is_arrival(e: dict) -> bool:
-    if e["before"] <= 0 < e["after"]:
-        return True
-    received = e["after"] - e["before"]
-    return received >= MIN_RECEIPT_UNITS and (
-        e.get("reason") == "RECEIVING"
-        or bool(RECEIPT_NOTE_RE.search(e.get("note") or ""))
+    note = e.get("note") or ""
+    return (
+        e["after"] - e["before"] >= MIN_RECEIPT_UNITS
+        and bool(RECEIPT_NOTE_RE.search(note))
+        and not NOT_RECEIPT_NOTE_RE.search(note)
     )
 
 
 def stock_arrivals(ledger: Iterable[dict]) -> Dict[str, datetime]:
-    """master → last time goods arrived: a receipt (RECEIVING, or a correction noted
-    as a "recepție"), or stock going from 0 to positive — ignoring the opening-stock
+    """master → last supplier delivery / container intake, ignoring the opening-stock
     seeding at the stock-sync cutover."""
     arrivals: Dict[str, str] = {}
     for e in sorted(ledger, key=lambda x: (x["at"], x["created"])):
@@ -413,19 +414,25 @@ def build_rows(
         for master in store_masters
     } | set(catalog_master.values())
 
-    def history_days(store_uid: str, master: Optional[str], skus: set) -> Optional[int]:
-        """Days the row has had a chance to sell: the younger of product and store."""
+    def product_age(master: Optional[str], skus: set) -> Optional[int]:
+        """Days since the product's FIRST SKU appeared in the catalog — a product
+        re-listed under a new SKU on another store is not a new product."""
         candidates = set(skus)
         if master:
             candidates |= master_skus.get(master, set()) | catalog_skus_by_master.get(
                 master, set()
             )
         starts = [first_seen[sku] for sku in candidates if sku in first_seen]
+        return (today - _bucharest_date(min(starts))).days if starts else None
+
+    def history_days(
+        store_uid: str, product_days: Optional[int]
+    ) -> Optional[int]:
+        """Days the row has had a chance to sell: the younger of product and store."""
+        ages = [product_days] if product_days is not None else []
         if store_uid in store_first_order:
-            starts.append(store_first_order[store_uid])
-        if not starts:
-            return None
-        return (today - _bucharest_date(max(starts))).days
+            ages.append((today - _bucharest_date(store_first_order[store_uid])).days)
+        return min(ages) if ages else None
 
     def make_row(
         store_uid: str,
@@ -441,7 +448,8 @@ def build_rows(
         stock_is_pool: bool = False,
     ) -> dict:
         stock = stock_by_master.get(master) if master else None
-        history = history_days(store_uid, master, skus)
+        age = product_age(master, skus)
+        history = history_days(store_uid, age)
         listed = master is None or master in listed_masters
         arrived = arrivals.get(master) if master else None
         arrived_days = (today - _bucharest_date(arrived)).days if arrived else None
@@ -473,8 +481,11 @@ def build_rows(
             if store_uid in stale_stores:
                 # No orders for a week: sales history isn't reliable, don't judge.
                 status = "date_incomplete"
-            elif arrived_days is not None and arrived_days < DEAD_DAYS:
-                # Goods arrived recently: too early to call them dead or slow.
+            elif (arrived_days is not None and arrived_days < DEAD_DAYS) or (
+                age is not None and age < DEAD_DAYS
+            ):
+                # Goods delivered recently, or a product launched recently: too early
+                # to call it dead or slow.
                 status = "nou"
         listing_note = None
         if master and not listed:
@@ -520,6 +531,7 @@ def build_rows(
             "arrived_at": arrived.isoformat() if arrived else None,
             "days_since_arrival": arrived_days,
             "history_days": history,
+            "product_age_days": age,
             "listed": listed,
             "listing_note": listing_note,
             "in_master": bool(stock),

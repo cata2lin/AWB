@@ -942,6 +942,16 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-09-24 — Stoc & Viteză: „Marfă intrată recent” numai pe recepții reale
+
+**Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **Stoc vechi numărat ca marfă nouă** | 179 de produse (1,9 mil. RON) erau „Marfă intrată recent”, deci ascunse din Stoc mort / Lente; 61 nu primiseră marfă, ci doar trecuseră de la 0 la stoc prin inventar (43), mutări între depozite (8), reconcilierea zilnică (5; STORE_SUM citește orice creștere din magazine ca intrare — capcana 1 din `gigi:stock-pool-repair`), iar „RECEIVING” include și „ajustare stoc din scaner depozit”. | Sosire = doar notele de recepție: „recepție livrare”, „recuperare stoc livrare”, „Receptie container …” (min. 10 buc), fără scaner / mutare. Pe 60 de zile: Stoc mort 26 → 33 (29k → 42k RON), Lente 333 → 389 (1,44 → 1,95 mil. RON), Nou 179 → 107 (toate cu recepție reală). Ex. Pensula magică 2.038 buc (~89k RON) și Mașinuțe RC trec la „Foarte lent”. |
+| **Vârsta produsului după cel mai nou SKU** | Un produs vechi relistat sub un SKU nou pe alt magazin părea nou și nu putea fi mort. | Vârsta = primul SKU apărut în catalog; produsele lansate de sub 90 de zile sunt „Marfă intrată recent” (regula Soniei: produsele noi nu apar moarte/lente). |
+| **TOTAL vs card** | TOTAL spunea 1.057 produse, cardul 999 cu stoc. | TOTAL arată ambele: „1.057 produse (999 cu stoc)”. |
+
 ### 2026-09-24 — Stoc & Viteză v4: calcul ca în Viteză Vânzări, containere recunoscute, încărcare instant
 
 **Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/app/api/stock_coverage/__init__.py`, `backend/app/services/stock_sync_client.py`, `backend/app/main.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`

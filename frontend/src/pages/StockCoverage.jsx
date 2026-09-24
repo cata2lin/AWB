@@ -364,9 +364,11 @@ export default function StockCoverage() {
                             pe total: {STATUS[r.total_status]?.label || '—'}
                         </span>
                     )}
-                    {r.status === 'nou' && r.arrived_at && (
+                    {r.status === 'nou' && (r.arrived_at || r.product_age_days != null) && (
                         <span className="text-[11px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
-                            intrată {formatDateTime(r.arrived_at).split(',')[0]}
+                            {r.arrived_at && r.days_since_arrival < DEAD_DAYS
+                                ? `recepție ${formatDateTime(r.arrived_at).split(',')[0]}`
+                                : `produs lansat acum ${formatNumber(r.product_age_days)} zile`}
                         </span>
                     )}
                     {r.listing_note && (
@@ -427,6 +429,7 @@ export default function StockCoverage() {
         const sum = (key) => rows.reduce((s, r) => s + (r[key] || 0), 0)
         return {
             count: rows.length,
+            withStock: rows.filter((r) => (r.stock || 0) > 0).length,
             stock: sum('stock'),
             sold_units: sum('sold_units'),
             stock_value: sum('stock_value'),
@@ -436,7 +439,7 @@ export default function StockCoverage() {
     }, [rows])
 
     const TOTAL_CELLS = {
-        product_name: () => <span className="font-semibold text-zinc-900 dark:text-white">TOTAL · {formatNumber(totals.count)} produse</span>,
+        product_name: () => <span className="font-semibold text-zinc-900 dark:text-white">TOTAL · {formatNumber(totals.count)} produse ({formatNumber(totals.withStock)} cu stoc)</span>,
         stock: () => <span className="font-mono font-semibold">{formatNumber(totals.stock)}</span>,
         sold_units: () => <span className="font-mono font-semibold">{formatNumber(totals.sold_units)}</span>,
         stock_value: () => <span className="font-mono font-semibold whitespace-nowrap">{formatMoney(totals.stock_value)} RON</span>,
@@ -650,7 +653,7 @@ export default function StockCoverage() {
                         <span className="text-zinc-700 dark:text-zinc-300">{meta.stores_without_master.join(', ')}</span> nu sunt în stock-sync și vând din stocul comun: la ele stocul și vânzările sunt pe toate magazinele.{' '}
                     </>
                 )}
-                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile (doar pentru produse și magazine mai vechi de {DEAD_DAYS} de zile); <span className="text-zinc-700 dark:text-zinc-300">Nelistat</span> = are stoc, dar nu e activ pe niciun magazin; <span className="text-zinc-700 dark:text-zinc-300">Legătură neaprobată</span> = e pe magazin, dar legătura cu masterul așteaptă aprobare în stock-sync; <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă. „Vândute” = toate comenzile din perioadă în afară de cele anulate, iar viteza (buc/zi) se împarte la zilele de la prima vânzare din perioadă — la fel ca în Viteză Vânzări. „Se termină în” = stoc ÷ buc/zi; dacă produsul n-a vândut nimic în perioadă, se folosește ritmul din ultimul an. <span className="text-zinc-700 dark:text-zinc-300">Marfă intrată recent</span> = recepție (container, livrare) sau stoc pornit de la 0 în ultimele {DEAD_DAYS} de zile, după stock-sync — prea devreme pentru mort sau lent. Valoarea = stoc × cost din Costuri SKU, fără TVA; produsele fără cost acolo nu intră în sume. Nu sunt incluse parfumurile{meta?.excluded_perfume_stores?.length ? ` (${meta.excluded_perfume_stores.join(', ')})` : ''}, produsele aflate încă în test (doar comenzi de test) și SKU-urile placeholder.{meta?.stale_stores?.length ? ` Fără comenzi de peste 7 zile (date incomplete, nejudecate): ${meta.stale_stores.join(', ')}.` : ''} Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
+                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile (doar pentru produse și magazine mai vechi de {DEAD_DAYS} de zile); <span className="text-zinc-700 dark:text-zinc-300">Nelistat</span> = are stoc, dar nu e activ pe niciun magazin; <span className="text-zinc-700 dark:text-zinc-300">Legătură neaprobată</span> = e pe magazin, dar legătura cu masterul așteaptă aprobare în stock-sync; <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă. „Vândute” = toate comenzile din perioadă în afară de cele anulate, iar viteza (buc/zi) se împarte la zilele de la prima vânzare din perioadă — la fel ca în Viteză Vânzări. „Se termină în” = stoc ÷ buc/zi; dacă produsul n-a vândut nimic în perioadă, se folosește ritmul din ultimul an. <span className="text-zinc-700 dark:text-zinc-300">Marfă intrată recent</span> = recepție de livrare sau container în ultimele {DEAD_DAYS} de zile (din istoricul stock-sync), sau produs apărut în catalog de mai puțin de {DEAD_DAYS} de zile — prea devreme pentru mort sau lent. Numărătorile de inventar, ajustările din scaner, mutările între depozite și reconcilierea zilnică nu contează ca marfă nouă. Valoarea = stoc × cost din Costuri SKU, fără TVA; produsele fără cost acolo nu intră în sume. Nu sunt incluse parfumurile{meta?.excluded_perfume_stores?.length ? ` (${meta.excluded_perfume_stores.join(', ')})` : ''}, produsele aflate încă în test (doar comenzi de test) și SKU-urile placeholder.{meta?.stale_stores?.length ? ` Fără comenzi de peste 7 zile (date incomplete, nejudecate): ${meta.stale_stores.join(', ')}.` : ''} Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
             </p>
         </PageContainer>
     )

@@ -302,7 +302,7 @@ def test_new_product_cannot_be_dead_stock():
     result = build_rows(
         AWB_STORES, SNAPSHOT, CATALOG, {}, 30, first_seen=fresh, now=NOW
     )
-    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "nu_se_vinde"
+    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "nou"  # launched 23 days ago: not judged yet
     old = {"HA-2": datetime(2026, 1, 1, 8, 0)}
     result = build_rows(AWB_STORES, SNAPSHOT, CATALOG, {}, 30, first_seen=old, now=NOW)
     assert _row(result, ALL_STORES_UID, master="m2")["status"] == "mort"
@@ -369,11 +369,18 @@ def test_ledger_arrival_ignores_cutover_seeding():
             "created": "",
             "before": 0,
             "after": 1800,
+            "note": "Corectie dubla numarare receptie C54-C56",
         },
+        # old stock counted back in, or moved between warehouses: not new goods
+        {"master": "m4", "at": "2026-09-23T12:00:00Z", "created": "", "before": 0,
+         "after": 419, "note": "Inventar AWB Arona (bartolomeu)"},
+        {"master": "m5", "at": "2026-09-23T12:00:00Z", "created": "", "before": 0,
+         "after": 50, "note": "mutare gramada intre depozite dupa numaratoare"},
     ]
     arrivals = stock_arrivals(ledger)
     assert "m1" not in arrivals  # opening stock at the cutover, not new goods
     assert arrivals["m2"] == datetime(2026, 9, 24, 9, 0)
+    assert "m4" not in arrivals and "m5" not in arrivals
 
 
 def test_goods_that_just_arrived_are_new_not_dead():
@@ -538,12 +545,35 @@ def test_container_booked_as_correction_counts_as_arrival():
         {"master": "m2", "at": "2026-09-20T08:00:00Z", "created": "", "before": 100,
          "after": 400, "reason": "CORRECTION", "note": "Inventar AWB Arona (bartolomeu)"},
         {"master": "m3", "at": "2026-09-20T08:00:00Z", "created": "", "before": 5,
-         "after": 50, "reason": "RECEIVING", "note": "recuperare stoc livrare"},
+         "after": 50, "reason": "RECEIVING", "note": "recuperare stoc livrare cmu7 / linia 3"},
+        {"master": "m4", "at": "2026-09-20T08:00:00Z", "created": "", "before": 0,
+         "after": 60, "reason": "RECEIVING", "note": "ajustare stoc din scaner depozit"},
     ]
     arrivals = stock_arrivals(ledger)
     assert arrivals["m1"] == datetime(2026, 9, 24, 8, 27)
     assert "m2" not in arrivals  # an inventory count is not goods arriving
-    assert "m3" in arrivals
+    assert "m3" in arrivals  # a supplier delivery line
+    assert "m4" not in arrivals  # a scanner count, not goods arriving
+
+
+def test_product_launched_recently_is_new_not_slow():
+    # HA-2 first appeared in the catalog 30 days ago: no verdict yet, however its
+    # stock was booked.
+    result = build_rows(
+        AWB_STORES, SNAPSHOT, CATALOG, {}, 30, now=NOW,
+        first_seen={"HA-2": datetime(2026, 8, 25)},
+    )
+    r = _row(result, ALL_STORES_UID, master="m2")
+    assert r["status"] == "nou" and r["product_age_days"] == 30
+    # m1 = HA-1 (new SKU on OZ) + BEL-1 (on Belasil since 2025): the product is old,
+    # so its unsold stock is still dead
+    result = build_rows(
+        AWB_STORES, SNAPSHOT, CATALOG, {}, 30, now=NOW,
+        first_seen={"HA-1": datetime(2026, 9, 1), "BEL-1": datetime(2025, 1, 1)},
+    )
+    r = _row(result, ALL_STORES_UID, master="m1")
+    assert r["product_age_days"] > 365
+    assert r["status"] == "mort"
 
 
 def test_listing_waiting_for_relink_is_not_unlisted():
