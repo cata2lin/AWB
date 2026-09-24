@@ -942,6 +942,19 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-09-24 — Stoc & Viteză v4: calcul ca în Viteză Vânzări, containere recunoscute, încărcare instant
+
+**Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/app/api/stock_coverage/__init__.py`, `backend/app/services/stock_sync_client.py`, `backend/app/main.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **Încărcare lentă** | Construirea de la zero dura ~30 s (vânzările citite comandă cu comandă, câte o dată pentru fiecare perioadă), iar fiecare din cele 2 procese uvicorn avea cache-ul lui rece. | O singură interogare agregată în Postgres pe un an (7,6 s) dă toate perioadele, prima/ultima vânzare și ritmul anual; 60/90 de zile se construiesc apoi în 0,4 s. `keep_warm()` construiește raportul la pornire și îl ține proaspăt la 5 min (doar când schedulerul e activ), iar calculul rulează în `asyncio.to_thread`. |
+| **Calcul diferit de Viteză Vânzări** | Vândutele excludeau și refuzurile, iar viteza se împărțea la toată perioada. | Ca în `sales_velocity`: se scad doar comenzile anulate, iar buc/zi = vândute ÷ zilele de la prima vânzare livrată din perioadă. 881 din 896 de produse au acum aceeași viteză; restul diferă doar prin gruparea produselor (master stock-sync vs grupuri pe barcode AWB). Stocul rămâne din master: `products.stock_available` e înghețat (HA-0501 = −7, HA-0001 = 0), iar PO-urile nu mai sunt actualizate din 22.07 (543k buc „în drum”). |
+| **„Se termină în: niciodată”** | Orice produs fără vânzări în perioadă arăta „niciodată”. | Se folosește ritmul din ultimul an („> 1 an (ritm pe 1 an)”); „fără vânzări în 1 an” doar când chiar n-a vândut nimic într-un an. |
+| **Container nerecunoscut ca marfă nouă** | HA-0001 (container C55, +2.680 buc) apărea „Lent”: recepția e înregistrată în stock-sync ca CORRECTION cu nota „Receptie container C55”, iar stocul nu pornea de la 0. | Sosire = RECEIVING, sau corecție cu „recepție” în notă (min. 10 buc), sau stoc 0 → pozitiv. Starea „Nou” devine „Marfă intrată recent”, cu data intrării. |
+| **Nelistate greșite** | 3 din 7 „nelistate” erau pe CasaOfertelor cu legătura blocată în `PENDING_RELINK_REVIEW`, iar 3 erau parfumuri Essence. | Se citesc toate listările stock-sync, nu doar cele MATCHED: stare nouă „Legătură neaprobată”, cu magazinul; „Nelistat” arată unde e inactiv. Regula de parfum prinde și „Perfume”, „Essence No.” și „No. 119”. |
+| **Totalul nu se vedea** | Rândul TOTAL era al 101-lea, la capătul ferestrei derulabile. | Rândul e lipit jos (sticky), tabelul are înălțimea ecranului, iar explicația s-a mutat sub tabel. |
+
 ### 2026-09-24 — Stoc & Viteză v3: stoc mort după regula echipei, fără parfumuri / produse în test / marfă nouă
 
 **Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/app/services/stock_sync_client.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`

@@ -3,7 +3,8 @@ Stoc & Viteză — per-store stock coverage report.
 
 Answers "what isn't selling": for every product — per store, or across all stores —
 its stock (stock-sync master), units sold in the last N days (AWB orders, cancelled
-excluded), days since the last sale, how long the stock lasts and what it's worth.
+excluded — the same rule and velocity as "Viteză Vânzări"), days since the last sale,
+how long the stock lasts and what it's worth.
 """
 
 import asyncio
@@ -14,6 +15,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+BUCHAREST_TZ = ZoneInfo("Europe/Bucharest")
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select, text
@@ -31,9 +34,7 @@ from app.api.stock_coverage.computations import (
     stock_arrivals,
 )
 from app.core.database import AsyncSessionLocal
-from app.core.line_items_projection import PROJECTED_LINE_ITEMS_NAMED
-from app.core.order_filters import build_tag_exclusion_condition, load_exclusion_rules
-from app.models import Order
+from app.core.order_filters import load_exclusion_rules
 from app.models.product import Product
 from app.models.profitability_config import ProfitabilityConfig
 from app.models.sku_cost import SkuCost
@@ -48,13 +49,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 ALLOWED_PERIODS = (30, 60, 90)
-# Goods that came back or never left are not sold: cancelled, refused, returned.
-NOT_SOLD_OUTCOMES = {"CANCELLED", "REFUSED", "BACK_TO_SENDER"}
+# Same as "Viteză Vânzări" (and Shopify's net items sold): only cancelled orders drop.
+NOT_SOLD_OUTCOMES = {"CANCELLED"}
+# The report is kept built in the background, so nobody waits for a cold build.
+WARM_INTERVAL_SECONDS = 300
 # Stock only moves at the stock-sync runs (02:00 + manual), so a longer TTL is safe.
 # Own cache, not app.core.analytics_cache: that one is wiped by every order sync
 # (~10 min), which made store-filter changes and row details rebuild everything.
 REPORT_TTL_SECONDS = 600
 SNAPSHOT_TTL_SECONDS = 600
+SALES_TTL_SECONDS = 600
 LAST_SALES_TTL_SECONDS = 1800
 LEDGER_TTL_SECONDS = 1800
 LAST_SALE_LOOKBACK_DAYS = 365
@@ -206,73 +210,74 @@ async def _with_session(loader):
         return await loader(db)
 
 
-async def _load_sales(db: AsyncSession, days: int):
-    dt_from, dt_to = _period_bounds(days)
-    query = select(
-        Order.store_uid,
-        Order.aggregated_status,
-        Order.shipment_status,
-        Order.fulfillment_status,
-        PROJECTED_LINE_ITEMS_NAMED,
-    ).where(
-        Order.frisbo_created_at >= dt_from,
-        Order.frisbo_created_at <= dt_to,
-        await build_tag_exclusion_condition(db),
-    )
-    sales = defaultdict(lambda: {"units": 0.0, "name": ""})
-    for order in (await db.execute(query)).all():
-        outcome = compute_final_outcome(
-            order.aggregated_status, order.shipment_status, order.fulfillment_status
-        )
-        if outcome in NOT_SOLD_OUTCOMES:
-            continue
-        for item in order.li or []:
-            sku = (item.get("sku") or "").strip()
-            if not sku:
-                continue
-            agg = sales[(order.store_uid or "", sku)]
-            agg["units"] += float(item.get("q") or 1)
-            if not agg["name"]:
-                agg["name"] = item.get("name") or ""
-    return sales, dt_from, dt_to
+async def _load_sales_history(db: AsyncSession) -> dict:
+    """One pass over a year of orders, aggregated in Postgres per (store, SKU, status
+    fields, Bucharest day) — every period, the first / last sale and the yearly pace
+    all come from it, instead of re-reading the orders for each.
 
-
-async def _load_last_sales(db: AsyncSession) -> dict:
-    """(store, SKU) → last non-cancelled order date over the lookback window.
-
-    Aggregated in Postgres (projecting a year of line items into Python is ~10x
-    slower), grouped by the three status fields so "cancelled" is decided by the same
-    compute_final_outcome rule as the period sales — otherwise a row could show sales
-    in the period yet a last sale before it.
+    Grouped by the three status fields so "cancelled" is decided by the same
+    compute_final_outcome rule as "Viteză Vânzări". Only the last 90 days keep their
+    day; older sales only count toward the year and the last-sale date.
     """
     excluded_tags, _ = await load_exclusion_rules(db)
-    params = {"since": datetime.utcnow() - timedelta(days=LAST_SALE_LOOKBACK_DAYS)}
+    today = datetime.now(BUCHAREST_TZ).date()
+    params = {
+        "since": datetime.utcnow() - timedelta(days=LAST_SALE_LOOKBACK_DAYS),
+        "recent": today - timedelta(days=max(ALLOWED_PERIODS) - 1),
+    }
     tag_sql = ""
     for i, tag in enumerate(excluded_tags):
         params[f"tag{i}"] = f'%"{tag}"%'
         tag_sql += f" AND (o.tags IS NULL OR o.tags::text NOT ILIKE :tag{i})"
+    local_day = "(o.frisbo_created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Bucharest')::date"
     rows = await db.execute(
         text(
-            "SELECT o.store_uid, e->'inventory_item'->>'sku' AS sku, "
+            "SELECT o.store_uid, btrim(e->'inventory_item'->>'sku') AS sku, "
             "o.aggregated_status, o.shipment_status, o.fulfillment_status, "
-            "MAX(o.frisbo_created_at) "
+            f"CASE WHEN {local_day} >= :recent THEN {local_day} END AS day, "
+            "SUM(COALESCE(NULLIF(NULLIF(e->>'quantity', ''), '0')::numeric, 1)), "
+            "MAX(o.frisbo_created_at), MAX(e->'inventory_item'->>'title_1') "
             "FROM orders o, jsonb_array_elements(o.line_items::jsonb) e "
-            "WHERE o.frisbo_created_at >= :since" + tag_sql + " "
-            "GROUP BY 1, 2, 3, 4, 5"
+            "WHERE o.frisbo_created_at >= :since"
+            + tag_sql
+            + " AND COALESCE(e->'inventory_item'->>'sku', '') <> '' "
+            "GROUP BY 1, 2, 3, 4, 5, 6"
         ),
         params,
     )
+    return {"today": today, "rows": rows.all()}
+
+
+def _summarize_sales(history: dict, days: int):
+    """Period sales, yearly sales and last-sale dates, keyed (store, SKU)."""
+    today = history["today"]
+    start = today - timedelta(days=days - 1)
+    outcome_cache: dict = {}
+    sales = defaultdict(lambda: {"units": 0.0, "name": "", "first_day": None})
+    year: dict = defaultdict(float)
     last_sales: dict = {}
-    for store_uid, sku, workflow, shipment, fulfillment, last in rows.all():
-        sku = (sku or "").strip()
-        if not sku or not last:
-            continue
-        if compute_final_outcome(workflow, shipment, fulfillment) in NOT_SOLD_OUTCOMES:
+    for store_uid, sku, workflow, shipment, fulfillment, day, units, last, name in history["rows"]:
+        statuses = (workflow, shipment, fulfillment)
+        if statuses not in outcome_cache:
+            outcome_cache[statuses] = compute_final_outcome(*statuses)
+        if outcome_cache[statuses] in NOT_SOLD_OUTCOMES:
             continue
         key = (store_uid or "", sku)
-        if key not in last_sales or last > last_sales[key]:
+        units = float(units or 0)
+        year[key] += units
+        if last and (key not in last_sales or last > last_sales[key]):
             last_sales[key] = last
-    return last_sales
+        if day and day >= start:
+            agg = sales[key]
+            agg["units"] += units
+            if not agg["name"] and name:
+                agg["name"] = name
+            # "Viteză Vânzări" starts the divisor at the first DELIVERED sale.
+            if outcome_cache[statuses] == "DELIVERED" and (
+                agg["first_day"] is None or day < agg["first_day"]
+            ):
+                agg["first_day"] = day
+    return dict(sales), dict(year), last_sales
 
 
 async def _load_costs(db: AsyncSession) -> dict:
@@ -293,8 +298,8 @@ async def _build_report(days: int) -> dict:
         _cached("snapshot", SNAPSHOT_TTL_SECONDS, fetch_snapshot),
         _cached("arrivals", LEDGER_TTL_SECONDS, _load_arrivals),
     )
-    last_sales = await _cached(
-        "last-sales", LAST_SALES_TTL_SECONDS, lambda: _with_session(_load_last_sales)
+    history = await _cached(
+        "sales-history", SALES_TTL_SECONDS, lambda: _with_session(_load_sales_history)
     )
     test_skus = await _cached(
         "test-skus", LAST_SALES_TTL_SECONDS, lambda: _with_session(_load_test_skus)
@@ -307,9 +312,13 @@ async def _build_report(days: int) -> dict:
     async with AsyncSessionLocal() as db:
         stores = await _load_stores(db, snapshot["stores"])
         catalog, first_seen = await _load_catalog(db)
-        sales, dt_from, dt_to = await _load_sales(db, days)
         costs = await _load_costs(db)
-    result = build_rows(
+    dt_from, dt_to = _period_bounds(days)
+    sales, year_sales, last_sales = await asyncio.to_thread(
+        _summarize_sales, history, days
+    )
+    result = await asyncio.to_thread(
+        build_rows,
         stores,
         snapshot,
         catalog,
@@ -322,6 +331,7 @@ async def _build_report(days: int) -> dict:
         arrivals=arrivals,
         test_skus=test_skus,
         store_last_order=activity["last"],
+        year_sales=year_sales,
     )
     excluded = set(result["excluded_perfume_stores"])
     stores = [s for s in stores if s["name"] not in excluded]
@@ -347,6 +357,22 @@ async def _build_report(days: int) -> dict:
             "generated_at": datetime.utcnow().isoformat(),
         },
     }
+
+
+async def keep_warm():
+    """Build every period at startup and keep it fresh, so a page open never waits
+    for a cold build (each worker has its own cache)."""
+    while True:
+        for days in ALLOWED_PERIODS:
+            try:
+                await _cached(
+                    f"report|days={days}",
+                    REPORT_TTL_SECONDS,
+                    lambda days=days: _build_report(days),
+                )
+            except Exception:
+                logger.exception("stock-coverage: warm-up of %s days failed", days)
+        await asyncio.sleep(WARM_INTERVAL_SECONDS)
 
 
 @router.get("/stock-coverage")

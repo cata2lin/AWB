@@ -166,6 +166,8 @@ async def lifespan(app: FastAPI):
 
     if _scheduler_enabled:
         asyncio.create_task(_startup_sync())
+        # Stoc & Viteză takes ~20 s to build from cold; build it before anyone asks.
+        asyncio.create_task(stock_coverage.keep_warm())
 
     yield
 

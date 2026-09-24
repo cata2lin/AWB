@@ -41,12 +41,22 @@ LEDGER_SEEDING_END = "2026-07-27"
 # Perfumes are out of scope for this report.
 PERFUME_STORE_NAMES = {"esteban.ro", "georgetalent.ro", "nubra", "labnoir.ro"}
 PERFUME_NAME_RE = re.compile(
-    r"inspired by|inspirat (de|din)|\bparfum|eau de (parfum|toilette)|\bzeylin\b|l'essence",
+    r"inspired by|inspirat (de|din)|\bparfum|\bperfume|eau de (parfum|toilette)"
+    r"|\bzeylin\b|l'essence|\bessence no\b|^no\. ?\d+\b",
     re.IGNORECASE,
 )
 # Placeholder SKUs (seeded "infinite" stock) — excluded like in produse-fara-ads.
 PLACEHOLDER_SKU_RE = re.compile(r"surpriza|mystery|cutie-cadou|^test", re.IGNORECASE)
 NEGATIVE_STATUSES = {"mort", "nu_se_vinde", "lent", "foarte_lent"}
+YEAR_DAYS = 365
+# Goods arriving: container intakes are often booked as a CORRECTION whose note says
+# "recepție" (e.g. "Receptie container C55"), not only as RECEIVING. "recuperare stoc
+# livrare" (parcels coming back) is not an arrival.
+RECEIPT_NOTE_RE = re.compile(r"recep[tț]i", re.IGNORECASE)
+MIN_RECEIPT_UNITS = 10
+# A listing waiting in stock-sync's relink review is live on its store but not linked
+# to its master yet — a different fix from "listed nowhere".
+PENDING_LINK_STATUSES = {"PENDING_RELINK_REVIEW", "NO_MASTER_MATCH"}
 
 # AWB stores that have neither xconnector_domain nor shopify_domain set, matched to
 # their stock-sync store by hand (identified from their order-number prefixes).
@@ -140,12 +150,23 @@ def stock_status(
     return "ok"
 
 
+def _is_arrival(e: dict) -> bool:
+    if e["before"] <= 0 < e["after"]:
+        return True
+    received = e["after"] - e["before"]
+    return received >= MIN_RECEIPT_UNITS and (
+        e.get("reason") == "RECEIVING"
+        or bool(RECEIPT_NOTE_RE.search(e.get("note") or ""))
+    )
+
+
 def stock_arrivals(ledger: Iterable[dict]) -> Dict[str, datetime]:
-    """master → last time its stock went from 0 to positive (goods arrived), ignoring
-    the opening-stock seeding at the stock-sync cutover."""
+    """master → last time goods arrived: a receipt (RECEIVING, or a correction noted
+    as a "recepție"), or stock going from 0 to positive — ignoring the opening-stock
+    seeding at the stock-sync cutover."""
     arrivals: Dict[str, str] = {}
     for e in sorted(ledger, key=lambda x: (x["at"], x["created"])):
-        if e["at"] >= LEDGER_SEEDING_END and e["before"] <= 0 < e["after"]:
+        if e["at"] >= LEDGER_SEEDING_END and _is_arrival(e):
             arrivals[e["master"]] = e["at"]
     out = {}
     for master, at in arrivals.items():
@@ -172,18 +193,23 @@ def build_rows(
     arrivals: Optional[Dict[str, datetime]] = None,
     test_skus: Optional[set] = None,
     store_last_order: Optional[Dict[str, datetime]] = None,
+    year_sales: Optional[Dict[Tuple[str, str], float]] = None,
 ) -> dict:
     """Build every report row (per store, unallocated, all stores); filtering happens later.
 
     awb_catalog: (awb_store_uid, sku, barcode, title) for active AWB products — used
         for stores stock-sync doesn't manage, and as a name / SKU fallback.
-    sales: (awb_store_uid, sku) → {"units": float, "name": str} in the period,
-        cancelled excluded.
+    sales: (awb_store_uid, sku) → {"units", "name", "first_day"} in the period —
+        cancelled orders excluded, first_day = first sale day in the period (Bucharest),
+        the same rules as the "Viteză Vânzări" report.
     last_sales: (awb_store_uid, sku) → last non-cancelled order date (naive UTC).
     costs: sku → unit cost in RON.
     first_seen: sku → when the product first appeared in the AWB catalog.
     store_first_order: awb store uid → its first order (a new store has no history).
+    year_sales: (awb_store_uid, sku) → units over the last year, for the "runs out in"
+        estimate of products that sold nothing in the period.
     """
+    year_sales = year_sales or {}
     first_seen = first_seen or {}
     store_first_order = store_first_order or {}
     arrivals = arrivals or {}
@@ -231,6 +257,31 @@ def build_rows(
         if master not in master_image and listing.get("imageUrl"):
             master_image[master] = listing["imageUrl"]
 
+    # Listings not linked to a master say why a product with stock isn't selling.
+    ss_store_label = {
+        s["id"]: s.get("name") or s.get("shopDomain") or s["id"]
+        for s in snapshot["stores"]
+    }
+    pending_link: Dict[str, set] = defaultdict(set)
+    inactive_on: Dict[str, set] = defaultdict(set)
+    unlinked_skus: Dict[str, set] = defaultdict(set)  # to name unlinked products
+    unlinked_title: Dict[str, str] = {}
+    for listing in snapshot.get("other_listings") or []:
+        barcode = (listing.get("barcodeNormalized") or listing.get("barcode") or "").strip()
+        master = listing.get("masterProductId") or barcode_to_master.get(barcode)
+        if not master:
+            continue
+        if (listing.get("sku") or "").strip():
+            unlinked_skus[master].add(listing["sku"].strip())
+        title = listing.get("title") or ""
+        if title and title != "Default Title" and master not in unlinked_title:
+            unlinked_title[master] = title
+        store = ss_store_label.get(listing.get("storeId"), listing.get("storeId"))
+        if listing.get("matchStatus") in PENDING_LINK_STATUSES:
+            pending_link[master].add(store)
+        elif listing.get("matchStatus") == "INACTIVE":
+            inactive_on[master].add(store)
+
     catalog_master: Dict[Tuple[str, str], str] = {}  # (awb store, sku) → master
     catalog_name: Dict[str, str] = {}
     catalog_skus_by_master: Dict[str, set] = defaultdict(set)
@@ -253,6 +304,8 @@ def build_rows(
 
     # Keyed by (awb store, master or "sku:<sku>"); pooled figures keyed by master.
     store_sold: Dict[Tuple[str, str], float] = defaultdict(float)
+    store_first: Dict[Tuple[str, str], object] = {}
+    pool_first: Dict[str, object] = {}
     store_skus: Dict[Tuple[str, str], set] = defaultdict(set)
     store_last: Dict[Tuple[str, str], datetime] = {}
     pool_sold: Dict[str, float] = defaultdict(float)
@@ -263,10 +316,22 @@ def build_rows(
         key = (store_uid, master or f"sku:{sku}")
         store_sold[key] += agg["units"]
         store_skus[key].add(sku)
+        first = agg.get("first_day")
+        if first and (key not in store_first or first < store_first[key]):
+            store_first[key] = first
         if master:
             pool_sold[master] += agg["units"]
+            if first and (master not in pool_first or first < pool_first[master]):
+                pool_first[master] = first
         if agg.get("name") and sku not in sale_name:
             sale_name[sku] = agg["name"]
+    store_year: Dict[Tuple[str, str], float] = defaultdict(float)
+    pool_year: Dict[str, float] = defaultdict(float)
+    for (store_uid, sku), units in year_sales.items():
+        master = resolve_master(store_uid, sku)
+        store_year[(store_uid, master or f"sku:{sku}")] += units
+        if master:
+            pool_year[master] += units
     for (store_uid, sku), when in last_sales.items():
         if not when:
             continue
@@ -371,6 +436,8 @@ def build_rows(
         sold: float,
         pooled: float,
         last_sale: Optional[datetime],
+        year_sold: float = 0.0,
+        first_sale_day=None,
         stock_is_pool: bool = False,
     ) -> dict:
         stock = stock_by_master.get(master) if master else None
@@ -378,11 +445,30 @@ def build_rows(
         listed = master is None or master in listed_masters
         arrived = arrivals.get(master) if master else None
         arrived_days = (today - _bucharest_date(arrived)).days if arrived else None
-        velocity = sold / period_days if period_days else 0.0
+        velocity_basis = None
+        velocity_days = period_days
+        if sold:
+            # As in "Viteză Vânzări": a product first sold mid-period is divided only by
+            # the days since that first sale, so a fresh launch isn't read as slow.
+            if first_sale_day:
+                velocity_days = max(
+                    1, min(period_days, (today - first_sale_day).days + 1)
+                )
+            velocity = sold / velocity_days
+            velocity_basis = "perioada"
+        elif year_sold:
+            # Nothing sold in the period: the last year's pace still says how long the
+            # stock lasts, instead of an infinite "never".
+            velocity = year_sold / min(YEAR_DAYS, max(history or YEAR_DAYS, period_days))
+            velocity_basis = "an"
+        else:
+            velocity = 0.0
         coverage = _safe_div(stock_units, velocity) if stock_units is not None else None
         cost = unit_cost(master, skus)
         days_since = (today - _bucharest_date(last_sale)).days if last_sale else None
-        status = stock_status(stock_units, sold, coverage, days_since, history, listed)
+        status = stock_status(
+            stock_units, sold, coverage if sold else None, days_since, history, listed
+        )
         if status in NEGATIVE_STATUSES:
             if store_uid in stale_stores:
                 # No orders for a week: sales history isn't reliable, don't judge.
@@ -390,6 +476,17 @@ def build_rows(
             elif arrived_days is not None and arrived_days < DEAD_DAYS:
                 # Goods arrived recently: too early to call them dead or slow.
                 status = "nou"
+        listing_note = None
+        if master and not listed:
+            if pending_link.get(master):
+                if status == "nelistat":
+                    status = "legatura_neaprobata"
+                listing_note = (
+                    f"Pe {', '.join(sorted(pending_link[master]))}: legătura cu "
+                    "masterul așteaptă aprobare în stock-sync"
+                )
+            elif inactive_on.get(master):
+                listing_note = f"Inactiv pe {', '.join(sorted(inactive_on[master]))}"
         value = (
             stock_units * cost if (cost and stock_units and stock_units > 0) else None
         )
@@ -397,9 +494,12 @@ def build_rows(
             "store_uid": store_uid,
             "store_name": store_name,
             "master_product_id": master,
-            "sku": ", ".join(sorted(skus)),
+            "sku": ", ".join(
+                sorted(skus or (unlinked_skus.get(master, set()) if master else set()))
+            ),
             "barcode": stock.get("barcode") if stock else None,
-            "product_name": product_name(master, skus),
+            "product_name": product_name(master, skus)
+            or (unlinked_title.get(master, "") if master else ""),
             "image_url": master_image.get(master)
             or (master_info.get(master) or {}).get("imageUrl"),
             "stock": stock_units,
@@ -407,6 +507,9 @@ def build_rows(
             "total_units": stock.get("totalUnits") if stock else None,
             "sold_units": round(sold, 2),
             "velocity": round(velocity, 2),
+            "velocity_basis": velocity_basis,
+            "velocity_days": velocity_days if sold else None,
+            "year_sold_units": round(year_sold, 2),
             "coverage_days": round(coverage, 1) if coverage is not None else None,
             "pool_sold_units": round(pooled, 2),
             "last_sale_at": last_sale.isoformat() if last_sale else None,
@@ -418,6 +521,7 @@ def build_rows(
             "days_since_arrival": arrived_days,
             "history_days": history,
             "listed": listed,
+            "listing_note": listing_note,
             "in_master": bool(stock),
         }
 
@@ -465,6 +569,8 @@ def build_rows(
                         store_sold.get((uid, master), 0.0),
                         pooled,
                         store_last.get((uid, master)),
+                        store_year.get((uid, master), 0.0),
+                        store_first.get((uid, master)),
                     )
                 )
             else:
@@ -479,6 +585,8 @@ def build_rows(
                     pooled,
                     pooled,
                     pool_last.get(master),
+                    pool_year.get(master, 0.0),
+                    pool_first.get(master),
                     stock_is_pool=True,
                 )
                 row["store_sold_units"] = round(store_sold.get((uid, master), 0.0), 2)
@@ -500,6 +608,8 @@ def build_rows(
                         store_sold[(store_uid, key)],
                         0.0,
                         store_last.get((store_uid, key)),
+                        store_year.get((store_uid, key), 0.0),
+                        store_first.get((store_uid, key)),
                     )
                 )
 
@@ -522,6 +632,8 @@ def build_rows(
                     pooled,
                     pooled,
                     pool_last.get(master),
+                    pool_year.get(master, 0.0),
+                    pool_first.get(master),
                 )
             )
         allocated = sum(
@@ -539,6 +651,8 @@ def build_rows(
                     pooled,
                     pooled,
                     pool_last.get(master),
+                    pool_year.get(master, 0.0),
+                    pool_first.get(master),
                 )
             )
 

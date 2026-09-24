@@ -477,3 +477,95 @@ def test_store_without_recent_orders_is_not_judged():
     assert _row(result, "oz", master="m2")["status"] == "date_incomplete"
     assert _row(result, "bg", master="m3")["status"] == "mort"
     assert result["stale_stores"] == ["ofertelezilei.ro"]
+
+
+def test_velocity_counts_from_first_sale_in_period_like_sales_velocity():
+    # First sold 10 days ago (today included): 30 units / 10 days, not / 30.
+    sales = {("oz", "HA-1"): {"units": 30, "name": "", "first_day": datetime(2026, 9, 15).date()}}
+    r = _row(_rows(sales), "oz", master="m1")
+    assert r["velocity"] == 3.0
+    assert r["velocity_days"] == 10
+    assert r["coverage_days"] == 10.0
+    assert r["velocity_basis"] == "perioada"
+
+
+def test_no_sales_in_period_uses_last_year_pace_not_never():
+    result = build_rows(
+        AWB_STORES, SNAPSHOT, CATALOG, {}, 30,
+        {("oz", "HA-2"): datetime(2026, 6, 1, 12, 0)}, None, now=NOW,
+        year_sales={("oz", "HA-2"): 73},
+    )
+    r = _row(result, "oz", master="m2")
+    assert r["velocity_basis"] == "an"
+    assert r["velocity"] == 0.2
+    assert r["coverage_days"] == 50.0
+    assert r["status"] == "mort"  # the verdict still reads the period, not the year
+    never = _row(_rows({}), "oz", master="m2")
+    assert never["coverage_days"] is None and never["velocity_basis"] is None
+
+
+def test_sales_summary_drops_only_cancelled_like_sales_velocity():
+    from datetime import date
+
+    from app.api.stock_coverage.endpoint import _summarize_sales
+
+    today = date(2026, 9, 24)
+    at = datetime(2026, 9, 20, 10, 0)
+    history = {
+        "today": today,
+        "rows": [
+            ("oz", "HA-1", "delivered", "", "", date(2026, 9, 20), 2, at, "Unu"),
+            ("oz", "HA-1", "refused", "", "", date(2026, 9, 10), 1, at, "Unu"),
+            ("oz", "HA-1", "cancelled", "", "", date(2026, 9, 22), 5, at, "Unu"),
+            ("oz", "HA-1", "delivered", "", "", None, 4, datetime(2026, 3, 1), "Unu"),
+        ],
+    }
+    sales, year, last = _summarize_sales(history, 30)
+    assert sales[("oz", "HA-1")]["units"] == 3  # delivered + refused, not cancelled
+    assert sales[("oz", "HA-1")]["first_day"] == date(2026, 9, 20)  # first delivered
+    assert year[("oz", "HA-1")] == 7
+    assert last[("oz", "HA-1")] == at
+    week, _, _ = _summarize_sales(history, 7)
+    assert week[("oz", "HA-1")]["units"] == 2
+
+
+def test_container_booked_as_correction_counts_as_arrival():
+    from app.api.stock_coverage.computations import stock_arrivals
+
+    ledger = [
+        {"master": "m1", "at": "2026-09-24T08:27:00Z", "created": "", "before": 1338,
+         "after": 4018, "reason": "CORRECTION", "note": "Receptie container C55 — numarat la Uzina 2"},
+        {"master": "m2", "at": "2026-09-20T08:00:00Z", "created": "", "before": 100,
+         "after": 400, "reason": "CORRECTION", "note": "Inventar AWB Arona (bartolomeu)"},
+        {"master": "m3", "at": "2026-09-20T08:00:00Z", "created": "", "before": 5,
+         "after": 50, "reason": "RECEIVING", "note": "recuperare stoc livrare"},
+    ]
+    arrivals = stock_arrivals(ledger)
+    assert arrivals["m1"] == datetime(2026, 9, 24, 8, 27)
+    assert "m2" not in arrivals  # an inventory count is not goods arriving
+    assert "m3" in arrivals
+
+
+def test_listing_waiting_for_relink_is_not_unlisted():
+    snapshot = {
+        **SNAPSHOT,
+        "masters": [{"id": "m9", "barcodeNormalized": "999", "name": "Set cadou"}],
+        "stock": {**STOCK, "999": {"barcode": "999", "masterProductId": "m9", "name": "Set cadou",
+                                   "totalUnits": 15, "stores": []}},
+        "stores": [*SS_STORES, {"id": "ss-co", "name": "CasaOfertelor", "shopDomain": "co.myshopify.com"}],
+        "other_listings": [{"storeId": "ss-co", "sku": "set-1", "barcodeNormalized": "999",
+                            "masterProductId": None, "matchStatus": "PENDING_RELINK_REVIEW"}],
+    }
+    r = _row(_rows({}, snapshot=snapshot), ALL_STORES_UID, master="m9")
+    assert r["status"] == "legatura_neaprobata"
+    assert "CasaOfertelor" in r["listing_note"]
+    assert r["sku"] == "set-1"  # named from the store listing it waits on
+
+
+def test_perfume_rule_catches_english_names():
+    from app.api.stock_coverage.computations import PERFUME_NAME_RE
+
+    assert PERFUME_NAME_RE.search("Essence No. 15, Blue, 50 ml")
+    assert PERFUME_NAME_RE.search("No. 110, Elixir Y, Men's Perfume, 50 ml")
+    assert PERFUME_NAME_RE.search("No. 119 — Noir Essence")
+    assert not PERFUME_NAME_RE.search("Laveta Magica din Microfibra")

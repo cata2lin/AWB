@@ -7,7 +7,8 @@ stock-sync is the source of truth for stock since the July 2026 cutover —
 
 Endpoints used (all GET, token scopes products:read + stores:read):
     /v1/stores                      → store id ↔ shopDomain
-    /v1/listings?matchStatus=MATCHED → (store, SKU) → barcode
+    /v1/listings                    → (store, SKU) → barcode; MATCHED ones map sales,
+                                      the rest say why a product isn't live anywhere
     /v1/master-products             → every master product (name, image)
     /v1/stock?barcodes=…            → totalUnits + per-store currentUnits (max 200/call)
     /v1/stock-ledger?occurredFrom=… → every stock movement (to date when goods arrived)
@@ -77,12 +78,13 @@ async def fetch_snapshot() -> dict:
         base_url=settings.stock_sync_api_url, timeout=60.0
     ) as client:
         stores = (await _get(client, "/v1/stores")).get("stores") or []
-        listings = await _paginate(
-            client,
-            "/v1/listings",
-            "listings",
-            {"matchStatus": "MATCHED", "limit": PAGE_SIZE},
+        all_listings = await _paginate(
+            client, "/v1/listings", "listings", {"limit": PAGE_SIZE}
         )
+        listings = [x for x in all_listings if x.get("matchStatus") == "MATCHED"]
+        other_listings = [
+            x for x in all_listings if x.get("matchStatus") != "MATCHED"
+        ]
         masters = await _paginate(
             client, "/v1/master-products", "masterProducts", {"limit": PAGE_SIZE}
         )
@@ -112,7 +114,13 @@ async def fetch_snapshot() -> dict:
         len(masters),
         len(stock),
     )
-    return {"stores": stores, "listings": listings, "masters": masters, "stock": stock}
+    return {
+        "stores": stores,
+        "listings": listings,
+        "other_listings": other_listings,
+        "masters": masters,
+        "stock": stock,
+    }
 
 
 async def fetch_ledger(occurred_from: str, chunks: int = 8) -> List[dict]:
@@ -158,6 +166,8 @@ async def fetch_ledger(occurred_from: str, chunks: int = 8) -> List[dict]:
                 "created": e.get("createdAt") or "",
                 "before": e.get("balanceBefore") or 0,
                 "after": e.get("balanceAfter") or 0,
+                "reason": e.get("reason") or "",
+                "note": e.get("note") or "",
             }
         )
     return out
