@@ -1,9 +1,9 @@
 """
 Stoc & Viteză — per-store stock coverage report.
 
-For every product a store sells: master stock allocated to that store (stock-sync),
-total master stock, units sold in the last N days (AWB orders, cancelled excluded)
-and how many days the stock lasts at that pace.
+Answers "what isn't selling": for every product — per store, or across all stores —
+its stock (stock-sync master), units sold in the last N days (AWB orders, cancelled
+excluded), days since the last sale, how long the stock lasts and what it's worth.
 """
 
 import json
@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.sku_risk.computations import compute_final_outcome
 from app.api.stock_coverage.computations import (
+    ALL_STORES_NAME,
+    ALL_STORES_UID,
     UNALLOCATED_STORE_NAME,
     UNALLOCATED_STORE_UID,
     awb_store_domain,
@@ -27,9 +29,10 @@ from app.api.stock_coverage.computations import (
 from app.core.analytics_cache import cache_get, cache_set
 from app.core.database import get_db
 from app.core.line_items_projection import PROJECTED_LINE_ITEMS_NAMED
-from app.core.order_filters import build_tag_exclusion_condition
+from app.core.order_filters import build_tag_exclusion_condition, load_exclusion_rules
 from app.models import Order
 from app.models.product import Product
+from app.models.sku_cost import SkuCost
 from app.services.stock_sync_client import StockSyncUnavailable, fetch_snapshot
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,7 @@ ALLOWED_PERIODS = (30, 60, 90)
 CANCELLED_OUTCOMES = {"CANCELLED"}
 # Stock only moves at the stock-sync runs (02:00 + manual), so a longer TTL is safe.
 REPORT_TTL_SECONDS = 600
+LAST_SALE_LOOKBACK_DAYS = 365
 
 
 def _period_bounds(days: int):
@@ -124,13 +128,50 @@ async def _load_sales(db: AsyncSession, days: int):
     return sales, dt_from, dt_to
 
 
+async def _load_last_sales(db: AsyncSession) -> dict:
+    """(store, SKU) → last non-cancelled order date over the lookback window.
+
+    Aggregated in Postgres: projecting a year of line items into Python is ~10x slower.
+    """
+    excluded_tags, _ = await load_exclusion_rules(db)
+    params = {"since": datetime.utcnow() - timedelta(days=LAST_SALE_LOOKBACK_DAYS)}
+    tag_sql = ""
+    for i, tag in enumerate(excluded_tags):
+        params[f"tag{i}"] = f'%"{tag}"%'
+        tag_sql += f" AND (o.tags IS NULL OR o.tags::text NOT ILIKE :tag{i})"
+    rows = await db.execute(
+        text(
+            "SELECT o.store_uid, e->'inventory_item'->>'sku' AS sku, "
+            "MAX(o.frisbo_created_at) "
+            "FROM orders o, jsonb_array_elements(o.line_items::jsonb) e "
+            "WHERE o.frisbo_created_at >= :since "
+            "AND COALESCE(o.aggregated_status, '') <> 'cancelled'" + tag_sql + " "
+            "GROUP BY 1, 2"
+        ),
+        params,
+    )
+    return {
+        (store_uid or "", sku.strip()): last
+        for store_uid, sku, last in rows.all()
+        if sku and sku.strip()
+    }
+
+
+async def _load_costs(db: AsyncSession) -> dict:
+    rows = await db.execute(select(SkuCost.sku, SkuCost.cost))
+    return {sku.strip(): cost for sku, cost in rows.all() if sku and cost}
+
+
 async def _build_report(db: AsyncSession, days: int) -> dict:
     snapshot = await fetch_snapshot()
     stores = await _load_stores(db, snapshot["stores"])
     catalog = await _load_catalog(db)
     sales, dt_from, dt_to = await _load_sales(db, days)
-    result = build_rows(stores, snapshot, catalog, sales, days)
-    store_options = sorted(
+    last_sales = await _load_last_sales(db)
+    costs = await _load_costs(db)
+    result = build_rows(stores, snapshot, catalog, sales, days, last_sales, costs)
+    store_options = [{"uid": ALL_STORES_UID, "name": ALL_STORES_NAME}]
+    store_options += sorted(
         ({"uid": s["uid"], "name": s["name"]} for s in stores),
         key=lambda s: s["name"].lower(),
     )
@@ -144,6 +185,7 @@ async def _build_report(db: AsyncSession, days: int) -> dict:
             "date_to": dt_to.isoformat(),
             "stock_as_of": result["as_of"],
             "stores_without_master": result["stores_without_master"],
+            "last_sale_lookback_days": LAST_SALE_LOOKBACK_DAYS,
             "generated_at": datetime.utcnow().isoformat(),
         },
     }
@@ -153,9 +195,11 @@ async def _build_report(db: AsyncSession, days: int) -> dict:
 async def get_stock_coverage(
     days: int = Query(30),
     store_uids: Optional[str] = Query(None),
+    master_product_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Per-store stock coverage. `store_uids` is comma-separated; empty = all stores."""
+    """Stock coverage rows for `store_uids` (comma-separated; empty = the all-stores
+    view). `master_product_id` returns that product's per-store breakdown instead."""
     if days not in ALLOWED_PERIODS:
         raise HTTPException(
             400, detail=f"Perioada trebuie să fie una din {ALLOWED_PERIODS} zile"
@@ -171,6 +215,15 @@ async def get_stock_coverage(
             raise HTTPException(503, detail=str(e))
         cache_set(cache_key, report, ttl=REPORT_TTL_SECONDS)
 
-    wanted = {u.strip() for u in (store_uids or "").split(",") if u.strip()}
-    rows = [r for r in report["rows"] if not wanted or r["store_uid"] in wanted]
+    if master_product_id:
+        rows = [
+            r
+            for r in report["rows"]
+            if r["master_product_id"] == master_product_id
+            and r["store_uid"] != ALL_STORES_UID
+        ]
+    else:
+        wanted = {u.strip() for u in (store_uids or "").split(",") if u.strip()}
+        wanted = wanted or {ALL_STORES_UID}
+        rows = [r for r in report["rows"] if r["store_uid"] in wanted]
     return {**report, "rows": rows}

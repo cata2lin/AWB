@@ -942,6 +942,17 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-09-24 — Stoc & Viteză v2: pagina răspunde la „ce nu se vinde”
+
+**Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **One stock, one coverage, one verdict per row** | v1 showed store stock + total stock and two "days" columns per row, and repeated each product once per store on "Toate magazinele" — confusing for the actual question (dead stock). | Rows now carry `stock`, `coverage_days` and a `status` (Nu se vinde / Foarte lent > 1 an / Lent > 6 luni / OK / Se termină < 14 zile / Fără stoc). Coverage over a year shows „> 1 an” instead of e.g. 29.730 zile. |
+| **„Toate magazinele” = one row per product** | Master total stock, sales and last sale across every store; click a row for the per-store breakdown (`?master_product_id=`). | Belasil / Labnoir / duppo.md (not in stock-sync) show the shared pool, with the store's own sales under the pooled figure. |
+| **Fără vânzare de / Valoare stoc** | Days since the last non-cancelled sale (365-day lookback, one SQL aggregate, excluded tags dropped) and stock × `sku_costs.cost`. | KPIs: products with stock, stock value, not selling (count + RON blocked), slow (count + RON blocked). Quick filters Toate / Nu se vând / Lente / Se termină, persisted in the URL. Default sort: worst status first, most money blocked first. |
+| **Server-side store filter** | The page downloaded every store (~2.7 MB) and filtered in the browser. | Requests now pass `store_uids` (default `__toate__`); ~0.9 MB for the all-stores view, far less per store. |
+
 ### 2026-09-24 — Stoc & Viteză: stoc master + zile de vânzare pe fiecare magazin
 
 **Files changed:** `backend/app/api/stock_coverage/`, `backend/app/services/stock_sync_client.py`, `backend/app/core/config.py`, `backend/app/main.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`, `frontend/src/App.jsx`, `frontend/src/components/Sidebar.jsx`, `.env.example`
