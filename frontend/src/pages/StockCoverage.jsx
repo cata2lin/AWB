@@ -52,6 +52,12 @@ const VIEWS = [
 // Case- and diacritics-insensitive, so „covoras” finds „Covoraș”.
 const normalizeText = (text) => (text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 
+// "RON blocați" only counts products with a cost in Costuri SKU — say how many are missing.
+const blockedLabel = (value, missing) => {
+    const text = `${formatNumber(Math.round(value))} RON blocați`
+    return missing ? `${text} · ${formatNumber(missing)} fără cost` : text
+}
+
 const formatDateTime = (iso) => {
     if (!iso) return '—'
     return new Date(iso).toLocaleString('ro-RO', {
@@ -229,6 +235,10 @@ export default function StockCoverage() {
         const all = report?.rows || []
         const needle = normalizeText(searchQuery.trim())
         if (!needle) return all
+        // 1–2 characters ("ha") would hit names like "Phantom" or "Haine": match SKU prefixes only.
+        if (needle.length < 3) {
+            return all.filter((r) => (r.sku || '').split(', ').some((sku) => normalizeText(sku).startsWith(needle)))
+        }
         return all.filter((r) => normalizeText(`${r.sku} ${r.product_name}`).includes(needle))
     }, [report, searchQuery])
 
@@ -251,18 +261,23 @@ export default function StockCoverage() {
             return pool ? [pool] : group
         })
         const sum = (list) => list.reduce((s, r) => s + (r.stock_value || 0), 0)
+        const noCost = (list) => list.filter((r) => r.stock_value == null).length
         const dead = withStock.filter((r) => r.status === 'mort')
         const notSelling = withStock.filter((r) => r.status === 'nu_se_vinde')
         const slow = withStock.filter((r) => r.status === 'lent' || r.status === 'foarte_lent')
         return {
             withStock: withStock.length,
+            withStockNoCost: noCost(withStock),
             dead: dead.length,
             deadValue: sum(dead),
+            deadNoCost: noCost(dead),
             stockValue: sum(withStock),
             notSelling: notSelling.length,
             notSellingValue: sum(notSelling),
+            notSellingNoCost: noCost(notSelling),
             slow: slow.length,
             slowValue: sum(slow),
+            slowNoCost: noCost(slow),
         }
     }, [allRows])
 
@@ -472,25 +487,25 @@ export default function StockCoverage() {
                 <KpiCard
                     label="Valoare stoc"
                     value={`${formatNumber(Math.round(kpis.stockValue))} RON`}
-                    trendLabel={`${formatNumber(kpis.withStock)} produse cu stoc`}
+                    trendLabel={`${formatNumber(kpis.withStock)} produse cu stoc${kpis.withStockNoCost ? ` · ${formatNumber(kpis.withStockNoCost)} fără cost` : ''}`}
                     color="blue"
                 />
                 <KpiCard
                     label={`Stoc mort (nimic vândut în ${DEAD_DAYS} zile)`}
                     value={formatNumber(kpis.dead)}
-                    trendLabel={`${formatNumber(Math.round(kpis.deadValue))} RON blocați`}
+                    trendLabel={blockedLabel(kpis.deadValue, kpis.deadNoCost)}
                     color="red"
                 />
                 <KpiCard
                     label={`Nu se vând (0 în ${days} zile)`}
                     value={formatNumber(kpis.notSelling)}
-                    trendLabel={`${formatNumber(Math.round(kpis.notSellingValue))} RON blocați`}
+                    trendLabel={blockedLabel(kpis.notSellingValue, kpis.notSellingNoCost)}
                     color="amber"
                 />
                 <KpiCard
                     label="Lente (stoc peste 6 luni)"
                     value={formatNumber(kpis.slow)}
-                    trendLabel={`${formatNumber(Math.round(kpis.slowValue))} RON blocați`}
+                    trendLabel={blockedLabel(kpis.slowValue, kpis.slowNoCost)}
                     color="violet"
                 />
             </div>
@@ -504,7 +519,7 @@ export default function StockCoverage() {
                         <span className="text-zinc-700 dark:text-zinc-300">{meta.stores_without_master.join(', ')}</span> nu sunt în stock-sync și vând din stocul comun: la ele stocul și vânzările sunt pe toate magazinele.{' '}
                     </>
                 )}
-                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile; <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă, dar s-a vândut în ultimele {DEAD_DAYS} de zile. Valoarea = stoc × cost din Costuri SKU. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
+                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile; <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă, dar s-a vândut în ultimele {DEAD_DAYS} de zile. Valoarea = stoc × cost din Costuri SKU; produsele fără cost acolo nu intră în sume. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
             </p>
 
             <DataTable
