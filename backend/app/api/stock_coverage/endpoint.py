@@ -6,8 +6,10 @@ its stock (stock-sync master), units sold in the last N days (AWB orders, cancel
 excluded), days since the last sale, how long the stock lasts and what it's worth.
 """
 
+import asyncio
 import json
 import logging
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
@@ -26,7 +28,6 @@ from app.api.stock_coverage.computations import (
     awb_store_domain,
     build_rows,
 )
-from app.core.analytics_cache import cache_get, cache_set
 from app.core.database import get_db
 from app.core.line_items_projection import PROJECTED_LINE_ITEMS_NAMED
 from app.core.order_filters import build_tag_exclusion_condition, load_exclusion_rules
@@ -42,8 +43,30 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 ALLOWED_PERIODS = (30, 60, 90)
 CANCELLED_OUTCOMES = {"CANCELLED"}
 # Stock only moves at the stock-sync runs (02:00 + manual), so a longer TTL is safe.
+# Own cache, not app.core.analytics_cache: that one is wiped by every order sync
+# (~10 min), which made store-filter changes and row details rebuild everything.
 REPORT_TTL_SECONDS = 600
+SNAPSHOT_TTL_SECONDS = 600
+LAST_SALES_TTL_SECONDS = 1800
 LAST_SALE_LOOKBACK_DAYS = 365
+
+_CACHE: dict = {}
+_LOCKS: dict = {}
+
+
+async def _cached(key: str, ttl: int, loader):
+    """Per-process TTL cache; the lock stops concurrent requests rebuilding in parallel."""
+    entry = _CACHE.get(key)
+    if entry and entry[0] > time.monotonic():
+        return entry[1]
+    lock = _LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        entry = _CACHE.get(key)
+        if entry and entry[0] > time.monotonic():
+            return entry[1]
+        value = await loader()
+        _CACHE[key] = (time.monotonic() + ttl, value)
+        return value
 
 
 def _period_bounds(days: int):
@@ -131,7 +154,10 @@ async def _load_sales(db: AsyncSession, days: int):
 async def _load_last_sales(db: AsyncSession) -> dict:
     """(store, SKU) → last non-cancelled order date over the lookback window.
 
-    Aggregated in Postgres: projecting a year of line items into Python is ~10x slower.
+    Aggregated in Postgres (projecting a year of line items into Python is ~10x
+    slower), grouped by the three status fields so "cancelled" is decided by the same
+    compute_final_outcome rule as the period sales — otherwise a row could show sales
+    in the period yet a last sale before it.
     """
     excluded_tags, _ = await load_exclusion_rules(db)
     params = {"since": datetime.utcnow() - timedelta(days=LAST_SALE_LOOKBACK_DAYS)}
@@ -142,19 +168,25 @@ async def _load_last_sales(db: AsyncSession) -> dict:
     rows = await db.execute(
         text(
             "SELECT o.store_uid, e->'inventory_item'->>'sku' AS sku, "
+            "o.aggregated_status, o.shipment_status, o.fulfillment_status, "
             "MAX(o.frisbo_created_at) "
             "FROM orders o, jsonb_array_elements(o.line_items::jsonb) e "
-            "WHERE o.frisbo_created_at >= :since "
-            "AND COALESCE(o.aggregated_status, '') <> 'cancelled'" + tag_sql + " "
-            "GROUP BY 1, 2"
+            "WHERE o.frisbo_created_at >= :since" + tag_sql + " "
+            "GROUP BY 1, 2, 3, 4, 5"
         ),
         params,
     )
-    return {
-        (store_uid or "", sku.strip()): last
-        for store_uid, sku, last in rows.all()
-        if sku and sku.strip()
-    }
+    last_sales: dict = {}
+    for store_uid, sku, workflow, shipment, fulfillment, last in rows.all():
+        sku = (sku or "").strip()
+        if not sku or not last:
+            continue
+        if compute_final_outcome(workflow, shipment, fulfillment) in CANCELLED_OUTCOMES:
+            continue
+        key = (store_uid or "", sku)
+        if key not in last_sales or last > last_sales[key]:
+            last_sales[key] = last
+    return last_sales
 
 
 async def _load_costs(db: AsyncSession) -> dict:
@@ -163,11 +195,13 @@ async def _load_costs(db: AsyncSession) -> dict:
 
 
 async def _build_report(db: AsyncSession, days: int) -> dict:
-    snapshot = await fetch_snapshot()
+    snapshot = await _cached("snapshot", SNAPSHOT_TTL_SECONDS, fetch_snapshot)
     stores = await _load_stores(db, snapshot["stores"])
     catalog = await _load_catalog(db)
     sales, dt_from, dt_to = await _load_sales(db, days)
-    last_sales = await _load_last_sales(db)
+    last_sales = await _cached(
+        "last-sales", LAST_SALES_TTL_SECONDS, lambda: _load_last_sales(db)
+    )
     costs = await _load_costs(db)
     result = build_rows(stores, snapshot, catalog, sales, days, last_sales, costs)
     store_options = [{"uid": ALL_STORES_UID, "name": ALL_STORES_NAME}]
@@ -205,15 +239,13 @@ async def get_stock_coverage(
             400, detail=f"Perioada trebuie să fie una din {ALLOWED_PERIODS} zile"
         )
 
-    cache_key = f"stock-coverage|days={days}"
-    report = cache_get(cache_key)
-    if report is None:
-        try:
-            report = await _build_report(db, days)
-        except StockSyncUnavailable as e:
-            logger.error("stock-coverage: %s", e)
-            raise HTTPException(503, detail=str(e))
-        cache_set(cache_key, report, ttl=REPORT_TTL_SECONDS)
+    try:
+        report = await _cached(
+            f"report|days={days}", REPORT_TTL_SECONDS, lambda: _build_report(db, days)
+        )
+    except StockSyncUnavailable as e:
+        logger.error("stock-coverage: %s", e)
+        raise HTTPException(503, detail=str(e))
 
     if master_product_id:
         rows = [

@@ -103,6 +103,7 @@ function StatusBadge({ status }) {
 
 function StoreBreakdown({ masterId, days }) {
     const [rows, setRows] = useState(null)
+    const [error, setError] = useState(null)
 
     useEffect(() => {
         let cancelled = false
@@ -116,11 +117,12 @@ function StoreBreakdown({ masterId, days }) {
                 if (cancelled) return
                 console.error(e)
                 toastError(e)
-                setRows([])
+                setError(e.message || 'Eroare la încărcare')
             })
         return () => { cancelled = true }
     }, [masterId, days])
 
+    if (error) return <p className="text-xs text-red-600 dark:text-red-400">Nu s-au putut încărca magazinele: {error}</p>
     if (rows == null) return <div className="py-2"><Spinner size="sm" /></div>
     if (rows.length === 0) return <p className="text-xs text-zinc-500 dark:text-zinc-400">Nu e listat pe niciun magazin.</p>
     const sorted = [...rows].sort((a, b) => (b.stock || 0) - (a.stock || 0))
@@ -221,7 +223,16 @@ export default function StockCoverage() {
     }, [allRows, view, sort])
 
     const kpis = useMemo(() => {
-        const withStock = allRows.filter((r) => (r.stock || 0) > 0)
+        const byProduct = new Map()
+        allRows.filter((r) => (r.stock || 0) > 0).forEach((r) => {
+            const key = r.master_product_id || `${r.store_uid}|${r.sku}`
+            if (!byProduct.has(key)) byProduct.set(key, [])
+            byProduct.get(key).push(r)
+        })
+        const withStock = [...byProduct.values()].flatMap((group) => {
+            const pool = group.find((r) => r.stock_is_pool)
+            return pool ? [pool] : group
+        })
         const sum = (list) => list.reduce((s, r) => s + (r.stock_value || 0), 0)
         const notSelling = withStock.filter((r) => r.status === 'nu_se_vinde')
         const slow = withStock.filter((r) => r.status === 'lent' || r.status === 'foarte_lent')
@@ -347,7 +358,8 @@ export default function StockCoverage() {
                 'Produs': r.product_name,
                 'Stare': STATUS[r.status]?.label || '',
                 'Stoc': r.stock ?? '',
-                [soldLabel]: r.sold_units,
+                'Stoc comun (toate magazinele)': r.stock_is_pool ? 'da' : '',
+                [soldLabel]: r.stock_is_pool ? r.store_sold_units : r.sold_units,
                 'Fără vânzare de (zile)': r.days_since_last_sale ?? '> 365',
                 'Se termină în (zile)': r.coverage_days ?? formatCoverage(r),
                 'Valoare stoc (RON)': r.stock_value ?? '',

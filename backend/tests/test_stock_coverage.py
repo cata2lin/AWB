@@ -255,6 +255,18 @@ def test_as_of_is_latest_stock_sync_sighting():
     assert _rows({})["as_of"] == "2026-09-24T04:40:00Z"
 
 
-def test_days_since_last_sale_counts_calendar_days():
+def test_days_since_last_sale_counts_bucharest_calendar_days():
+    # 23:00 UTC on the 23rd is already the 24th in Bucharest — sold "today".
     result = _rows({}, last_sales={("oz", "HA-2"): datetime(2026, 9, 23, 23, 0)})
+    assert _row(result, "oz", master="m2")["days_since_last_sale"] == 0
+    result = _rows({}, last_sales={("oz", "HA-2"): datetime(2026, 9, 23, 20, 0)})
     assert _row(result, "oz", master="m2")["days_since_last_sale"] == 1
+
+
+def test_cost_prefers_sku_owned_by_this_product_only():
+    # HA-1 is m1 on OZ but m3 on BG, so its cost is ambiguous; BEL-1 is m1's alone.
+    result = _rows({}, costs={"HA-1": 50.0, "BEL-1": 7.0})
+    assert _row(result, "oz", master="m1")["unit_cost"] == 7.0
+    assert _row(result, ALL_STORES_UID, master="m1")["stock_value"] == 700.0
+    # m3 has only the ambiguous SKU — still better than no value at all.
+    assert _row(result, "bg", master="m3")["unit_cost"] == 50.0

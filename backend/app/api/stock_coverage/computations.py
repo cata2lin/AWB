@@ -14,13 +14,16 @@ reads straight off the table.
 """
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 UNALLOCATED_STORE_UID = "__nealocat__"
 UNALLOCATED_STORE_NAME = "Nealocat (pe niciun magazin)"
 ALL_STORES_UID = "__toate__"
 ALL_STORES_NAME = "Toate magazinele"
+
+BUCHAREST = ZoneInfo("Europe/Bucharest")
 
 SOON_DAYS = 14
 SLOW_DAYS = 180
@@ -75,6 +78,10 @@ def _safe_div(a: float, b: float) -> Optional[float]:
     return a / b if b else None
 
 
+def _bucharest_date(utc_naive: datetime):
+    return utc_naive.replace(tzinfo=timezone.utc).astimezone(BUCHAREST).date()
+
+
 def stock_status(stock: Optional[float], sold: float, coverage: Optional[float]) -> str:
     """Verdict for one row — does this stock move?"""
     if stock is None:
@@ -113,7 +120,7 @@ def build_rows(
     """
     last_sales = last_sales or {}
     costs = costs or {}
-    now = now or datetime.utcnow()
+    today = _bucharest_date(now or datetime.utcnow())
     awb_to_ss = map_awb_to_stock_sync(awb_stores, snapshot["stores"])
     store_names = {s["uid"]: s["name"] for s in awb_stores}
 
@@ -208,6 +215,14 @@ def build_rows(
                 return catalog_name.get(sku) or sale_name[sku]
         return ""
 
+    # sku_costs is keyed by SKU alone, and the same SKU can be a different product
+    # on another store — prefer SKUs that belong to this product only.
+    sku_owners: Dict[str, set] = defaultdict(set)
+    for (_, sku), master in listing_master.items():
+        sku_owners[sku].add(master)
+    for (_, sku), master in catalog_master.items():
+        sku_owners[sku].add(master)
+
     def unit_cost(master: Optional[str], skus: Iterable[str]) -> Optional[float]:
         candidates = sorted(skus)
         if master:
@@ -215,6 +230,7 @@ def build_rows(
                 master_skus.get(master, set())
                 | catalog_skus_by_master.get(master, set())
             )
+            candidates.sort(key=lambda sku: sku_owners.get(sku, {master}) != {master})
         for sku in candidates:
             if costs.get(sku):
                 return costs[sku]
@@ -255,7 +271,7 @@ def build_rows(
             "coverage_days": round(coverage, 1) if coverage is not None else None,
             "pool_sold_units": round(pooled, 2),
             "last_sale_at": last_sale.isoformat() if last_sale else None,
-            "days_since_last_sale": (now.date() - last_sale.date()).days
+            "days_since_last_sale": (today - _bucharest_date(last_sale)).days
             if last_sale
             else None,
             "unit_cost": cost,
