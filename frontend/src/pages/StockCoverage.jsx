@@ -27,7 +27,10 @@ const PERIODS = [30, 60, 90]
 const ALL_STORES = '__toate__'
 const ONE_YEAR = 365
 
+const DEAD_DAYS = 90
+
 const STATUS = {
+    mort: { label: 'Stoc mort', rank: -1, cls: 'bg-red-600 text-white dark:bg-red-500/80 dark:text-white' },
     nu_se_vinde: { label: 'Nu se vinde', rank: 0, cls: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
     foarte_lent: { label: 'Foarte lent', rank: 1, cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
     lent: { label: 'Lent', rank: 2, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
@@ -39,6 +42,7 @@ const STATUS = {
 
 const VIEWS = [
     { key: 'toate', label: 'Toate', match: () => true },
+    { key: 'mort', label: `Stoc mort (${DEAD_DAYS}+ zile)`, match: (r) => r.status === 'mort' },
     { key: 'nu_se_vinde', label: 'Nu se vând', match: (r) => r.status === 'nu_se_vinde' },
     { key: 'lente', label: 'Lente (peste 6 luni)', match: (r) => r.status === 'lent' || r.status === 'foarte_lent' },
     { key: 'se_termina', label: 'Se termină', match: (r) => r.status === 'se_termina' },
@@ -234,10 +238,13 @@ export default function StockCoverage() {
             return pool ? [pool] : group
         })
         const sum = (list) => list.reduce((s, r) => s + (r.stock_value || 0), 0)
+        const dead = withStock.filter((r) => r.status === 'mort')
         const notSelling = withStock.filter((r) => r.status === 'nu_se_vinde')
         const slow = withStock.filter((r) => r.status === 'lent' || r.status === 'foarte_lent')
         return {
             withStock: withStock.length,
+            dead: dead.length,
+            deadValue: sum(dead),
             stockValue: sum(withStock),
             notSelling: notSelling.length,
             notSellingValue: sum(notSelling),
@@ -440,19 +447,29 @@ export default function StockCoverage() {
             </FilterBar>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <KpiCard label="Produse cu stoc" value={formatNumber(kpis.withStock)} color="zinc" />
-                <KpiCard label="Valoare stoc" value={`${formatNumber(Math.round(kpis.stockValue))} RON`} color="blue" />
+                <KpiCard
+                    label="Valoare stoc"
+                    value={`${formatNumber(Math.round(kpis.stockValue))} RON`}
+                    trendLabel={`${formatNumber(kpis.withStock)} produse cu stoc`}
+                    color="blue"
+                />
+                <KpiCard
+                    label={`Stoc mort (nimic vândut în ${DEAD_DAYS} zile)`}
+                    value={formatNumber(kpis.dead)}
+                    trendLabel={`${formatNumber(Math.round(kpis.deadValue))} RON blocați`}
+                    color="red"
+                />
                 <KpiCard
                     label={`Nu se vând (0 în ${days} zile)`}
                     value={formatNumber(kpis.notSelling)}
                     trendLabel={`${formatNumber(Math.round(kpis.notSellingValue))} RON blocați`}
-                    color="red"
+                    color="amber"
                 />
                 <KpiCard
                     label="Lente (stoc peste 6 luni)"
                     value={formatNumber(kpis.slow)}
                     trendLabel={`${formatNumber(Math.round(kpis.slowValue))} RON blocați`}
-                    color="amber"
+                    color="violet"
                 />
             </div>
 
@@ -465,7 +482,7 @@ export default function StockCoverage() {
                         <span className="text-zinc-700 dark:text-zinc-300">{meta.stores_without_master.join(', ')}</span> nu sunt în stock-sync și vând din stocul comun: la ele stocul și vânzările sunt pe toate magazinele.{' '}
                     </>
                 )}
-                Valoarea = stoc × cost din Costuri SKU. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
+                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile; <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă, dar s-a vândut în ultimele {DEAD_DAYS} de zile. Valoarea = stoc × cost din Costuri SKU. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
             </p>
 
             <DataTable

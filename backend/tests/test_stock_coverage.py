@@ -108,12 +108,14 @@ def test_domain_prefers_manual_then_xconnector_then_slug():
 
 def test_status_thresholds():
     assert stock_status(None, 0, None) == "fara_date"
-    assert stock_status(0, 5, 0) == "fara_stoc"
-    assert stock_status(50, 0, None) == "nu_se_vinde"
-    assert stock_status(50, 1, 400) == "foarte_lent"
-    assert stock_status(50, 1, 200) == "lent"
-    assert stock_status(50, 10, 10) == "se_termina"
-    assert stock_status(50, 10, 60) == "ok"
+    assert stock_status(0, 5, 0, 1) == "fara_stoc"
+    assert stock_status(50, 0, None, None) == "mort"  # nothing sold in a year
+    assert stock_status(50, 0, None, 90) == "mort"
+    assert stock_status(50, 0, None, 40) == "nu_se_vinde"  # sold, but not this period
+    assert stock_status(50, 1, 400, 5) == "foarte_lent"
+    assert stock_status(50, 1, 200, 5) == "lent"
+    assert stock_status(50, 10, 10, 1) == "se_termina"
+    assert stock_status(50, 10, 60, 1) == "ok"
 
 
 def test_store_row_has_one_stock_one_coverage():
@@ -138,12 +140,21 @@ def test_same_sku_on_other_store_maps_to_its_own_product():
     assert _row(result, "oz", master="m1")["sold_units"] == 60
 
 
-def test_listed_product_without_sales_is_not_selling():
+def test_listed_product_without_sales_is_dead_stock():
     r = _row(_rows({}), "oz", master="m2")
     assert r["sold_units"] == 0
     assert r["stock"] == 10
     assert r["coverage_days"] is None
-    assert r["status"] == "nu_se_vinde"
+    assert r["status"] == "mort"
+
+
+def test_no_sales_this_period_but_sold_recently_is_not_dead():
+    recent = {("oz", "HA-2"): datetime(2026, 8, 15, 12, 0)}  # 40 days ago
+    assert (
+        _row(_rows({}, last_sales=recent), "oz", master="m2")["status"] == "nu_se_vinde"
+    )
+    old = {("oz", "HA-2"): datetime(2026, 6, 1, 12, 0)}  # 115 days ago
+    assert _row(_rows({}, last_sales=old), "oz", master="m2")["status"] == "mort"
 
 
 def test_all_stores_row_sums_every_store():
@@ -158,8 +169,8 @@ def test_all_stores_row_sums_every_store():
     assert r["sold_units"] == 60
     assert r["coverage_days"] == 50.0
     assert r["status"] == "ok"
-    # m2 has stock and no sales anywhere → surfaces as not selling in the total view.
-    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "nu_se_vinde"
+    # m2 has stock and never sold anywhere → dead stock in the total view.
+    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "mort"
 
 
 def test_store_outside_stock_sync_uses_the_pool():
@@ -239,7 +250,7 @@ def test_unlisted_master_stock_counts_as_unallocated():
     assert r["sku"] == "HA-4"
     assert r["product_name"] == "Produs patru"
     assert r["image_url"] == "img4"
-    assert _row(result, ALL_STORES_UID, master="m4")["status"] == "nu_se_vinde"
+    assert _row(result, ALL_STORES_UID, master="m4")["status"] == "mort"
 
 
 def test_sold_sku_not_linked_to_master_still_shows_without_stock():

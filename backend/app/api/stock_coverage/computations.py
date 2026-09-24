@@ -28,6 +28,8 @@ BUCHAREST = ZoneInfo("Europe/Bucharest")
 SOON_DAYS = 14
 SLOW_DAYS = 180
 VERY_SLOW_DAYS = 365
+# Dead stock: nothing sold for this long, whatever period the page is showing.
+DEAD_DAYS = 90
 
 # AWB stores that have neither xconnector_domain nor shopify_domain set, matched to
 # their stock-sync store by hand (identified from their order-number prefixes).
@@ -82,13 +84,24 @@ def _bucharest_date(utc_naive: datetime):
     return utc_naive.replace(tzinfo=timezone.utc).astimezone(BUCHAREST).date()
 
 
-def stock_status(stock: Optional[float], sold: float, coverage: Optional[float]) -> str:
-    """Verdict for one row — does this stock move?"""
+def stock_status(
+    stock: Optional[float],
+    sold: float,
+    coverage: Optional[float],
+    days_since_last_sale: Optional[int] = None,
+) -> str:
+    """Verdict for one row — does this stock move?
+
+    `days_since_last_sale` None means no sale within the last-sale lookback (a year).
+    """
     if stock is None:
         return "fara_date"
     if stock <= 0:
         return "fara_stoc"
     if not sold:
+        # Sales in the period always win: the cached last-sale date can lag them.
+        if days_since_last_sale is None or days_since_last_sale >= DEAD_DAYS:
+            return "mort"
         return "nu_se_vinde"
     if coverage is not None and coverage > VERY_SLOW_DAYS:
         return "foarte_lent"
@@ -251,6 +264,7 @@ def build_rows(
         velocity = sold / period_days if period_days else 0.0
         coverage = _safe_div(stock_units, velocity) if stock_units is not None else None
         cost = unit_cost(master, skus)
+        days_since = (today - _bucharest_date(last_sale)).days if last_sale else None
         value = (
             stock_units * cost if (cost and stock_units and stock_units > 0) else None
         )
@@ -271,12 +285,10 @@ def build_rows(
             "coverage_days": round(coverage, 1) if coverage is not None else None,
             "pool_sold_units": round(pooled, 2),
             "last_sale_at": last_sale.isoformat() if last_sale else None,
-            "days_since_last_sale": (today - _bucharest_date(last_sale)).days
-            if last_sale
-            else None,
+            "days_since_last_sale": days_since,
             "unit_cost": cost,
             "stock_value": round(value, 2) if value is not None else None,
-            "status": stock_status(stock_units, sold, coverage),
+            "status": stock_status(stock_units, sold, coverage, days_since),
             "in_master": bool(stock),
         }
 
