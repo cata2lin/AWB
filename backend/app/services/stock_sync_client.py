@@ -10,10 +10,12 @@ Endpoints used (all GET, token scopes products:read + stores:read):
     /v1/listings?matchStatus=MATCHED → (store, SKU) → barcode
     /v1/master-products             → every master product (name, image)
     /v1/stock?barcodes=…            → totalUnits + per-store currentUnits (max 200/call)
+    /v1/stock-ledger?occurredFrom=… → every stock movement (to date when goods arrived)
 """
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import httpx
@@ -111,3 +113,51 @@ async def fetch_snapshot() -> dict:
         len(stock),
     )
     return {"stores": stores, "listings": listings, "masters": masters, "stock": stock}
+
+
+async def fetch_ledger(occurred_from: str, chunks: int = 8) -> List[dict]:
+    """Every stock movement since `occurred_from` (ISO date).
+
+    ~80k entries for three months at 200 per page; the range is split into `chunks`
+    time windows fetched in parallel (~40 s sequential → a few seconds).
+    """
+    start = datetime.fromisoformat(occurred_from).replace(tzinfo=timezone.utc)
+    end = datetime.now(timezone.utc) + timedelta(minutes=5)
+    step = (end - start) / chunks
+    bounds = [(start + step * i, start + step * (i + 1)) for i in range(chunks)]
+
+    async with httpx.AsyncClient(
+        base_url=settings.stock_sync_api_url, timeout=60.0
+    ) as client:
+
+        async def _window(lo: datetime, hi: datetime) -> List[dict]:
+            return await _paginate(
+                client,
+                "/v1/stock-ledger",
+                "entries",
+                {
+                    "limit": PAGE_SIZE,
+                    "occurredFrom": lo.isoformat().replace("+00:00", "Z"),
+                    "occurredTo": hi.isoformat().replace("+00:00", "Z"),
+                },
+            )
+
+        pages = await asyncio.gather(*(_window(lo, hi) for lo, hi in bounds))
+
+    seen = set()
+    out = []
+    for e in (e for page in pages for e in page):
+        # Window edges are inclusive on both sides in some APIs — drop duplicates.
+        if not e.get("masterProductId") or e.get("id") in seen:
+            continue
+        seen.add(e.get("id"))
+        out.append(
+            {
+                "master": e["masterProductId"],
+                "at": e["occurredAt"],
+                "created": e.get("createdAt") or "",
+                "before": e.get("balanceBefore") or 0,
+                "after": e.get("balanceAfter") or 0,
+            }
+        )
+    return out

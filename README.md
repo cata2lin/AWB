@@ -942,6 +942,19 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-09-24 — Stoc & Viteză v3: stoc mort după regula echipei, fără parfumuri / produse în test / marfă nouă
+
+**Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/app/services/stock_sync_client.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **New goods flagged dead** | HA-0501 (1.800 buc intrate azi) apărea „Stoc mort” pentru că ultima vânzare era din februarie. | Data sosirii mărfii vine din `/v1/stock-ledger` (stoc 0 → pozitiv, ignorând încărcarea inițială la trecerea pe stock-sync, până pe 27.07). Marfa intrată în ultimele 90 de zile = „Nou”, niciodată mort/lent. Ledger-ul se ia pe 8 ferestre de timp în paralel (~6 s în loc de ~30 s). |
+| **Aceeași regulă ca skill-urile echipei** | `gigi:produse-fara-ads`: MORT = stoc și 0 vândute în 90 de zile; SKU-urile placeholder excluse; brand fără comenzi 7 zile = date incomplete. | Aplicat identic: stare `date_incomplete` pentru magazinele fără comenzi în 7 zile (azi cepatai.ro, nocturna.bg); `surpriza`/`mystery`/`cutie-cadou` excluse. |
+| **Parfumuri scoase** | Raportul e pentru restul produselor. | Excluse magazinele esteban.ro, georgetalent.ro, nubra, labnoir.ro și orice master vândut acolo sau cu nume de parfum („inspired by”, „inspirat de/din”, „parfum”, „eau de …”, „Zeylin”, „L'Essence”). |
+| **Produse în test scoase** | Produsele încă în test (doar comenzi cu tag „test”, nicio comandă reală în 365 de zile) nu au ce căuta în raport. | 103 SKU-uri azi (ex. HA-0119, HA-1945). |
+| **Filtru pe produse + total** | — | Multi-select „Produse”, persistat în URL (`?produse=`); cardurile urmează filtrul. Rând TOTAL aliniat pe coloane (stoc, vândute, valoare) pe toate rândurile filtrate. |
+| **Mai rapid** | Prima încărcare ~43 s, iar orice expirare a cache-ului făcea din nou un utilizator să aștepte. | Cache stale-while-revalidate: după prima construire, răspunsul e instant, iar reîmprospătarea rulează în fundal, cu sesiuni DB proprii. Prima încărcare după restart ~18 s. |
+
 ### 2026-09-24 — Stoc & Viteză v2: pagina răspunde la „ce nu se vinde”
 
 **Files changed:** `backend/app/api/stock_coverage/computations.py`, `backend/app/api/stock_coverage/endpoint.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`

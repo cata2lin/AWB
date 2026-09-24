@@ -13,6 +13,7 @@ Every row carries ONE stock, ONE coverage and a status, so "what isn't selling"
 reads straight off the table.
 """
 
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -28,8 +29,24 @@ BUCHAREST = ZoneInfo("Europe/Bucharest")
 SOON_DAYS = 14
 SLOW_DAYS = 180
 VERY_SLOW_DAYS = 365
-# Dead stock: nothing sold for this long, whatever period the page is showing.
+# Dead stock: nothing sold for this long, whatever period the page is showing
+# (same 90-day rule as the team's produse-fara-ads "MORT" verdict).
 DEAD_DAYS = 90
+# A store with no order for this long has unreliable sales history (produse-fara-ads).
+STALE_STORE_DAYS = 7
+# stock-sync went live 21.07 and seeded every master's opening stock until ~26.07;
+# a 0 → stock jump before this is the seeding, not goods arriving.
+LEDGER_SEEDING_END = "2026-07-27"
+
+# Perfumes are out of scope for this report.
+PERFUME_STORE_NAMES = {"esteban.ro", "georgetalent.ro", "nubra", "labnoir.ro"}
+PERFUME_NAME_RE = re.compile(
+    r"inspired by|inspirat (de|din)|\bparfum|eau de (parfum|toilette)|\bzeylin\b|l'essence",
+    re.IGNORECASE,
+)
+# Placeholder SKUs (seeded "infinite" stock) — excluded like in produse-fara-ads.
+PLACEHOLDER_SKU_RE = re.compile(r"surpriza|mystery|cutie-cadou|^test", re.IGNORECASE)
+NEGATIVE_STATUSES = {"mort", "nu_se_vinde", "lent", "foarte_lent"}
 
 # AWB stores that have neither xconnector_domain nor shopify_domain set, matched to
 # their stock-sync store by hand (identified from their order-number prefixes).
@@ -123,6 +140,24 @@ def stock_status(
     return "ok"
 
 
+def stock_arrivals(ledger: Iterable[dict]) -> Dict[str, datetime]:
+    """master → last time its stock went from 0 to positive (goods arrived), ignoring
+    the opening-stock seeding at the stock-sync cutover."""
+    arrivals: Dict[str, str] = {}
+    for e in sorted(ledger, key=lambda x: (x["at"], x["created"])):
+        if e["at"] >= LEDGER_SEEDING_END and e["before"] <= 0 < e["after"]:
+            arrivals[e["master"]] = e["at"]
+    out = {}
+    for master, at in arrivals.items():
+        try:
+            out[master] = datetime.fromisoformat(at.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except ValueError:
+            continue
+    return out
+
+
 def build_rows(
     awb_stores: List[dict],
     snapshot: dict,
@@ -134,6 +169,9 @@ def build_rows(
     now: Optional[datetime] = None,
     first_seen: Optional[Dict[str, datetime]] = None,
     store_first_order: Optional[Dict[str, datetime]] = None,
+    arrivals: Optional[Dict[str, datetime]] = None,
+    test_skus: Optional[set] = None,
+    store_last_order: Optional[Dict[str, datetime]] = None,
 ) -> dict:
     """Build every report row (per store, unallocated, all stores); filtering happens later.
 
@@ -148,6 +186,12 @@ def build_rows(
     """
     first_seen = first_seen or {}
     store_first_order = store_first_order or {}
+    arrivals = arrivals or {}
+    test_skus = test_skus or set()
+    store_last_order = store_last_order or {}
+    perfume_store_uids = {
+        s["uid"] for s in awb_stores if (s["name"] or "").lower() in PERFUME_STORE_NAMES
+    }
     last_sales = last_sales or {}
     costs = costs or {}
     today = _bucharest_date(now or datetime.utcnow())
@@ -266,6 +310,38 @@ def build_rows(
                 return costs[sku]
         return None
 
+    # ── Out of scope: perfumes, products still in their test period, placeholders ──
+    perfume_ss_stores = {
+        awb_to_ss[uid] for uid in perfume_store_uids if uid in awb_to_ss
+    }
+    excluded_masters = set()
+    for ss_store in perfume_ss_stores:
+        excluded_masters |= set(ss_store_masters.get(ss_store, {}))
+    for (store_uid, _), master in catalog_master.items():
+        if store_uid in perfume_store_uids:
+            excluded_masters.add(master)
+    for master in stock_by_master:
+        name = (master_info.get(master) or stock_by_master[master]).get("name") or ""
+        if PERFUME_NAME_RE.search(name):
+            excluded_masters.add(master)
+    for master in set(stock_by_master) | set(master_skus):
+        skus = master_skus.get(master, set()) | catalog_skus_by_master.get(
+            master, set()
+        )
+        if skus and skus <= test_skus:
+            excluded_masters.add(master)
+        if skus and all(PLACEHOLDER_SKU_RE.search(sku) for sku in skus):
+            excluded_masters.add(master)
+
+    def excluded_sku(sku: str) -> bool:
+        return sku in test_skus or bool(PLACEHOLDER_SKU_RE.search(sku))
+
+    stale_stores = {
+        uid
+        for uid, last in store_last_order.items()
+        if (today - _bucharest_date(last)).days > STALE_STORE_DAYS
+    }
+
     listed_masters = {
         master
         for store_masters in ss_store_masters.values()
@@ -300,10 +376,20 @@ def build_rows(
         stock = stock_by_master.get(master) if master else None
         history = history_days(store_uid, master, skus)
         listed = master is None or master in listed_masters
+        arrived = arrivals.get(master) if master else None
+        arrived_days = (today - _bucharest_date(arrived)).days if arrived else None
         velocity = sold / period_days if period_days else 0.0
         coverage = _safe_div(stock_units, velocity) if stock_units is not None else None
         cost = unit_cost(master, skus)
         days_since = (today - _bucharest_date(last_sale)).days if last_sale else None
+        status = stock_status(stock_units, sold, coverage, days_since, history, listed)
+        if status in NEGATIVE_STATUSES:
+            if store_uid in stale_stores:
+                # No orders for a week: sales history isn't reliable, don't judge.
+                status = "date_incomplete"
+            elif arrived_days is not None and arrived_days < DEAD_DAYS:
+                # Goods arrived recently: too early to call them dead or slow.
+                status = "nou"
         value = (
             stock_units * cost if (cost and stock_units and stock_units > 0) else None
         )
@@ -327,9 +413,9 @@ def build_rows(
             "days_since_last_sale": days_since,
             "unit_cost": cost,
             "stock_value": round(value, 2) if value is not None else None,
-            "status": stock_status(
-                stock_units, sold, coverage, days_since, history, listed
-            ),
+            "status": status,
+            "arrived_at": arrived.isoformat() if arrived else None,
+            "days_since_arrival": arrived_days,
             "history_days": history,
             "listed": listed,
             "in_master": bool(stock),
@@ -338,6 +424,8 @@ def build_rows(
     rows: List[dict] = []
     for store in awb_stores:
         uid, name = store["uid"], store["name"]
+        if uid in perfume_store_uids:
+            continue
         ss_store = awb_to_ss.get(uid)
         masters: Dict[str, set] = defaultdict(set)
         if ss_store:
@@ -352,6 +440,8 @@ def build_rows(
                 masters[key] |= skus
 
         for master, skus in masters.items():
+            if master in excluded_masters:
+                continue
             stock = stock_by_master.get(master)
             pooled = pool_sold.get(master, 0.0)
             if ss_store:
@@ -395,7 +485,11 @@ def build_rows(
                 rows.append(row)
 
         for (store_uid, key), skus in store_skus.items():
-            if store_uid == uid and key.startswith("sku:"):
+            if (
+                store_uid == uid
+                and key.startswith("sku:")
+                and not any(excluded_sku(sku) for sku in skus)
+            ):
                 rows.append(
                     make_row(
                         uid,
@@ -410,6 +504,8 @@ def build_rows(
                 )
 
     for master, stock in stock_by_master.items():
+        if master in excluded_masters:
+            continue
         total = stock.get("totalUnits") or 0
         pooled = pool_sold.get(master, 0.0)
         skus = set(
@@ -464,6 +560,12 @@ def build_rows(
         "rows": rows,
         "as_of": max(last_seen) if last_seen else None,
         "stores_without_master": sorted(
-            store_names[s["uid"]] for s in awb_stores if s["uid"] not in awb_to_ss
+            store_names[s["uid"]]
+            for s in awb_stores
+            if s["uid"] not in awb_to_ss and s["uid"] not in perfume_store_uids
         ),
+        "stale_stores": sorted(
+            store_names[u] for u in stale_stores if u in store_names
+        ),
+        "excluded_perfume_stores": sorted(store_names[u] for u in perfume_store_uids),
     }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Boxes, ChevronDown, ChevronRight, Download, Package, Store as StoreIcon } from 'lucide-react'
+import { Boxes, ChevronDown, ChevronRight, Download, Package, PackageSearch, Store as StoreIcon } from 'lucide-react'
 import { authFetch, API_URL } from '../utils/authFetch'
 import { toastError } from '../utils/toast'
 import { formatNumber, formatMoney } from '../utils/analyticsHelpers'
@@ -37,8 +37,10 @@ const STATUS = {
     foarte_lent: { label: 'Foarte lent', rank: 1, cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
     lent: { label: 'Lent', rank: 2, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
     ok: { label: 'OK', rank: 3, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+    nou: { label: 'Nou', rank: 3.5, cls: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
     se_termina: { label: 'Se termină', rank: 4, cls: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
     fara_stoc: { label: 'Fără stoc', rank: 5, cls: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/60 dark:text-zinc-300' },
+    date_incomplete: { label: 'Date incomplete', rank: 5.5, cls: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/60 dark:text-zinc-300' },
     fara_date: { label: 'Fără stoc în master', rank: 6, cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-700/60 dark:text-zinc-400' },
 }
 
@@ -49,7 +51,11 @@ const VIEWS = [
     { key: 'nu_se_vinde', label: 'Nu se vând', match: (r) => r.status === 'nu_se_vinde' },
     { key: 'lente', label: 'Lente (peste 6 luni)', match: (r) => r.status === 'lent' || r.status === 'foarte_lent' },
     { key: 'se_termina', label: 'Se termină', match: (r) => r.status === 'se_termina' },
+    { key: 'nou', label: `Noi (marfă sub ${DEAD_DAYS} zile)`, match: (r) => r.status === 'nou' },
 ]
+
+const productKey = (r) => r.master_product_id || `sku:${r.sku}`
+const TOTAL_KEY = '__total__'
 
 // Case- and diacritics-insensitive, so „covoras” finds „Covoraș”.
 const normalizeText = (text) => (text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -184,6 +190,10 @@ export default function StockCoverage() {
     )
     const isAllStores = selectedStores.length === 0
     const searchQuery = searchParams.get('cauta') || ''
+    const selectedProducts = useMemo(
+        () => (searchParams.get('produse') || '').split(',').filter(Boolean),
+        [searchParams],
+    )
 
     const [report, setReport] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -248,16 +258,31 @@ export default function StockCoverage() {
         return all.filter((r) => normalizeText(`${r.sku} ${r.product_name}`).includes(needle))
     }, [report, searchQuery])
 
+    const productOptions = useMemo(() => {
+        const seen = new Map()
+        ;(report?.rows || []).forEach((r) => {
+            const key = productKey(r)
+            if (!seen.has(key)) seen.set(key, { value: key, label: `${r.product_name || '—'} · ${r.sku || '—'}` })
+        })
+        return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label, 'ro'))
+    }, [report])
+
+    const scopedRows = useMemo(() => {
+        if (!selectedProducts.length) return allRows
+        const wanted = new Set(selectedProducts)
+        return allRows.filter((r) => wanted.has(productKey(r)))
+    }, [allRows, selectedProducts])
+
     const rows = useMemo(() => {
-        const filtered = allRows.filter(view.match)
+        const filtered = scopedRows.filter(view.match)
         if (!sort.key || !sort.direction) return filtered
         const dir = sort.direction === 'asc' ? 1 : -1
         return [...filtered].sort((a, b) => compareRows(a, b, sort.key, dir))
-    }, [allRows, view, sort])
+    }, [scopedRows, view, sort])
 
     const kpis = useMemo(() => {
         const byProduct = new Map()
-        allRows.filter((r) => (r.stock || 0) > 0).forEach((r) => {
+        scopedRows.filter((r) => (r.stock || 0) > 0).forEach((r) => {
             const key = r.master_product_id || `${r.store_uid}|${r.sku}`
             if (!byProduct.has(key)) byProduct.set(key, [])
             byProduct.get(key).push(r)
@@ -290,7 +315,7 @@ export default function StockCoverage() {
             slowValue: sum(slow),
             slowNoCost: noCost(slow),
         }
-    }, [allRows])
+    }, [scopedRows])
 
     const soldLabel = `Vândute ${days} zile`
     const showStoreColumn = selectedStores.length > 1
@@ -388,7 +413,34 @@ export default function StockCoverage() {
         useColumnVisibility('stock-coverage-v2', columns, defaultVisible)
     const tableColumns = columns.filter((c) => !c.hidden)
 
+    const totals = useMemo(() => {
+        const sum = (key) => rows.reduce((s, r) => s + (r[key] || 0), 0)
+        return {
+            count: rows.length,
+            stock: sum('stock'),
+            sold_units: sum('sold_units'),
+            stock_value: sum('stock_value'),
+            velocity: sum('velocity'),
+            pool_sold_units: sum('pool_sold_units'),
+        }
+    }, [rows])
+
+    const TOTAL_CELLS = {
+        product_name: () => <span className="font-semibold text-zinc-900 dark:text-white">TOTAL · {formatNumber(totals.count)} produse</span>,
+        stock: () => <span className="font-mono font-semibold">{formatNumber(totals.stock)}</span>,
+        sold_units: () => <span className="font-mono font-semibold">{formatNumber(totals.sold_units)}</span>,
+        stock_value: () => <span className="font-mono font-semibold whitespace-nowrap">{formatMoney(totals.stock_value)} RON</span>,
+        velocity: () => <span className="font-mono font-semibold">{totals.velocity.toLocaleString('ro-RO', { maximumFractionDigits: 2 })}</span>,
+        pool_sold_units: () => <span className="font-mono font-semibold">{formatNumber(totals.pool_sold_units)}</span>,
+    }
+    const columnsWithTotal = tableColumns.map((c) => ({
+        ...c,
+        sortable: c.sortable,
+        render: (r) => (r[TOTAL_KEY] ? (TOTAL_CELLS[c.key]?.() ?? null) : c.render(r)),
+    }))
+
     const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+    const tableRows = rows.length ? [...pageRows, { [TOTAL_KEY]: true }] : pageRows
 
     const handleStoresChange = (uids) => updateParams({ magazine: uids.join(',') })
     const handlePeriodChange = (value) => updateParams({ zile: value === '30' ? '' : value })
@@ -398,8 +450,9 @@ export default function StockCoverage() {
         setSort(next)
         setPage(0)
     }
+    const handleProductsChange = (keys) => updateParams({ produse: keys.join(',') })
     const handleRowClick = (r) => {
-        if (!r.master_product_id) return
+        if (r[TOTAL_KEY] || !r.master_product_id) return
         setExpandedKey((cur) => (cur === r.master_product_id ? null : r.master_product_id))
     }
     const renderStoreBreakdown = (r) => <StoreBreakdown masterId={r.master_product_id} days={days} />
@@ -476,6 +529,15 @@ export default function StockCoverage() {
                     ariaLabel="Perioadă"
                     options={PERIODS.map((d) => ({ value: String(d), label: `Ultimele ${d} zile` }))}
                 />
+                <MultiSelectFilter
+                    label="Produse"
+                    options={productOptions}
+                    selected={selectedProducts}
+                    onChange={handleProductsChange}
+                    icon={PackageSearch}
+                    searchable
+                    allLabel="Toate produsele"
+                />
                 <SearchInput
                     value={searchText}
                     onChange={setSearchText}
@@ -546,13 +608,14 @@ export default function StockCoverage() {
                         <span className="text-zinc-700 dark:text-zinc-300">{meta.stores_without_master.join(', ')}</span> nu sunt în stock-sync și vând din stocul comun: la ele stocul și vânzările sunt pe toate magazinele.{' '}
                     </>
                 )}
-                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile (doar pentru produse și magazine mai vechi de {DEAD_DAYS} de zile); <span className="text-zinc-700 dark:text-zinc-300">Nelistat</span> = are stoc, dar nu e pe niciun magazin (de verificat fizic); <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă. „Vândute” nu include comenzile anulate, refuzate sau returnate. Valoarea = stoc × cost din Costuri SKU, fără TVA; produsele fără cost acolo nu intră în sume. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
+                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile (doar pentru produse și magazine mai vechi de {DEAD_DAYS} de zile); <span className="text-zinc-700 dark:text-zinc-300">Nelistat</span> = are stoc, dar nu e pe niciun magazin (de verificat fizic); <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă. „Vândute” nu include comenzile anulate, refuzate sau returnate. <span className="text-zinc-700 dark:text-zinc-300">Nou</span> = marfa a intrat în ultimele {DEAD_DAYS} de zile (după stock-sync), prea devreme pentru mort sau lent. Valoarea = stoc × cost din Costuri SKU, fără TVA; produsele fără cost acolo nu intră în sume. Nu sunt incluse parfumurile{meta?.excluded_perfume_stores?.length ? ` (${meta.excluded_perfume_stores.join(', ')})` : ''}, produsele aflate încă în test (doar comenzi de test) și SKU-urile placeholder.{meta?.stale_stores?.length ? ` Fără comenzi de peste 7 zile (date incomplete, nejudecate): ${meta.stale_stores.join(', ')}.` : ''} Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
             </p>
 
             <DataTable
-                columns={tableColumns}
-                rows={pageRows}
-                rowKey={(r) => `${r.store_uid}|${r.master_product_id || r.sku}`}
+                columns={columnsWithTotal}
+                rows={tableRows}
+                rowKey={(r) => (r[TOTAL_KEY] ? TOTAL_KEY : `${r.store_uid}|${r.master_product_id || r.sku}`)}
+                rowClassName={(r) => (r[TOTAL_KEY] ? 'bg-zinc-100 dark:bg-zinc-900 border-t-2 border-zinc-300 dark:border-zinc-600' : '')}
                 loading={loading}
                 visibleColumnKeys={visibleKeys}
                 sort={sort}

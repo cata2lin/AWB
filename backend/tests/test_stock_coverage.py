@@ -316,7 +316,7 @@ def test_stock_listed_nowhere_is_flagged_separately():
             "555": {
                 "barcode": "555",
                 "masterProductId": "m5",
-                "name": "Parfum nelistat",
+                "name": "Produs nelistat",
                 "totalUnits": 40,
                 "lastSeenAt": None,
                 "stores": [],
@@ -336,3 +336,144 @@ def test_store_row_carries_the_product_total_verdict():
     oz = _row(result, "oz", master="m1")
     assert oz["status"] == "mort"
     assert oz["total_status"] == "ok"
+
+
+def test_ledger_arrival_ignores_cutover_seeding():
+    from app.api.stock_coverage.computations import stock_arrivals
+
+    ledger = [
+        {
+            "master": "m1",
+            "at": "2026-07-22T10:00:00Z",
+            "created": "",
+            "before": 0,
+            "after": 100,
+        },
+        {
+            "master": "m2",
+            "at": "2026-07-22T10:00:00Z",
+            "created": "",
+            "before": 0,
+            "after": 50,
+        },
+        {
+            "master": "m2",
+            "at": "2026-08-01T10:00:00Z",
+            "created": "",
+            "before": 50,
+            "after": 0,
+        },
+        {
+            "master": "m2",
+            "at": "2026-09-24T09:00:00Z",
+            "created": "",
+            "before": 0,
+            "after": 1800,
+        },
+    ]
+    arrivals = stock_arrivals(ledger)
+    assert "m1" not in arrivals  # opening stock at the cutover, not new goods
+    assert arrivals["m2"] == datetime(2026, 9, 24, 9, 0)
+
+
+def test_goods_that_just_arrived_are_new_not_dead():
+    # HA-0501: 1800 pieces arrived today, nothing sold in 90 days → "nou".
+    result = build_rows(
+        AWB_STORES,
+        SNAPSHOT,
+        CATALOG,
+        {},
+        30,
+        arrivals={"m2": datetime(2026, 9, 24, 9, 0)},
+        now=NOW,
+    )
+    r = _row(result, ALL_STORES_UID, master="m2")
+    assert r["status"] == "nou"
+    assert r["days_since_arrival"] == 0
+    # arrived 120 days ago and still nothing sold → dead after all
+    result = build_rows(
+        AWB_STORES,
+        SNAPSHOT,
+        CATALOG,
+        {},
+        30,
+        arrivals={"m2": datetime(2026, 5, 27, 9, 0)},
+        now=NOW,
+    )
+    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "mort"
+
+
+def test_perfume_stores_and_products_are_left_out():
+    stores = AWB_STORES + [
+        {"uid": "est", "name": "esteban.ro", "domain": "est.myshopify.com"}
+    ]
+    snapshot = {
+        **SNAPSHOT,
+        "stores": SS_STORES + [{"id": "ss-est", "shopDomain": "est.myshopify.com"}],
+        "listings": LISTINGS
+        + [
+            {
+                "storeId": "ss-est",
+                "sku": "71",
+                "barcodeNormalized": "777",
+                "masterProductId": "m7",
+                "imageUrl": None,
+            }
+        ],
+        "stock": {
+            **STOCK,
+            "777": {
+                "barcode": "777",
+                "masterProductId": "m7",
+                "name": "No. 71",
+                "totalUnits": 90,
+                "lastSeenAt": None,
+                "stores": [],
+            },
+            "888": {
+                "barcode": "888",
+                "masterProductId": "m8",
+                "name": "Zeylin No. 160, inspired by Omnia",
+                "totalUnits": 60,
+                "lastSeenAt": None,
+                "stores": [],
+            },
+        },
+    }
+    result = build_rows(
+        stores,
+        snapshot,
+        CATALOG,
+        {("est", "71"): {"units": 5, "name": ""}},
+        30,
+        now=NOW,
+    )
+    masters = {r["master_product_id"] for r in result["rows"]}
+    assert "m7" not in masters and "m8" not in masters
+    assert not any(r["store_uid"] == "est" for r in result["rows"])
+    assert result["excluded_perfume_stores"] == ["esteban.ro"]
+
+
+def test_products_in_test_period_and_placeholders_are_left_out():
+    result = build_rows(
+        AWB_STORES,
+        SNAPSHOT,
+        CATALOG,
+        {("oz", "surpriza-X"): {"units": 3, "name": ""}},
+        30,
+        test_skus={"HA-2"},
+        now=NOW,
+    )
+    masters = {r["master_product_id"] for r in result["rows"]}
+    assert "m2" not in masters
+    assert not any(r["sku"] == "surpriza-X" for r in result["rows"])
+
+
+def test_store_without_recent_orders_is_not_judged():
+    last = {"oz": datetime(2026, 9, 1, 10, 0), "bg": datetime(2026, 9, 24, 8, 0)}
+    result = build_rows(
+        AWB_STORES, SNAPSHOT, CATALOG, {}, 30, store_last_order=last, now=NOW
+    )
+    assert _row(result, "oz", master="m2")["status"] == "date_incomplete"
+    assert _row(result, "bg", master="m3")["status"] == "mort"
+    assert result["stale_stores"] == ["ofertelezilei.ro"]
