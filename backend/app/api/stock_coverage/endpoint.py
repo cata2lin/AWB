@@ -33,6 +33,7 @@ from app.core.line_items_projection import PROJECTED_LINE_ITEMS_NAMED
 from app.core.order_filters import build_tag_exclusion_condition, load_exclusion_rules
 from app.models import Order
 from app.models.product import Product
+from app.models.profitability_config import ProfitabilityConfig
 from app.models.sku_cost import SkuCost
 from app.services.stock_sync_client import StockSyncUnavailable, fetch_snapshot
 
@@ -41,7 +42,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 ALLOWED_PERIODS = (30, 60, 90)
-CANCELLED_OUTCOMES = {"CANCELLED"}
+# Goods that came back or never left are not sold: cancelled, refused, returned.
+NOT_SOLD_OUTCOMES = {"CANCELLED", "REFUSED", "BACK_TO_SENDER"}
 # Stock only moves at the stock-sync runs (02:00 + manual), so a longer TTL is safe.
 # Own cache, not app.core.analytics_cache: that one is wiped by every order sync
 # (~10 min), which made store-filter changes and row details rebuild everything.
@@ -100,16 +102,27 @@ async def _load_stores(db: AsyncSession, stock_sync_stores: list) -> list:
     return stores
 
 
-async def _load_catalog(db: AsyncSession) -> list:
+async def _load_catalog(db: AsyncSession):
+    """Active AWB products per store, plus when each SKU first appeared in AWB."""
     rows = await db.execute(
-        select(Product.store_uids, Product.sku, Product.barcode, Product.title_1).where(
+        select(
+            Product.store_uids,
+            Product.sku,
+            Product.barcode,
+            Product.title_1,
+            Product.frisbo_created_at,
+        ).where(
             Product.state == "active",
             Product.sku.isnot(None),
             Product.sku != "",
         )
     )
     catalog = []
-    for store_uids, sku, barcode, title in rows.all():
+    first_seen: dict = {}
+    for store_uids, sku, barcode, title, created in rows.all():
+        key = sku.strip()
+        if created and (key not in first_seen or created < first_seen[key]):
+            first_seen[key] = created
         if isinstance(store_uids, str):
             try:
                 store_uids = json.loads(store_uids)
@@ -117,7 +130,14 @@ async def _load_catalog(db: AsyncSession) -> list:
                 store_uids = []
         for uid in store_uids or []:
             catalog.append((uid, sku, barcode, title))
-    return catalog
+    return catalog, first_seen
+
+
+async def _load_store_first_orders(db: AsyncSession) -> dict:
+    rows = await db.execute(
+        text("SELECT store_uid, MIN(frisbo_created_at) FROM orders GROUP BY store_uid")
+    )
+    return {uid: first for uid, first in rows.all() if uid and first}
 
 
 async def _load_sales(db: AsyncSession, days: int):
@@ -138,7 +158,7 @@ async def _load_sales(db: AsyncSession, days: int):
         outcome = compute_final_outcome(
             order.aggregated_status, order.shipment_status, order.fulfillment_status
         )
-        if outcome in CANCELLED_OUTCOMES:
+        if outcome in NOT_SOLD_OUTCOMES:
             continue
         for item in order.li or []:
             sku = (item.get("sku") or "").strip()
@@ -181,7 +201,7 @@ async def _load_last_sales(db: AsyncSession) -> dict:
         sku = (sku or "").strip()
         if not sku or not last:
             continue
-        if compute_final_outcome(workflow, shipment, fulfillment) in CANCELLED_OUTCOMES:
+        if compute_final_outcome(workflow, shipment, fulfillment) in NOT_SOLD_OUTCOMES:
             continue
         key = (store_uid or "", sku)
         if key not in last_sales or last > last_sales[key]:
@@ -190,20 +210,41 @@ async def _load_last_sales(db: AsyncSession) -> dict:
 
 
 async def _load_costs(db: AsyncSession) -> dict:
+    """SKU → unit cost WITHOUT VAT. sku_costs holds domestic costs with VAT
+    (docs/PNL_KNOWLEDGE.md); the P&L works fara_tva, so the stock value does too."""
+    config = (
+        await db.execute(select(ProfitabilityConfig).limit(1))
+    ).scalar_one_or_none()
+    vat = (config.vat_rate if config and config.vat_rate else 0.0) or 0.0
     rows = await db.execute(select(SkuCost.sku, SkuCost.cost))
-    return {sku.strip(): cost for sku, cost in rows.all() if sku and cost}
+    return {sku.strip(): cost / (1 + vat) for sku, cost in rows.all() if sku and cost}
 
 
 async def _build_report(db: AsyncSession, days: int) -> dict:
     snapshot = await _cached("snapshot", SNAPSHOT_TTL_SECONDS, fetch_snapshot)
     stores = await _load_stores(db, snapshot["stores"])
-    catalog = await _load_catalog(db)
+    catalog, first_seen = await _load_catalog(db)
     sales, dt_from, dt_to = await _load_sales(db, days)
     last_sales = await _cached(
         "last-sales", LAST_SALES_TTL_SECONDS, lambda: _load_last_sales(db)
     )
     costs = await _load_costs(db)
-    result = build_rows(stores, snapshot, catalog, sales, days, last_sales, costs)
+    store_first_order = await _cached(
+        "store-first-orders",
+        LAST_SALES_TTL_SECONDS,
+        lambda: _load_store_first_orders(db),
+    )
+    result = build_rows(
+        stores,
+        snapshot,
+        catalog,
+        sales,
+        days,
+        last_sales,
+        costs,
+        first_seen=first_seen,
+        store_first_order=store_first_order,
+    )
     store_options = [{"uid": ALL_STORES_UID, "name": ALL_STORES_NAME}]
     store_options += sorted(
         ({"uid": s["uid"], "name": s["name"]} for s in stores),

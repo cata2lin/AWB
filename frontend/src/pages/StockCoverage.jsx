@@ -31,7 +31,8 @@ const ONE_YEAR = 365
 const DEAD_DAYS = 90
 
 const STATUS = {
-    mort: { label: 'Stoc mort', rank: -1, cls: 'bg-red-600 text-white dark:bg-red-500/80 dark:text-white' },
+    mort: { label: 'Stoc mort', rank: -2, cls: 'bg-red-600 text-white dark:bg-red-500/80 dark:text-white' },
+    nelistat: { label: 'Nelistat', rank: -1, cls: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300' },
     nu_se_vinde: { label: 'Nu se vinde', rank: 0, cls: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
     foarte_lent: { label: 'Foarte lent', rank: 1, cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
     lent: { label: 'Lent', rank: 2, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
@@ -44,6 +45,7 @@ const STATUS = {
 const VIEWS = [
     { key: 'toate', label: 'Toate', match: () => true },
     { key: 'mort', label: `Stoc mort (${DEAD_DAYS}+ zile)`, match: (r) => r.status === 'mort' },
+    { key: 'nelistat', label: 'Nelistate', match: (r) => r.status === 'nelistat' },
     { key: 'nu_se_vinde', label: 'Nu se vând', match: (r) => r.status === 'nu_se_vinde' },
     { key: 'lente', label: 'Lente (peste 6 luni)', match: (r) => r.status === 'lent' || r.status === 'foarte_lent' },
     { key: 'se_termina', label: 'Se termină', match: (r) => r.status === 'se_termina' },
@@ -74,7 +76,11 @@ const formatCoverage = (r) => {
 }
 
 const formatSinceSale = (r) => {
-    if (r.days_since_last_sale == null) return '> 1 an'
+    if (r.days_since_last_sale == null) {
+        // A store or product younger than the lookback simply hasn't had a sale yet.
+        if (r.history_days != null && r.history_days < ONE_YEAR) return `niciodată (în ${formatNumber(r.history_days)} zile)`
+        return '> 1 an'
+    }
     if (r.days_since_last_sale === 0) return 'azi'
     if (r.days_since_last_sale === 1) return '1 zi'
     return `${formatNumber(r.days_since_last_sale)} zile`
@@ -263,6 +269,7 @@ export default function StockCoverage() {
         const sum = (list) => list.reduce((s, r) => s + (r.stock_value || 0), 0)
         const noCost = (list) => list.filter((r) => r.stock_value == null).length
         const dead = withStock.filter((r) => r.status === 'mort')
+        const unlisted = withStock.filter((r) => r.status === 'nelistat')
         const notSelling = withStock.filter((r) => r.status === 'nu_se_vinde')
         const slow = withStock.filter((r) => r.status === 'lent' || r.status === 'foarte_lent')
         return {
@@ -271,6 +278,10 @@ export default function StockCoverage() {
             dead: dead.length,
             deadValue: sum(dead),
             deadNoCost: noCost(dead),
+            unlisted: unlisted.length,
+            unlistedUnits: unlisted.reduce((s, r) => s + (r.stock || 0), 0),
+            unlistedValue: sum(unlisted),
+            unlistedNoCost: noCost(unlisted),
             stockValue: sum(withStock),
             notSelling: notSelling.length,
             notSellingValue: sum(notSelling),
@@ -318,7 +329,16 @@ export default function StockCoverage() {
         },
         {
             key: 'status', header: 'Stare', sortable: true, alwaysVisible: true,
-            render: (r) => <StatusBadge status={r.status} />,
+            render: (r) => (
+                <div className="flex flex-col items-start gap-0.5">
+                    <StatusBadge status={r.status} />
+                    {r.total_status && r.total_status !== r.status && (
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                            pe total: {STATUS[r.total_status]?.label || '—'}
+                        </span>
+                    )}
+                </div>
+            ),
         },
         {
             key: 'stock', header: 'Stoc', sortable: true, align: 'right',
@@ -346,7 +366,7 @@ export default function StockCoverage() {
             render: (r) => <span className="whitespace-nowrap text-zinc-700 dark:text-zinc-300">{formatCoverage(r)}</span>,
         },
         {
-            key: 'stock_value', header: 'Valoare stoc', sortable: true, align: 'right',
+            key: 'stock_value', header: 'Valoare stoc (fără TVA)', sortable: true, align: 'right',
             render: (r) => <span className="font-mono whitespace-nowrap">{r.stock_value == null ? '—' : `${formatMoney(r.stock_value)} RON`}</span>,
         },
         {
@@ -398,7 +418,8 @@ export default function StockCoverage() {
                 [soldLabel]: r.stock_is_pool ? r.store_sold_units : r.sold_units,
                 'Fără vânzare de (zile)': r.days_since_last_sale ?? '> 365',
                 'Se termină în (zile)': r.coverage_days ?? formatCoverage(r),
-                'Valoare stoc (RON)': r.stock_value ?? '',
+                'Valoare stoc fără TVA (RON)': r.stock_value ?? '',
+                'Stare pe total': r.total_status ? (STATUS[r.total_status]?.label || '') : '',
                 'Buc/zi': r.velocity,
                 'Vândute pe toate magazinele': r.pool_sold_units,
                 'Stoc total depozit': r.total_units ?? '',
@@ -483,9 +504,9 @@ export default function StockCoverage() {
                 </div>
             </FilterBar>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <KpiCard
-                    label="Valoare stoc"
+                    label="Valoare stoc (fără TVA)"
                     value={`${formatNumber(Math.round(kpis.stockValue))} RON`}
                     trendLabel={`${formatNumber(kpis.withStock)} produse cu stoc${kpis.withStockNoCost ? ` · ${formatNumber(kpis.withStockNoCost)} fără cost` : ''}`}
                     color="blue"
@@ -497,6 +518,12 @@ export default function StockCoverage() {
                     color="red"
                 />
                 <KpiCard
+                    label="Nelistate (pe niciun magazin)"
+                    value={formatNumber(kpis.unlisted)}
+                    trendLabel={`${formatNumber(kpis.unlistedUnits)} buc · ${blockedLabel(kpis.unlistedValue, kpis.unlistedNoCost)}`}
+                    color="violet"
+                />
+                <KpiCard
                     label={`Nu se vând (0 în ${days} zile)`}
                     value={formatNumber(kpis.notSelling)}
                     trendLabel={blockedLabel(kpis.notSellingValue, kpis.notSellingNoCost)}
@@ -506,7 +533,7 @@ export default function StockCoverage() {
                     label="Lente (stoc peste 6 luni)"
                     value={formatNumber(kpis.slow)}
                     trendLabel={blockedLabel(kpis.slowValue, kpis.slowNoCost)}
-                    color="violet"
+                    color="zinc"
                 />
             </div>
 
@@ -519,7 +546,7 @@ export default function StockCoverage() {
                         <span className="text-zinc-700 dark:text-zinc-300">{meta.stores_without_master.join(', ')}</span> nu sunt în stock-sync și vând din stocul comun: la ele stocul și vânzările sunt pe toate magazinele.{' '}
                     </>
                 )}
-                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile; <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă, dar s-a vândut în ultimele {DEAD_DAYS} de zile. Valoarea = stoc × cost din Costuri SKU; produsele fără cost acolo nu intră în sume. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
+                <span className="text-zinc-700 dark:text-zinc-300">Stoc mort</span> = nimic vândut în {DEAD_DAYS} de zile (doar pentru produse și magazine mai vechi de {DEAD_DAYS} de zile); <span className="text-zinc-700 dark:text-zinc-300">Nelistat</span> = are stoc, dar nu e pe niciun magazin (de verificat fizic); <span className="text-zinc-700 dark:text-zinc-300">Nu se vinde</span> = 0 în perioada aleasă. „Vândute” nu include comenzile anulate, refuzate sau returnate. Valoarea = stoc × cost din Costuri SKU, fără TVA; produsele fără cost acolo nu intră în sume. Stocul se actualizează la sincronizarea de la 02:00 și la rulările manuale.
             </p>
 
             <DataTable

@@ -281,3 +281,58 @@ def test_cost_prefers_sku_owned_by_this_product_only():
     assert _row(result, ALL_STORES_UID, master="m1")["stock_value"] == 700.0
     # m3 has only the ambiguous SKU — still better than no value at all.
     assert _row(result, "bg", master="m3")["unit_cost"] == 50.0
+
+
+def test_new_store_cannot_be_dead_stock():
+    # De la Bucsa case: a 10-day-old store has no 90-day history to judge.
+    young = {"oz": datetime(2026, 9, 14, 8, 0)}
+    r = _row(
+        build_rows(
+            AWB_STORES, SNAPSHOT, CATALOG, {}, 30, store_first_order=young, now=NOW
+        ),
+        "oz",
+        master="m2",
+    )
+    assert r["status"] == "nu_se_vinde"
+    assert r["history_days"] == 10
+
+
+def test_new_product_cannot_be_dead_stock():
+    fresh = {"HA-2": datetime(2026, 9, 1, 8, 0)}
+    result = build_rows(
+        AWB_STORES, SNAPSHOT, CATALOG, {}, 30, first_seen=fresh, now=NOW
+    )
+    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "nu_se_vinde"
+    old = {"HA-2": datetime(2026, 1, 1, 8, 0)}
+    result = build_rows(AWB_STORES, SNAPSHOT, CATALOG, {}, 30, first_seen=old, now=NOW)
+    assert _row(result, ALL_STORES_UID, master="m2")["status"] == "mort"
+
+
+def test_stock_listed_nowhere_is_flagged_separately():
+    snapshot = {
+        **SNAPSHOT,
+        "stock": {
+            **STOCK,
+            "555": {
+                "barcode": "555",
+                "masterProductId": "m5",
+                "name": "Parfum nelistat",
+                "totalUnits": 40,
+                "lastSeenAt": None,
+                "stores": [],
+            },
+        },
+    }
+    result = _rows({}, snapshot=snapshot)
+    r = _row(result, ALL_STORES_UID, master="m5")
+    assert r["status"] == "nelistat"
+    assert r["listed"] is False
+    assert _row(result, UNALLOCATED_STORE_UID, master="m5")["status"] == "nelistat"
+
+
+def test_store_row_carries_the_product_total_verdict():
+    # m1 sells only on Belasil (shared pool): on OZ it is idle, overall it is fine.
+    result = _rows({("belasil", "BEL-1"): {"units": 60, "name": ""}})
+    oz = _row(result, "oz", master="m1")
+    assert oz["status"] == "mort"
+    assert oz["total_status"] == "ok"

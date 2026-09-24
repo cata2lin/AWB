@@ -89,18 +89,29 @@ def stock_status(
     sold: float,
     coverage: Optional[float],
     days_since_last_sale: Optional[int] = None,
+    history_days: Optional[int] = None,
+    listed: bool = True,
 ) -> str:
     """Verdict for one row — does this stock move?
 
     `days_since_last_sale` None means no sale within the last-sale lookback (a year).
+    `history_days` is how long the product / store has existed; it can't be dead stock
+    ("nothing sold in 90 days") before it has been on sale for 90 days.
+    `listed` False = not on any store: it can't sell, and whether it physically exists
+    still has to be checked — a different decision from dead stock.
     """
     if stock is None:
         return "fara_date"
     if stock <= 0:
         return "fara_stoc"
     if not sold:
+        if not listed:
+            return "nelistat"
         # Sales in the period always win: the cached last-sale date can lag them.
-        if days_since_last_sale is None or days_since_last_sale >= DEAD_DAYS:
+        too_new = history_days is not None and history_days < DEAD_DAYS
+        if not too_new and (
+            days_since_last_sale is None or days_since_last_sale >= DEAD_DAYS
+        ):
             return "mort"
         return "nu_se_vinde"
     if coverage is not None and coverage > VERY_SLOW_DAYS:
@@ -121,6 +132,8 @@ def build_rows(
     last_sales: Optional[Dict[Tuple[str, str], datetime]] = None,
     costs: Optional[Dict[str, float]] = None,
     now: Optional[datetime] = None,
+    first_seen: Optional[Dict[str, datetime]] = None,
+    store_first_order: Optional[Dict[str, datetime]] = None,
 ) -> dict:
     """Build every report row (per store, unallocated, all stores); filtering happens later.
 
@@ -130,7 +143,11 @@ def build_rows(
         cancelled excluded.
     last_sales: (awb_store_uid, sku) → last non-cancelled order date (naive UTC).
     costs: sku → unit cost in RON.
+    first_seen: sku → when the product first appeared in the AWB catalog.
+    store_first_order: awb store uid → its first order (a new store has no history).
     """
+    first_seen = first_seen or {}
+    store_first_order = store_first_order or {}
     last_sales = last_sales or {}
     costs = costs or {}
     today = _bucharest_date(now or datetime.utcnow())
@@ -249,6 +266,26 @@ def build_rows(
                 return costs[sku]
         return None
 
+    listed_masters = {
+        master
+        for store_masters in ss_store_masters.values()
+        for master in store_masters
+    } | set(catalog_master.values())
+
+    def history_days(store_uid: str, master: Optional[str], skus: set) -> Optional[int]:
+        """Days the row has had a chance to sell: the younger of product and store."""
+        candidates = set(skus)
+        if master:
+            candidates |= master_skus.get(master, set()) | catalog_skus_by_master.get(
+                master, set()
+            )
+        starts = [first_seen[sku] for sku in candidates if sku in first_seen]
+        if store_uid in store_first_order:
+            starts.append(store_first_order[store_uid])
+        if not starts:
+            return None
+        return (today - _bucharest_date(max(starts))).days
+
     def make_row(
         store_uid: str,
         store_name: str,
@@ -261,6 +298,8 @@ def build_rows(
         stock_is_pool: bool = False,
     ) -> dict:
         stock = stock_by_master.get(master) if master else None
+        history = history_days(store_uid, master, skus)
+        listed = master is None or master in listed_masters
         velocity = sold / period_days if period_days else 0.0
         coverage = _safe_div(stock_units, velocity) if stock_units is not None else None
         cost = unit_cost(master, skus)
@@ -288,7 +327,11 @@ def build_rows(
             "days_since_last_sale": days_since,
             "unit_cost": cost,
             "stock_value": round(value, 2) if value is not None else None,
-            "status": stock_status(stock_units, sold, coverage, days_since),
+            "status": stock_status(
+                stock_units, sold, coverage, days_since, history, listed
+            ),
+            "history_days": history,
+            "listed": listed,
             "in_master": bool(stock),
         }
 
@@ -402,6 +445,17 @@ def build_rows(
                     pool_last.get(master),
                 )
             )
+
+    # On one store the verdict describes that store's share; show how the product
+    # does overall next to it, so a store-level "lent" isn't read as a slow product.
+    total_status = {
+        r["master_product_id"]: r["status"]
+        for r in rows
+        if r["store_uid"] == ALL_STORES_UID
+    }
+    for r in rows:
+        if r["store_uid"] != ALL_STORES_UID and r["master_product_id"]:
+            r["total_status"] = total_status.get(r["master_product_id"])
 
     last_seen = [
         p.get("lastSeenAt") for p in stock_by_master.values() if p.get("lastSeenAt")
