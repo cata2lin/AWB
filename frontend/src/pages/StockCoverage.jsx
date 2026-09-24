@@ -17,6 +17,7 @@ import {
     PageContainer,
     PageHeader,
     PaginationFooter,
+    SearchInput,
     Select,
     Spinner,
 } from '../components/ui'
@@ -47,6 +48,9 @@ const VIEWS = [
     { key: 'lente', label: 'Lente (peste 6 luni)', match: (r) => r.status === 'lent' || r.status === 'foarte_lent' },
     { key: 'se_termina', label: 'Se termină', match: (r) => r.status === 'se_termina' },
 ]
+
+// Case- and diacritics-insensitive, so „covoras” finds „Covoraș”.
+const normalizeText = (text) => (text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 
 const formatDateTime = (iso) => {
     if (!iso) return '—'
@@ -167,6 +171,7 @@ export default function StockCoverage() {
         [searchParams],
     )
     const isAllStores = selectedStores.length === 0
+    const searchQuery = searchParams.get('cauta') || ''
 
     const [report, setReport] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -174,6 +179,7 @@ export default function StockCoverage() {
     const [sort, setSort] = useState({ key: 'status', direction: 'asc' })
     const [expandedKey, setExpandedKey] = useState(null)
     const [exporting, setExporting] = useState(false)
+    const [searchText, setSearchText] = useState(searchQuery)
     const requestId = useRef(0)
 
     const updateParams = (next) => {
@@ -217,7 +223,14 @@ export default function StockCoverage() {
         [report],
     )
 
-    const allRows = useMemo(() => report?.rows || [], [report])
+    // The search narrows everything below it, KPIs included — typing "HA-" gives the
+    // HA-only dead stock and money blocked.
+    const allRows = useMemo(() => {
+        const all = report?.rows || []
+        const needle = normalizeText(searchQuery.trim())
+        if (!needle) return all
+        return all.filter((r) => normalizeText(`${r.sku} ${r.product_name}`).includes(needle))
+    }, [report, searchQuery])
 
     const rows = useMemo(() => {
         const filtered = allRows.filter(view.match)
@@ -345,6 +358,7 @@ export default function StockCoverage() {
     const handleStoresChange = (uids) => updateParams({ magazine: uids.join(',') })
     const handlePeriodChange = (value) => updateParams({ zile: value === '30' ? '' : value })
     const handleViewChange = (key) => updateParams({ arata: key === 'toate' ? '' : key })
+    const handleSearchCommit = (text) => updateParams({ cauta: text.trim() })
     const handleSortChange = (next) => {
         setSort(next)
         setPage(0)
@@ -426,6 +440,14 @@ export default function StockCoverage() {
                     ariaLabel="Perioadă"
                     options={PERIODS.map((d) => ({ value: String(d), label: `Ultimele ${d} zile` }))}
                 />
+                <SearchInput
+                    value={searchText}
+                    onChange={setSearchText}
+                    onDebouncedChange={handleSearchCommit}
+                    debounce={300}
+                    placeholder="Caută SKU sau produs (ex: HA-)"
+                    className="min-w-[220px]"
+                />
                 <FilterDivider />
                 {VIEWS.map((v) => (
                     <FilterChip
@@ -500,7 +522,7 @@ export default function StockCoverage() {
                 empty={
                     <EmptyState
                         icon={Boxes}
-                        title={report ? 'Niciun produs pentru filtrele alese' : 'Raportul nu s-a putut încărca'}
+                        title={report ? (searchQuery ? `Niciun produs pentru „${searchQuery}”` : 'Niciun produs pentru filtrele alese') : 'Raportul nu s-a putut încărca'}
                         description={report ? 'Alege alt magazin, altă perioadă sau „Toate”.' : 'Verifică conexiunea la stock-sync și încearcă din nou.'}
                         action={!report && <Button variant="primary" onClick={fetchReport} data-action="retry-stock-coverage">Reîncearcă</Button>}
                     />
