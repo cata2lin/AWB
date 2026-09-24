@@ -942,6 +942,19 @@ Use `curl.exe` instead of `curl` to avoid the PowerShell `Invoke-WebRequest` ali
 
 ## Changelog
 
+### 2026-09-24 — Stoc & Viteză: stoc master + zile de vânzare pe fiecare magazin
+
+**Files changed:** `backend/app/api/stock_coverage/`, `backend/app/services/stock_sync_client.py`, `backend/app/core/config.py`, `backend/app/main.py`, `backend/tests/test_stock_coverage.py`, `frontend/src/pages/StockCoverage.jsx`, `frontend/src/App.jsx`, `frontend/src/components/Sidebar.jsx`, `.env.example`
+
+| Fix | Description | Details |
+| --- | --- | --- |
+| **New page `/stoc-viteza`** | Per-store list of every product a store carries: SKU, name, stock on that store, total master stock, units sold in the last 30/60/90 days, units/day and days of stock left (store and total). | Store + period filters persist in the URL; Excel export; KPI row (products, store stock, < 14 days left, stock without sales). Products with no sales are included — they are the dead-stock rows the Viteză Vânzări tab never shows. |
+| **Stock from stock-sync, not `products.stock_available`** | `stock_available` comes from the old InventorySync and is frozen since 2026-07-22. | New read-only client (`/v1/stores`, `/v1/listings?matchStatus=MATCHED`, `/v1/master-products`, `/v1/stock`, ~40 calls). Stock is fetched for ALL master products: ~600 masters with no listing hold most of the ~117k unallocated units, shown on a „Nealocat” pseudo-store. |
+| **Store / SKU mapping** | AWB orders only carry SKU; the same SKU maps to different products on different stores. | (store, SKU) → master via that store's listings. AWB store ↔ stock-sync store by `COALESCE(xconnector_domain, shopify_domain, slug.myshopify.com)`; ORC/HU/SK have no domain in AWB and are mapped by uid. Belasil, Labnoir, duppo.md are not in stock-sync: no store stock, products via the AWB catalog barcode, days computed on the pooled rate across all stores. |
+| **Velocity** | Units sold (cancelled excluded, excluded tags dropped) ÷ period days, Bucharest calendar days. | Report cached 10 min per period (stock only moves at the 02:00 sync / manual runs); first load ~5 s (30 d) to ~13 s (90 d). |
+
+**Prod:** set `STOCK_SYNC_API_TOKEN` (Second Brain `STOCK_SYNC_AWB_REPORT_TOKEN`) and optionally `STOCK_SYNC_API_URL` in `backend/.env`, then restart. Without the token the page shows a 503 with an actionable message.
+
 ### 2026-06-19 — Frisbo API base host → orqestra.app
 
 **Files changed:** `backend/app/core/config.py`, `docker-compose.yml`, `README.md`, `docs/frisbo/openapi.json`

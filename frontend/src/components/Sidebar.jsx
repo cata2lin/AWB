@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'  
 import {
     LayoutDashboard, ListOrdered, Settings, History, Layers,
-    BarChart3, Activity, Copy, FileText,
+    BarChart3, Activity, Copy, FileText, Boxes,
     Printer, ChevronDown, ChevronRight, Package, Percent, ShoppingCart,
     PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
@@ -33,6 +33,7 @@ const NAV = [
     },
     { type: 'divider' },
     { type: 'link', path: '/analytics', icon: BarChart3, label: 'Rapoarte' },
+    { type: 'link', path: '/stoc-viteza', icon: Boxes, label: 'Stoc & Viteză' },
     { type: 'link', path: '/purchase-orders', icon: FileText, label: 'Purchase Orders' },
     { type: 'link', path: '/comision-agentie', icon: Percent, label: 'Comision Agenție' },
     { type: 'divider' },

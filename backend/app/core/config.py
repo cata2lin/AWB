@@ -52,6 +52,11 @@ class Settings(BaseSettings):
         "postgresql://scraper:Scraper123%23@38.242.226.83/InventorySync"
     )
 
+    # stock-sync v2 (master stock, per-store allocation). Read-only token
+    # (products:read + stores:read); never commit a value — the repo is public.
+    stock_sync_api_url: str = "http://127.0.0.1:8003"
+    stock_sync_api_token: str = ""
+
     def get_org_tokens(self) -> List[Dict[str, str]]:
         """
         Parse and return all organization tokens.
